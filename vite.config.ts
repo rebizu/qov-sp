@@ -14,6 +14,7 @@ export default defineConfig({
         recorder: resolve(__dirname, 'recorder.html'),
         player: resolve(__dirname, 'player.html'),
         converter: resolve(__dirname, 'converter.html'),
+        spec:resolve(__dirname, 'qov-specification.md'),
       },
     },
   },
