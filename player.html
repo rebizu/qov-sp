@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QOV Player</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f1a;
+      min-height: 100vh;
+      color: #fff;
+    }
+    .header {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .header a {
+      color: #00d4ff;
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    .header h1 {
+      font-size: 1.5rem;
+      flex: 1;
+    }
+    .main {
+      display: flex;
+      height: calc(100vh - 60px);
+    }
+    .player-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 1.5rem;
+      background: #0a0a12;
+    }
+    .canvas-wrapper {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+    }
+    #playerCanvas {
+      max-width: 100%;
+      max-height: 100%;
+    }
+    .drop-zone {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.8);
+      border: 2px dashed rgba(255, 255, 255, 0.3);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .drop-zone.hidden {
+      display: none;
+    }
+    .drop-zone:hover,
+    .drop-zone.dragover {
+      background: rgba(0, 212, 255, 0.1);
+      border-color: #00d4ff;
+    }
+    .drop-zone-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+      opacity: 0.5;
+    }
+    .drop-zone-text {
+      font-size: 1.2rem;
+      color: #94a3b8;
+      margin-bottom: 0.5rem;
+    }
+    .drop-zone-hint {
+      font-size: 0.9rem;
+      color: #64748b;
+    }
+    .player-controls {
+      padding: 1rem 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .timeline-container {
+      position: relative;
+      height: 40px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .timeline-bar {
+      height: 100%;
+      position: relative;
+    }
+    .timeline-progress {
+      position: absolute;
+      left: 0;
+      top: 0;
+      height: 100%;
+      background: linear-gradient(90deg, #3b82f6, #00d4ff);
+      width: 0%;
+      transition: width 0.1s linear;
+    }
+    .timeline-keyframes {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .keyframe-marker {
+      position: absolute;
+      top: 0;
+      width: 2px;
+      height: 100%;
+      background: #fbbf24;
+      opacity: 0.8;
+    }
+    .timeline-cursor {
+      position: absolute;
+      top: 0;
+      width: 2px;
+      height: 100%;
+      background: #fff;
+      transform: translateX(-1px);
+      pointer-events: none;
+    }
+    .timeline-clickable {
+      position: absolute;
+      inset: 0;
+      cursor: pointer;
+    }
+    .control-buttons {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .control-buttons button {
+      padding: 0.5rem 1rem;
+      font-size: 0.9rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+    .control-buttons button:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    .control-buttons button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .play-btn {
+      padding: 0.5rem 1.5rem !important;
+      background: #3b82f6 !important;
+    }
+    .play-btn:hover:not(:disabled) {
+      background: #2563eb !important;
+    }
+    .time-display {
+      font-family: monospace;
+      font-size: 0.9rem;
+      color: #94a3b8;
+      min-width: 120px;
+    }
+    .speed-control {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .speed-control label {
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+    .speed-control select {
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.05);
+      color: #fff;
+      font-size: 0.85rem;
+    }
+    .sidebar {
+      width: 380px;
+      background: rgba(255, 255, 255, 0.02);
+      border-left: 1px solid rgba(255, 255, 255, 0.1);
+      overflow-y: auto;
+    }
+    .sidebar-section {
+      padding: 1.25rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .sidebar-section h2 {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 1rem;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+    .info-item {
+      background: rgba(0, 0, 0, 0.2);
+      padding: 0.75rem;
+      border-radius: 6px;
+    }
+    .info-item.full-width {
+      grid-column: 1 / -1;
+    }
+    .info-label {
+      font-size: 0.75rem;
+      color: #64748b;
+      text-transform: uppercase;
+      margin-bottom: 0.25rem;
+    }
+    .info-value {
+      font-size: 0.95rem;
+      color: #e2e8f0;
+      font-family: monospace;
+    }
+    .chunk-list {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .chunk-item {
+      display: flex;
+      align-items: center;
+      padding: 0.5rem;
+      border-radius: 4px;
+      margin-bottom: 0.25rem;
+      font-size: 0.8rem;
+      font-family: monospace;
+      background: rgba(0, 0, 0, 0.2);
+    }
+    .chunk-item.keyframe {
+      background: rgba(251, 191, 36, 0.1);
+      border-left: 3px solid #fbbf24;
+    }
+    .chunk-item.pframe {
+      background: rgba(59, 130, 246, 0.1);
+      border-left: 3px solid #3b82f6;
+    }
+    .chunk-item.sync {
+      background: rgba(34, 197, 94, 0.1);
+      border-left: 3px solid #22c55e;
+    }
+    .chunk-item.audio {
+      background: rgba(168, 85, 247, 0.1);
+      border-left: 3px solid #a855f7;
+    }
+    .chunk-type {
+      width: 80px;
+      color: #94a3b8;
+    }
+    .chunk-offset {
+      width: 80px;
+      color: #64748b;
+    }
+    .chunk-size {
+      flex: 1;
+      text-align: right;
+      color: #64748b;
+    }
+    .legend {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.75rem;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.75rem;
+      color: #94a3b8;
+    }
+    .legend-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+    }
+    .legend-color.keyframe { background: #fbbf24; }
+    .legend-color.pframe { background: #3b82f6; }
+    .legend-color.sync { background: #22c55e; }
+    .legend-color.audio { background: #a855f7; }
+    #fileInput {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="index.html">&larr; Back</a>
+    <h1>QOV Player</h1>
+  </div>
+
+  <div class="main">
+    <div class="player-container">
+      <div class="canvas-wrapper">
+        <canvas id="playerCanvas"></canvas>
+        <div class="drop-zone" id="dropZone">
+          <div class="drop-zone-icon">&#128193;</div>
+          <div class="drop-zone-text">Drop a QOV file here</div>
+          <div class="drop-zone-hint">or click to browse</div>
+        </div>
+      </div>
+
+      <div class="player-controls">
+        <div class="timeline-container">
+          <div class="timeline-bar">
+            <div class="timeline-progress" id="timelineProgress"></div>
+            <div class="timeline-keyframes" id="timelineKeyframes"></div>
+            <div class="timeline-cursor" id="timelineCursor"></div>
+          </div>
+          <div class="timeline-clickable" id="timelineClickable"></div>
+        </div>
+
+        <div class="control-buttons">
+          <button id="playBtn" class="play-btn" disabled>&#9654; Play</button>
+          <button id="prevFrameBtn" disabled>&lt; Prev</button>
+          <button id="nextFrameBtn" disabled>Next &gt;</button>
+          <button id="prevKeyframeBtn" disabled>|&lt; Key</button>
+          <button id="nextKeyframeBtn" disabled>Key &gt;|</button>
+          <span class="time-display" id="timeDisplay">0:00 / 0:00</span>
+
+          <div class="speed-control">
+            <label for="speedSelect">Speed:</label>
+            <select id="speedSelect">
+              <option value="0.25">0.25x</option>
+              <option value="0.5">0.5x</option>
+              <option value="1" selected>1x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2x</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <h2>File Header</h2>
+        <div class="info-grid" id="headerInfo">
+          <div class="info-item">
+            <div class="info-label">Magic</div>
+            <div class="info-value" id="infoMagic">-</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Version</div>
+            <div class="info-value" id="infoVersion">-</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Resolution</div>
+            <div class="info-value" id="infoResolution">-</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Frame Rate</div>
+            <div class="info-value" id="infoFrameRate">-</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Total Frames</div>
+            <div class="info-value" id="infoTotalFrames">-</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Duration</div>
+            <div class="info-value" id="infoDuration">-</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">File Size</div>
+            <div class="info-value" id="infoFileSize">-</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Colorspace</div>
+            <div class="info-value" id="infoColorspace">-</div>
+          </div>
+          <div class="info-item full-width">
+            <div class="info-label">Flags</div>
+            <div class="info-value" id="infoFlags">-</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h2>Playback Info</h2>
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-label">Current Frame</div>
+            <div class="info-value" id="infoCurrentFrame">-</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Frame Type</div>
+            <div class="info-value" id="infoFrameType">-</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Timestamp</div>
+            <div class="info-value" id="infoTimestamp">-</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Decode FPS</div>
+            <div class="info-value" id="infoDecodeFps">-</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h2>Chunk Timeline</h2>
+        <div class="legend">
+          <div class="legend-item">
+            <div class="legend-color keyframe"></div>
+            <span>Keyframe</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color pframe"></div>
+            <span>P-Frame</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color sync"></div>
+            <span>Sync</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color audio"></div>
+            <span>Audio</span>
+          </div>
+        </div>
+        <div class="chunk-list" id="chunkList">
+          <div style="color: #64748b; font-size: 0.85rem;">Load a QOV file to see chunks</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="fileInput" accept=".qov">
+  <script type="module" src="/src/player.ts"></script>
+</body>
+</html>

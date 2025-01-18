@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QOV - Quite OK Video</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+    }
+    .container {
+      text-align: center;
+      padding: 2rem;
+    }
+    h1 {
+      font-size: 3rem;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(90deg, #00d4ff, #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .subtitle {
+      color: #94a3b8;
+      font-size: 1.2rem;
+      margin-bottom: 3rem;
+    }
+    .cards {
+      display: flex;
+      gap: 2rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 2rem;
+      width: 280px;
+      text-decoration: none;
+      color: inherit;
+      transition: all 0.3s ease;
+    }
+    .card:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-4px);
+    }
+    .card-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+    .card h2 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .card p {
+      color: #94a3b8;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+    .footer {
+      margin-top: 3rem;
+      color: #64748b;
+      font-size: 0.85rem;
+    }
+    .footer a {
+      color: #00d4ff;
+      text-decoration: none;
+    }
+    .footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>QOV</h1>
+    <p class="subtitle">Quite OK Video Format</p>
+
+    <div class="cards">
+      <a href="recorder.html" class="card">
+        <div class="card-icon">&#128249;</div>
+        <h2>Recorder</h2>
+        <p>Capture video from your camera and encode it in the QOV format. Simple, fast encoding.</p>
+      </a>
+
+      <a href="player.html" class="card">
+        <div class="card-icon">&#9654;</div>
+        <h2>Player</h2>
+        <p>Play QOV files and view detailed statistics including file header, timeline, and keyframes.</p>
+      </a>
+
+      <a href="converter.html" class="card">
+        <div class="card-icon">&#128260;</div>
+        <h2>Converter</h2>
+        <p>Convert video files (MP4, WebM, MPEG, etc.) to QOV format. Fast browser-based conversion.</p>
+      </a>
+    </div>
+
+    <p class="footer">
+      Based on the <a href="qov-specification.md" target="_blank">QOV Specification</a> -
+      Inspired by QOI and QOA
+    </p>
+  </div>
+</body>
+</html>
