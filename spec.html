@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QOV Specification</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f1a;
+      min-height: 100vh;
+      color: #e2e8f0;
+      line-height: 1.6;
+    }
+    .header {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header a {
+      color: #00d4ff;
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    .header h1 {
+      font-size: 1.5rem;
+      flex: 1;
+      color: #fff;
+    }
+    .header .raw-link {
+      font-size: 0.85rem;
+      padding: 0.4rem 0.8rem;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+    }
+    .header .raw-link:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+    .content {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    .loading {
+      text-align: center;
+      padding: 4rem;
+      color: #94a3b8;
+    }
+    .error {
+      text-align: center;
+      padding: 4rem;
+      color: #ef4444;
+    }
+    /* Markdown styles */
+    .markdown h1 {
+      font-size: 2.5rem;
+      margin: 2rem 0 1rem;
+      color: #fff;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 0.5rem;
+    }
+    .markdown h1:first-child {
+      margin-top: 0;
+    }
+    .markdown h2 {
+      font-size: 1.8rem;
+      margin: 2rem 0 1rem;
+      color: #fff;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding-bottom: 0.3rem;
+    }
+    .markdown h3 {
+      font-size: 1.4rem;
+      margin: 1.5rem 0 0.75rem;
+      color: #e2e8f0;
+    }
+    .markdown h4 {
+      font-size: 1.1rem;
+      margin: 1.25rem 0 0.5rem;
+      color: #cbd5e1;
+    }
+    .markdown p {
+      margin: 1rem 0;
+    }
+    .markdown ul, .markdown ol {
+      margin: 1rem 0;
+      padding-left: 2rem;
+    }
+    .markdown li {
+      margin: 0.5rem 0;
+    }
+    .markdown code {
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.9em;
+      color: #7dd3fc;
+    }
+    .markdown pre {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+    .markdown pre code {
+      background: none;
+      padding: 0;
+      color: #e2e8f0;
+    }
+    .markdown table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+    }
+    .markdown th, .markdown td {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 0.75rem;
+      text-align: left;
+    }
+    .markdown th {
+      background: rgba(255, 255, 255, 0.05);
+      color: #fff;
+      font-weight: 600;
+    }
+    .markdown tr:nth-child(even) {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .markdown blockquote {
+      border-left: 4px solid #3b82f6;
+      margin: 1rem 0;
+      padding: 0.5rem 1rem;
+      background: rgba(59, 130, 246, 0.1);
+      color: #94a3b8;
+    }
+    .markdown a {
+      color: #00d4ff;
+      text-decoration: none;
+    }
+    .markdown a:hover {
+      text-decoration: underline;
+    }
+    .markdown hr {
+      border: none;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      margin: 2rem 0;
+    }
+    .markdown strong {
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="index.html">&larr; Back</a>
+    <h1>QOV Specification</h1>
+    <a href="qov-specification.md" class="raw-link" target="_blank">View Raw</a>
+  </div>
+
+  <div class="content">
+    <div id="markdown-content" class="loading">Loading specification...</div>
+  </div>
+
+  <script>
+    async function loadSpec() {
+      const container = document.getElementById('markdown-content');
+
+      try {
+        const response = await fetch('qov-specification.md');
+        if (!response.ok) {
+          throw new Error(`Failed to load: ${response.status}`);
+        }
+
+        const markdown = await response.text();
+        container.className = 'markdown';
+        container.innerHTML = marked.parse(markdown);
+      } catch (err) {
+        container.className = 'error';
+        container.innerHTML = `Failed to load specification: ${err.message}`;
+      }
+    }
+
+    loadSpec();
+  </script>
+</body>
+</html>
