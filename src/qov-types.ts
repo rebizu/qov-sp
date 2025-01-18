@@ -40,12 +40,22 @@ export const QOV_CHUNK_AUDIO = 0x10;
 export const QOV_CHUNK_INDEX = 0xF0;
 export const QOV_CHUNK_END = 0xFF;
 
+// Chunk flags
+export const QOV_CHUNK_FLAG_YUV = 0x01;         // bit 0: YUV mode
+export const QOV_CHUNK_FLAG_MOTION = 0x02;      // bit 1: motion vectors
+export const QOV_CHUNK_FLAG_COMPRESSED = 0x10;  // bit 4: LZ4 compressed
+
+// Compression types (bits 4-5 of chunk flags)
+export const QOV_COMPRESSION_NONE = 0x00;
+export const QOV_COMPRESSION_LZ4 = 0x10;
+
 // Chunk header
 export interface QovChunkHeader {
   chunkType: number;
   chunkFlags: number;
   chunkSize: number;
-  timestamp: number;      // microseconds
+  timestamp: number;          // microseconds
+  uncompressedSize?: number;  // only present if compressed
 }
 
 // Index entry for seeking
@@ -88,6 +98,8 @@ export interface QovChunkInfo {
   size: number;
   timestamp: number;
   isKeyframe: boolean;
+  isCompressed?: boolean;
+  uncompressedSize?: number;
 }
 
 export function getChunkTypeName(type: number): string {

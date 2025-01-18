@@ -14,6 +14,8 @@ export default defineConfig({
         recorder: resolve(__dirname, 'recorder.html'),
         player: resolve(__dirname, 'player.html'),
         converter: resolve(__dirname, 'converter.html'),
+        test: resolve(__dirname, 'Fensmark test.qov'),
+        test2: resolve(__dirname, 'Fensmark test_comp.qov'),
       },
     },
   },

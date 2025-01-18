@@ -15,6 +15,7 @@ const resolutionSelect = document.getElementById('resolution') as HTMLSelectElem
 const colorspaceSelect = document.getElementById('colorspace') as HTMLSelectElement;
 const flagIndexCheckbox = document.getElementById('flagIndex') as HTMLInputElement;
 const flagAlphaCheckbox = document.getElementById('flagAlpha') as HTMLInputElement;
+const compressionCheckbox = document.getElementById('compressionEnabled') as HTMLInputElement;
 const startTimeInput = document.getElementById('startTime') as HTMLInputElement;
 const endTimeInput = document.getElementById('endTime') as HTMLInputElement;
 const maxFramesInput = document.getElementById('maxFrames') as HTMLInputElement;
@@ -236,6 +237,9 @@ async function convertToQov(): Promise<void> {
   if (flagIndexCheckbox.checked) flags |= QOV_FLAG_HAS_INDEX;
   if (flagAlphaCheckbox.checked) flags |= QOV_FLAG_HAS_ALPHA;
 
+  // Get compression setting
+  const compressionEnabled = compressionCheckbox.checked;
+
   // Calculate output dimensions
   const { width: outputWidth, height: outputHeight } = calculateOutputDimensions();
 
@@ -259,6 +263,7 @@ async function convertToQov(): Promise<void> {
   log(`Time range: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
   const isYuv = colorspace >= 0x10 && colorspace <= 0x13;
   log(`Colorspace: 0x${colorspace.toString(16).padStart(2, '0')} (${isYuv ? 'YUV' : 'RGB'}), Flags: 0x${flags.toString(16).padStart(2, '0')}`);
+  log(`LZ4 Compression: ${compressionEnabled ? 'enabled' : 'disabled'}`);
   log(`Estimated frames: ${estimatedFrames}`);
 
   convertBtn.disabled = true;
@@ -273,7 +278,8 @@ async function convertToQov(): Promise<void> {
     targetFps,
     1,
     flags,
-    colorspace
+    colorspace,
+    compressionEnabled
   );
   encoder.writeHeader();
 

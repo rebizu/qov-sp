@@ -105,6 +105,57 @@ Value  Name      Description
 0xFF   END       End of stream marker
 ```
 
+### 2.2 Chunk Flags Byte
+
+The chunk_flags byte is a bitfield with the following bits:
+
+```
+Bit  Name        Description
+────────────────────────────────────────────────────────────
+0    YUV_MODE    Frame uses YUV plane-based encoding (0x01)
+1    HAS_MOTION  Frame includes motion vectors (0x02)
+2-3  Reserved    Must be 0
+4    COMPRESSED  Chunk data is LZ4 compressed (0x10)
+5    Reserved    Must be 0 (reserved for future compression types)
+6-7  Reserved    Must be 0
+```
+
+### 2.3 LZ4 Compression
+
+When the COMPRESSED flag (bit 4) is set, the chunk uses LZ4 block compression
+for smaller file sizes while maintaining fast decompression.
+
+**Compressed Chunk Layout:**
+```
+Offset  Size  Name              Description
+──────────────────────────────────────────────────────────────
+0       1     chunk_type        Chunk type identifier
+1       1     chunk_flags       Flags with COMPRESSED bit set (0x10)
+2       4     chunk_size        Size of compressed data + 4 (32-bit)
+6       4     timestamp         Timestamp in microseconds
+10      4     uncompressed_size Original size before compression
+14      N     compressed_data   LZ4 compressed opcode stream
+```
+
+**Compression Notes:**
+- Uses LZ4 block format (not LZ4 frame format)
+- Decompression requires knowing the uncompressed size in advance
+- Encoder may choose not to compress if compression ratio < 5%
+- Decompressor must check COMPRESSED flag before reading data
+- End marker (8 bytes) is included in the compressed data
+
+**Decompression Algorithm:**
+1. Read chunk header including chunk_flags
+2. If (chunk_flags & 0x10): read 4-byte uncompressed_size
+3. Read (chunk_size - 4) bytes of compressed data
+4. Decompress using LZ4 block decompression
+5. Decode opcodes from decompressed data as normal
+
+**Expected Compression Ratios:**
+- RGB keyframes: 1.5-2x reduction
+- RGB P-frames: 2-3x reduction
+- YUV frames: 1.5-2.5x reduction
+
 ---
 
 ## 3. Video Opcodes

@@ -14,7 +14,11 @@ import {
   QOV_CHUNK_PFRAME,
   QOV_CHUNK_INDEX,
   QOV_CHUNK_END,
+  QOV_CHUNK_FLAG_YUV,
+  QOV_CHUNK_FLAG_COMPRESSED,
 } from './qov-types';
+
+import { lz4Compress } from './lz4';
 
 import {
   rgbaToYuv420Planes,
@@ -99,6 +103,10 @@ class GrowableBuffer {
 export class QovEncoder {
   private header: QovHeader;
   private buffer: GrowableBuffer;
+  private compressionEnabled: boolean;
+
+  // Temporary buffer for frame encoding before compression
+  private frameBuffer: GrowableBuffer | null = null;
 
   // RGB mode state
   private rgbIndex: QovRGBA[] = new Array(64);
@@ -122,7 +130,8 @@ export class QovEncoder {
     frameRateNum = 30,
     frameRateDen = 1,
     flags = QOV_FLAG_HAS_INDEX,
-    colorspace = QOV_COLORSPACE_SRGB
+    colorspace = QOV_COLORSPACE_SRGB,
+    compressionEnabled = true
   ) {
     this.header = {
       magic: 'qovf',
@@ -138,17 +147,24 @@ export class QovEncoder {
       colorspace,
     };
 
+    this.compressionEnabled = compressionEnabled;
+
     // Determine mode based on colorspace
     this.isYuvMode = colorspace >= 0x10 && colorspace <= 0x13;
     this.hasAlpha = (flags & QOV_FLAG_HAS_ALPHA) !== 0 ||
                     colorspace === QOV_COLORSPACE_YUVA420;
 
-    console.log(`[Encoder] Created with colorspace: 0x${colorspace.toString(16)}, YUV mode: ${this.isYuvMode}, hasAlpha: ${this.hasAlpha}`);
+    console.log(`[Encoder] Created with colorspace: 0x${colorspace.toString(16)}, YUV mode: ${this.isYuvMode}, hasAlpha: ${this.hasAlpha}, compression: ${compressionEnabled}`);
 
     // Initialize buffer with appropriate chunk size based on resolution
     const pixelsPerFrame = width * height;
     const estimatedBytesPerFrame = Math.max(pixelsPerFrame / 4, 10000);
     this.buffer = new GrowableBuffer(Math.max(estimatedBytesPerFrame * 10, 1024 * 1024));
+
+    // Initialize frame buffer for compression if enabled
+    if (compressionEnabled) {
+      this.frameBuffer = new GrowableBuffer(Math.max(estimatedBytesPerFrame * 2, 256 * 1024));
+    }
 
     // Initialize color indices
     this.resetRgbIndex();
@@ -161,16 +177,83 @@ export class QovEncoder {
     this.prevPixel = { r: 0, g: 0, b: 0, a: 255 };
   }
 
+  // Current write target (main buffer or frame buffer for compression)
+  private activeBuffer: GrowableBuffer | null = null;
+
+  private getWriteBuffer(): GrowableBuffer {
+    return this.activeBuffer || this.buffer;
+  }
+
   private writeU8(v: number): void {
-    this.buffer.writeByte(v);
+    this.getWriteBuffer().writeByte(v);
   }
 
   private writeU16(v: number): void {
-    this.buffer.writeU16(v);
+    this.getWriteBuffer().writeU16(v);
   }
 
   private writeU32(v: number): void {
-    this.buffer.writeU32(v);
+    this.getWriteBuffer().writeU32(v);
+  }
+
+  // Start encoding frame data to temporary buffer (for compression)
+  private startFrameData(): void {
+    if (this.compressionEnabled && this.frameBuffer) {
+      // Reset frame buffer for new frame
+      this.frameBuffer = new GrowableBuffer(256 * 1024);
+      this.activeBuffer = this.frameBuffer;
+    }
+  }
+
+  // Finish frame data and write compressed/uncompressed chunk to main buffer
+  private finishFrameData(chunkType: number, baseFlags: number, timestamp: number): void {
+    if (!this.compressionEnabled || !this.frameBuffer) {
+      // No compression, data already written to main buffer
+      return;
+    }
+
+    // Get the frame data
+    const frameData = this.frameBuffer.toUint8Array();
+    const uncompressedSize = frameData.length;
+    this.activeBuffer = null;
+
+    // Try to compress
+    const compressed = lz4Compress(frameData);
+
+    if (compressed) {
+      // Compression was effective, write compressed chunk
+      const chunkFlags = baseFlags | QOV_CHUNK_FLAG_COMPRESSED;
+      const chunkSize = compressed.length + 4; // +4 for uncompressed size
+
+      // Write chunk header
+      this.buffer.writeByte(chunkType);
+      this.buffer.writeByte(chunkFlags);
+      this.buffer.writeU32(chunkSize);
+      this.buffer.writeU32(timestamp);
+
+      // Write uncompressed size (before compressed data)
+      this.buffer.writeU32(uncompressedSize);
+
+      // Write compressed data
+      for (let i = 0; i < compressed.length; i++) {
+        this.buffer.writeByte(compressed[i]);
+      }
+    } else {
+      // Compression not effective, write uncompressed
+      const chunkFlags = baseFlags;
+      const chunkSize = uncompressedSize;
+
+      // Write chunk header
+      this.buffer.writeByte(chunkType);
+      this.buffer.writeByte(chunkFlags);
+      this.buffer.writeU32(chunkSize);
+      this.buffer.writeU32(timestamp);
+
+      // Write uncompressed data
+      for (let i = 0; i < frameData.length; i++) {
+        this.buffer.writeByte(frameData[i]);
+      }
+    }
   }
 
   private colorHash(c: QovRGBA): number {
@@ -245,17 +328,8 @@ export class QovEncoder {
       });
     }
 
-    // Write sync marker before keyframe
+    // Write sync marker before keyframe (always to main buffer)
     this.writeSync(frameNumber, timestamp);
-
-    // Chunk header placeholder
-    const headerPos = this.buffer.getSize();
-    this.writeU8(QOV_CHUNK_KEYFRAME); // type
-    this.writeU8(0x01);               // flags: YUV mode
-    this.writeU32(0);                 // size placeholder
-    this.writeU32(timestamp);
-
-    const dataStart = this.buffer.getSize();
 
     // Convert to YUV planes based on colorspace
     let planes: { yPlane: Uint8Array; uPlane: Uint8Array; vPlane: Uint8Array; aPlane?: Uint8Array };
@@ -268,29 +342,46 @@ export class QovEncoder {
       planes = rgbaToYuv444Planes(pixels, width, height, this.hasAlpha);
     }
 
-    // Encode Y plane (full resolution)
-    this.encodeYuvPlaneKeyframe(planes.yPlane);
+    if (this.compressionEnabled) {
+      // Compression mode: encode to temp buffer, then compress
+      this.startFrameData();
 
-    // Encode U plane
-    this.encodeYuvPlaneKeyframe(planes.uPlane);
+      // Encode planes to frame buffer
+      this.encodeYuvPlaneKeyframe(planes.yPlane);
+      this.encodeYuvPlaneKeyframe(planes.uPlane);
+      this.encodeYuvPlaneKeyframe(planes.vPlane);
+      if (planes.aPlane) {
+        this.encodeYuvPlaneKeyframe(planes.aPlane);
+      }
+      this.writeEndMarker();
 
-    // Encode V plane
-    this.encodeYuvPlaneKeyframe(planes.vPlane);
+      // Compress and write to main buffer
+      this.finishFrameData(QOV_CHUNK_KEYFRAME, QOV_CHUNK_FLAG_YUV, timestamp);
+    } else {
+      // No compression: write directly
+      const headerPos = this.buffer.getSize();
+      this.writeU8(QOV_CHUNK_KEYFRAME);
+      this.writeU8(QOV_CHUNK_FLAG_YUV);
+      this.writeU32(0); // size placeholder
+      this.writeU32(timestamp);
 
-    // Encode A plane if present
-    if (planes.aPlane) {
-      this.encodeYuvPlaneKeyframe(planes.aPlane);
+      const dataStart = this.buffer.getSize();
+
+      this.encodeYuvPlaneKeyframe(planes.yPlane);
+      this.encodeYuvPlaneKeyframe(planes.uPlane);
+      this.encodeYuvPlaneKeyframe(planes.vPlane);
+      if (planes.aPlane) {
+        this.encodeYuvPlaneKeyframe(planes.aPlane);
+      }
+      this.writeEndMarker();
+
+      // Update chunk size
+      const chunkSize = this.buffer.getSize() - dataStart;
+      this.buffer.setByte(headerPos + 2, (chunkSize >> 24) & 0xff);
+      this.buffer.setByte(headerPos + 3, (chunkSize >> 16) & 0xff);
+      this.buffer.setByte(headerPos + 4, (chunkSize >> 8) & 0xff);
+      this.buffer.setByte(headerPos + 5, chunkSize & 0xff);
     }
-
-    // End marker
-    this.writeEndMarker();
-
-    // Update chunk size
-    const chunkSize = this.buffer.getSize() - dataStart;
-    this.buffer.setByte(headerPos + 2, (chunkSize >> 24) & 0xff);
-    this.buffer.setByte(headerPos + 3, (chunkSize >> 16) & 0xff);
-    this.buffer.setByte(headerPos + 4, (chunkSize >> 8) & 0xff);
-    this.buffer.setByte(headerPos + 5, chunkSize & 0xff);
 
     // Store planes for P-frame reference
     this.prevYPlane = planes.yPlane;
@@ -428,15 +519,6 @@ export class QovEncoder {
     this.frameCount++;
     const { width, height, colorspace } = this.header;
 
-    // Chunk header placeholder
-    const headerPos = this.buffer.getSize();
-    this.writeU8(QOV_CHUNK_PFRAME); // type
-    this.writeU8(0x01);             // flags: YUV mode
-    this.writeU32(0);               // size placeholder
-    this.writeU32(timestamp);
-
-    const dataStart = this.buffer.getSize();
-
     // Convert to YUV planes
     let planes: { yPlane: Uint8Array; uPlane: Uint8Array; vPlane: Uint8Array; aPlane?: Uint8Array };
 
@@ -448,24 +530,46 @@ export class QovEncoder {
       planes = rgbaToYuv444Planes(pixels, width, height, this.hasAlpha);
     }
 
-    // Encode planes with temporal prediction
-    this.encodeYuvPlanePFrame(planes.yPlane, this.prevYPlane);
-    this.encodeYuvPlanePFrame(planes.uPlane, this.prevUPlane);
-    this.encodeYuvPlanePFrame(planes.vPlane, this.prevVPlane);
+    if (this.compressionEnabled) {
+      // Compression mode: encode to temp buffer, then compress
+      this.startFrameData();
 
-    if (planes.aPlane && this.prevAPlane) {
-      this.encodeYuvPlanePFrame(planes.aPlane, this.prevAPlane);
+      // Encode planes with temporal prediction
+      this.encodeYuvPlanePFrame(planes.yPlane, this.prevYPlane);
+      this.encodeYuvPlanePFrame(planes.uPlane, this.prevUPlane);
+      this.encodeYuvPlanePFrame(planes.vPlane, this.prevVPlane);
+      if (planes.aPlane && this.prevAPlane) {
+        this.encodeYuvPlanePFrame(planes.aPlane, this.prevAPlane);
+      }
+      this.writeEndMarker();
+
+      // Compress and write to main buffer
+      this.finishFrameData(QOV_CHUNK_PFRAME, QOV_CHUNK_FLAG_YUV, timestamp);
+    } else {
+      // No compression: write directly
+      const headerPos = this.buffer.getSize();
+      this.writeU8(QOV_CHUNK_PFRAME);
+      this.writeU8(QOV_CHUNK_FLAG_YUV);
+      this.writeU32(0); // size placeholder
+      this.writeU32(timestamp);
+
+      const dataStart = this.buffer.getSize();
+
+      this.encodeYuvPlanePFrame(planes.yPlane, this.prevYPlane);
+      this.encodeYuvPlanePFrame(planes.uPlane, this.prevUPlane);
+      this.encodeYuvPlanePFrame(planes.vPlane, this.prevVPlane);
+      if (planes.aPlane && this.prevAPlane) {
+        this.encodeYuvPlanePFrame(planes.aPlane, this.prevAPlane);
+      }
+      this.writeEndMarker();
+
+      // Update chunk size
+      const chunkSize = this.buffer.getSize() - dataStart;
+      this.buffer.setByte(headerPos + 2, (chunkSize >> 24) & 0xff);
+      this.buffer.setByte(headerPos + 3, (chunkSize >> 16) & 0xff);
+      this.buffer.setByte(headerPos + 4, (chunkSize >> 8) & 0xff);
+      this.buffer.setByte(headerPos + 5, chunkSize & 0xff);
     }
-
-    // End marker
-    this.writeEndMarker();
-
-    // Update chunk size
-    const chunkSize = this.buffer.getSize() - dataStart;
-    this.buffer.setByte(headerPos + 2, (chunkSize >> 24) & 0xff);
-    this.buffer.setByte(headerPos + 3, (chunkSize >> 16) & 0xff);
-    this.buffer.setByte(headerPos + 4, (chunkSize >> 8) & 0xff);
-    this.buffer.setByte(headerPos + 5, chunkSize & 0xff);
 
     // Store planes for next P-frame
     this.prevYPlane = planes.yPlane;
@@ -496,73 +600,73 @@ export class QovEncoder {
       });
     }
 
-    // Write sync marker before keyframe
+    // Write sync marker before keyframe (always to main buffer)
     this.writeSync(frameNumber, timestamp);
-
-    // Chunk header placeholder
-    const headerPos = this.buffer.getSize();
-    this.writeU8(QOV_CHUNK_KEYFRAME); // type
-    this.writeU8(0x00);               // flags (RGB mode)
-    this.writeU32(0);                 // size placeholder
-    this.writeU32(timestamp);
-
-    const dataStart = this.buffer.getSize();
 
     // Reset encoder state
     this.resetRgbIndex();
 
-    let run = 0;
+    // Encode frame data
+    const encodeRgbKeyframeData = () => {
+      let run = 0;
 
-    for (let px = 0; px < pixelCount; px++) {
-      const offset = px * 4;
-      const c: QovRGBA = {
-        r: pixels[offset],
-        g: pixels[offset + 1],
-        b: pixels[offset + 2],
-        a: pixels[offset + 3],
-      };
+      for (let px = 0; px < pixelCount; px++) {
+        const offset = px * 4;
+        const c: QovRGBA = {
+          r: pixels[offset],
+          g: pixels[offset + 1],
+          b: pixels[offset + 2],
+          a: pixels[offset + 3],
+        };
 
-      // Check for run
-      if (c.r === this.prevPixel.r && c.g === this.prevPixel.g &&
-          c.b === this.prevPixel.b && c.a === this.prevPixel.a) {
-        run++;
-        if (run === 62 || px === pixelCount - 1) {
+        // Check for run
+        if (c.r === this.prevPixel.r && c.g === this.prevPixel.g &&
+            c.b === this.prevPixel.b && c.a === this.prevPixel.a) {
+          run++;
+          if (run === 62 || px === pixelCount - 1) {
+            this.writeU8(0xc0 | (run - 1));
+            run = 0;
+          }
+          continue;
+        }
+
+        // Flush pending run
+        if (run > 0) {
           this.writeU8(0xc0 | (run - 1));
           run = 0;
         }
-        continue;
-      }
 
-      // Flush pending run
-      if (run > 0) {
-        this.writeU8(0xc0 | (run - 1));
-        run = 0;
-      }
+        // Check index
+        const idx = this.colorHash(c);
+        const indexed = this.rgbIndex[idx];
+        if (indexed.r === c.r && indexed.g === c.g &&
+            indexed.b === c.b && indexed.a === c.a) {
+          this.writeU8(idx);
+        } else {
+          // Try diff
+          const dr = c.r - this.prevPixel.r;
+          const dg = c.g - this.prevPixel.g;
+          const db = c.b - this.prevPixel.b;
+          const da = c.a - this.prevPixel.a;
 
-      // Check index
-      const idx = this.colorHash(c);
-      const indexed = this.rgbIndex[idx];
-      if (indexed.r === c.r && indexed.g === c.g &&
-          indexed.b === c.b && indexed.a === c.a) {
-        this.writeU8(idx);
-      } else {
-        // Try diff
-        const dr = c.r - this.prevPixel.r;
-        const dg = c.g - this.prevPixel.g;
-        const db = c.b - this.prevPixel.b;
-        const da = c.a - this.prevPixel.a;
-
-        if (da === 0) {
-          if (dr >= -2 && dr <= 1 && dg >= -2 && dg <= 1 && db >= -2 && db <= 1) {
-            // QOV_OP_DIFF
-            this.writeU8(0x40 | ((dr + 2) << 4) | ((dg + 2) << 2) | (db + 2));
-          } else if (dg >= -32 && dg <= 31) {
-            const dr_dg = dr - dg;
-            const db_dg = db - dg;
-            if (dr_dg >= -8 && dr_dg <= 7 && db_dg >= -8 && db_dg <= 7) {
-              // QOV_OP_LUMA
-              this.writeU8(0x80 | (dg + 32));
-              this.writeU8(((dr_dg + 8) << 4) | (db_dg + 8));
+          if (da === 0) {
+            if (dr >= -2 && dr <= 1 && dg >= -2 && dg <= 1 && db >= -2 && db <= 1) {
+              // QOV_OP_DIFF
+              this.writeU8(0x40 | ((dr + 2) << 4) | ((dg + 2) << 2) | (db + 2));
+            } else if (dg >= -32 && dg <= 31) {
+              const dr_dg = dr - dg;
+              const db_dg = db - dg;
+              if (dr_dg >= -8 && dr_dg <= 7 && db_dg >= -8 && db_dg <= 7) {
+                // QOV_OP_LUMA
+                this.writeU8(0x80 | (dg + 32));
+                this.writeU8(((dr_dg + 8) << 4) | (db_dg + 8));
+              } else {
+                // QOV_OP_RGB
+                this.writeU8(0xfe);
+                this.writeU8(c.r);
+                this.writeU8(c.g);
+                this.writeU8(c.b);
+              }
             } else {
               // QOV_OP_RGB
               this.writeU8(0xfe);
@@ -571,35 +675,46 @@ export class QovEncoder {
               this.writeU8(c.b);
             }
           } else {
-            // QOV_OP_RGB
-            this.writeU8(0xfe);
+            // QOV_OP_RGBA
+            this.writeU8(0xff);
             this.writeU8(c.r);
             this.writeU8(c.g);
             this.writeU8(c.b);
+            this.writeU8(c.a);
           }
-        } else {
-          // QOV_OP_RGBA
-          this.writeU8(0xff);
-          this.writeU8(c.r);
-          this.writeU8(c.g);
-          this.writeU8(c.b);
-          this.writeU8(c.a);
         }
+
+        this.rgbIndex[idx] = c;
+        this.prevPixel = c;
       }
 
-      this.rgbIndex[idx] = c;
-      this.prevPixel = c;
+      // End marker
+      this.writeEndMarker();
+    };
+
+    if (this.compressionEnabled) {
+      // Compression mode: encode to temp buffer, then compress
+      this.startFrameData();
+      encodeRgbKeyframeData();
+      this.finishFrameData(QOV_CHUNK_KEYFRAME, 0x00, timestamp);
+    } else {
+      // No compression: write directly
+      const headerPos = this.buffer.getSize();
+      this.writeU8(QOV_CHUNK_KEYFRAME);
+      this.writeU8(0x00); // flags (RGB mode)
+      this.writeU32(0);   // size placeholder
+      this.writeU32(timestamp);
+
+      const dataStart = this.buffer.getSize();
+      encodeRgbKeyframeData();
+
+      // Update chunk size
+      const chunkSize = this.buffer.getSize() - dataStart;
+      this.buffer.setByte(headerPos + 2, (chunkSize >> 24) & 0xff);
+      this.buffer.setByte(headerPos + 3, (chunkSize >> 16) & 0xff);
+      this.buffer.setByte(headerPos + 4, (chunkSize >> 8) & 0xff);
+      this.buffer.setByte(headerPos + 5, chunkSize & 0xff);
     }
-
-    // End marker
-    this.writeEndMarker();
-
-    // Update chunk size
-    const chunkSize = this.buffer.getSize() - dataStart;
-    this.buffer.setByte(headerPos + 2, (chunkSize >> 24) & 0xff);
-    this.buffer.setByte(headerPos + 3, (chunkSize >> 16) & 0xff);
-    this.buffer.setByte(headerPos + 4, (chunkSize >> 8) & 0xff);
-    this.buffer.setByte(headerPos + 5, chunkSize & 0xff);
 
     // Store frame for P-frame reference
     this.prevFrame = new Uint8ClampedArray(pixels);
@@ -619,104 +734,117 @@ export class QovEncoder {
     // RGB mode P-frame encoding
     this.frameCount++;
     const pixelCount = this.header.width * this.header.height;
+    const prevFrameRef = this.prevFrame;
 
-    // Chunk header placeholder
-    const headerPos = this.buffer.getSize();
-    this.writeU8(QOV_CHUNK_PFRAME); // type
-    this.writeU8(0x00);             // flags (no motion)
-    this.writeU32(0);               // size placeholder
-    this.writeU32(timestamp);
+    // Encode frame data
+    const encodeRgbPFrameData = () => {
+      let skip = 0;
 
-    const dataStart = this.buffer.getSize();
-    let skip = 0;
+      for (let px = 0; px < pixelCount; px++) {
+        const offset = px * 4;
+        const c: QovRGBA = {
+          r: pixels[offset],
+          g: pixels[offset + 1],
+          b: pixels[offset + 2],
+          a: pixels[offset + 3],
+        };
+        const ref: QovRGBA = {
+          r: prevFrameRef[offset],
+          g: prevFrameRef[offset + 1],
+          b: prevFrameRef[offset + 2],
+          a: prevFrameRef[offset + 3],
+        };
 
-    for (let px = 0; px < pixelCount; px++) {
-      const offset = px * 4;
-      const c: QovRGBA = {
-        r: pixels[offset],
-        g: pixels[offset + 1],
-        b: pixels[offset + 2],
-        a: pixels[offset + 3],
-      };
-      const ref: QovRGBA = {
-        r: this.prevFrame[offset],
-        g: this.prevFrame[offset + 1],
-        b: this.prevFrame[offset + 2],
-        a: this.prevFrame[offset + 3],
-      };
+        // Check if pixel unchanged from reference
+        if (c.r === ref.r && c.g === ref.g && c.b === ref.b && c.a === ref.a) {
+          skip++;
+          if (skip === 62 || px === pixelCount - 1) {
+            this.writeU8(0xc0 | (skip - 1)); // QOV_OP_SKIP
+            skip = 0;
+          }
+          continue;
+        }
 
-      // Check if pixel unchanged from reference
-      if (c.r === ref.r && c.g === ref.g && c.b === ref.b && c.a === ref.a) {
-        skip++;
-        if (skip === 62 || px === pixelCount - 1) {
-          this.writeU8(0xc0 | (skip - 1)); // QOV_OP_SKIP
+        // Flush skip
+        if (skip > 0) {
+          if (skip <= 62) {
+            this.writeU8(0xc0 | (skip - 1));
+          } else {
+            this.writeU8(0x00); // QOV_OP_SKIP_LONG
+            this.writeU16(skip);
+          }
           skip = 0;
         }
-        continue;
-      }
 
-      // Flush skip
-      if (skip > 0) {
-        if (skip <= 62) {
-          this.writeU8(0xc0 | (skip - 1));
-        } else {
-          this.writeU8(0x00); // QOV_OP_SKIP_LONG
-          this.writeU16(skip);
-        }
-        skip = 0;
-      }
+        // Try temporal diff
+        const dr = c.r - ref.r;
+        const dg = c.g - ref.g;
+        const db = c.b - ref.b;
+        const da = c.a - ref.a;
 
-      // Try temporal diff
-      const dr = c.r - ref.r;
-      const dg = c.g - ref.g;
-      const db = c.b - ref.b;
-      const da = c.a - ref.a;
-
-      if (da === 0 && dr >= -2 && dr <= 1 && dg >= -2 && dg <= 1 && db >= -2 && db <= 1) {
-        // QOV_OP_TDIFF
-        this.writeU8(0x40 | ((dr + 2) << 4) | ((dg + 2) << 2) | (db + 2));
-      } else if (da === 0 && dg >= -32 && dg <= 31) {
-        const dr_dg = dr - dg;
-        const db_dg = db - dg;
-        if (dr_dg >= -8 && dr_dg <= 7 && db_dg >= -8 && db_dg <= 7) {
-          // QOV_OP_TLUMA
-          this.writeU8(0x80 | (dg + 32));
-          this.writeU8(((dr_dg + 8) << 4) | (db_dg + 8));
-        } else {
+        if (da === 0 && dr >= -2 && dr <= 1 && dg >= -2 && dg <= 1 && db >= -2 && db <= 1) {
+          // QOV_OP_TDIFF
+          this.writeU8(0x40 | ((dr + 2) << 4) | ((dg + 2) << 2) | (db + 2));
+        } else if (da === 0 && dg >= -32 && dg <= 31) {
+          const dr_dg = dr - dg;
+          const db_dg = db - dg;
+          if (dr_dg >= -8 && dr_dg <= 7 && db_dg >= -8 && db_dg <= 7) {
+            // QOV_OP_TLUMA
+            this.writeU8(0x80 | (dg + 32));
+            this.writeU8(((dr_dg + 8) << 4) | (db_dg + 8));
+          } else {
+            // QOV_OP_RGB
+            this.writeU8(0xfe);
+            this.writeU8(c.r);
+            this.writeU8(c.g);
+            this.writeU8(c.b);
+          }
+        } else if (da === 0) {
           // QOV_OP_RGB
           this.writeU8(0xfe);
           this.writeU8(c.r);
           this.writeU8(c.g);
           this.writeU8(c.b);
+        } else {
+          // QOV_OP_RGBA
+          this.writeU8(0xff);
+          this.writeU8(c.r);
+          this.writeU8(c.g);
+          this.writeU8(c.b);
+          this.writeU8(c.a);
         }
-      } else if (da === 0) {
-        // QOV_OP_RGB
-        this.writeU8(0xfe);
-        this.writeU8(c.r);
-        this.writeU8(c.g);
-        this.writeU8(c.b);
-      } else {
-        // QOV_OP_RGBA
-        this.writeU8(0xff);
-        this.writeU8(c.r);
-        this.writeU8(c.g);
-        this.writeU8(c.b);
-        this.writeU8(c.a);
+
+        const idx = this.colorHash(c);
+        this.rgbIndex[idx] = c;
       }
 
-      const idx = this.colorHash(c);
-      this.rgbIndex[idx] = c;
+      // End marker
+      this.writeEndMarker();
+    };
+
+    if (this.compressionEnabled) {
+      // Compression mode: encode to temp buffer, then compress
+      this.startFrameData();
+      encodeRgbPFrameData();
+      this.finishFrameData(QOV_CHUNK_PFRAME, 0x00, timestamp);
+    } else {
+      // No compression: write directly
+      const headerPos = this.buffer.getSize();
+      this.writeU8(QOV_CHUNK_PFRAME);
+      this.writeU8(0x00); // flags (no motion)
+      this.writeU32(0);   // size placeholder
+      this.writeU32(timestamp);
+
+      const dataStart = this.buffer.getSize();
+      encodeRgbPFrameData();
+
+      // Update chunk size
+      const chunkSize = this.buffer.getSize() - dataStart;
+      this.buffer.setByte(headerPos + 2, (chunkSize >> 24) & 0xff);
+      this.buffer.setByte(headerPos + 3, (chunkSize >> 16) & 0xff);
+      this.buffer.setByte(headerPos + 4, (chunkSize >> 8) & 0xff);
+      this.buffer.setByte(headerPos + 5, chunkSize & 0xff);
     }
-
-    // End marker
-    this.writeEndMarker();
-
-    // Update chunk size
-    const chunkSize = this.buffer.getSize() - dataStart;
-    this.buffer.setByte(headerPos + 2, (chunkSize >> 24) & 0xff);
-    this.buffer.setByte(headerPos + 3, (chunkSize >> 16) & 0xff);
-    this.buffer.setByte(headerPos + 4, (chunkSize >> 8) & 0xff);
-    this.buffer.setByte(headerPos + 5, chunkSize & 0xff);
 
     // Store frame for next P-frame reference
     this.prevFrame = new Uint8ClampedArray(pixels);

@@ -1,9 +1,14 @@
-// QOV Player - Playback and statistics display
+// QOV Player - Streaming playback and statistics display
 
-import { QovDecoder } from './qov-decoder';
+import {
+  QovStreamingDecoder,
+  FileDataSource,
+  UrlDataSource,
+} from './qov-streaming-decoder';
 import {
   QovFrame,
   QovFileStats,
+  QovHeader,
   QOV_FLAG_HAS_ALPHA,
   QOV_FLAG_HAS_MOTION,
   QOV_FLAG_HAS_INDEX,
@@ -19,6 +24,8 @@ import {
 const playerCanvas = document.getElementById('playerCanvas') as HTMLCanvasElement;
 const dropZone = document.getElementById('dropZone') as HTMLDivElement;
 const fileInput = document.getElementById('fileInput') as HTMLInputElement;
+const urlInput = document.getElementById('urlInput') as HTMLInputElement;
+const loadUrlBtn = document.getElementById('loadUrlBtn') as HTMLButtonElement;
 const playBtn = document.getElementById('playBtn') as HTMLButtonElement;
 const prevFrameBtn = document.getElementById('prevFrameBtn') as HTMLButtonElement;
 const nextFrameBtn = document.getElementById('nextFrameBtn') as HTMLButtonElement;
@@ -30,7 +37,10 @@ const timelineProgress = document.getElementById('timelineProgress') as HTMLDivE
 const timelineKeyframes = document.getElementById('timelineKeyframes') as HTMLDivElement;
 const timelineCursor = document.getElementById('timelineCursor') as HTMLDivElement;
 const timelineClickable = document.getElementById('timelineClickable') as HTMLDivElement;
+const timelineLoaded = document.getElementById('timelineLoaded') as HTMLDivElement;
 const chunkList = document.getElementById('chunkList') as HTMLDivElement;
+const loadingIndicator = document.getElementById('loadingIndicator') as HTMLDivElement;
+const loadingText = document.getElementById('loadingText') as HTMLSpanElement;
 
 // Info elements
 const infoMagic = document.getElementById('infoMagic') as HTMLDivElement;
@@ -48,8 +58,7 @@ const infoTimestamp = document.getElementById('infoTimestamp') as HTMLDivElement
 const infoDecodeFps = document.getElementById('infoDecodeFps') as HTMLDivElement;
 
 // State
-let decoder: QovDecoder | null = null;
-let frames: QovFrame[] = [];
+let decoder: QovStreamingDecoder | null = null;
 let fileStats: QovFileStats | null = null;
 let currentFrameIndex = 0;
 let isPlaying = false;
@@ -58,6 +67,11 @@ let animationFrameId: number | null = null;
 let lastPlaybackTime = 0;
 let decodeStartTime = 0;
 let framesDecoded = 0;
+let totalFrames = 0;
+
+// Frame cache for smooth playback
+const frameCache = new Map<number, QovFrame>();
+const MAX_CACHE_SIZE = 60; // Cache up to 60 frames
 
 const ctx = playerCanvas.getContext('2d')!;
 
@@ -103,27 +117,23 @@ function getFlagsDescription(flags: number): string {
 }
 
 // Update header info display
-function updateHeaderInfo(): void {
-  if (!fileStats) return;
-
-  const header = fileStats.header;
+function updateHeaderInfo(header: QovHeader): void {
   infoMagic.textContent = header.magic;
   infoVersion.textContent = `0x${header.version.toString(16).padStart(2, '0')}`;
   infoResolution.textContent = `${header.width} x ${header.height}`;
   infoFrameRate.textContent = `${header.frameRateNum / header.frameRateDen} fps`;
-  infoTotalFrames.textContent = header.totalFrames.toString();
-  infoDuration.textContent = formatTime(fileStats.duration);
-  infoFileSize.textContent = formatSize(fileStats.fileSize);
+  infoTotalFrames.textContent = header.totalFrames > 0 ? header.totalFrames.toString() : 'Streaming...';
+  infoDuration.textContent = fileStats ? formatTime(fileStats.duration) : '-';
+  infoFileSize.textContent = fileStats ? formatSize(fileStats.fileSize) : '-';
   infoColorspace.textContent = getColorspaceName(header.colorspace);
   infoFlags.textContent = getFlagsDescription(header.flags);
 }
 
 // Update playback info display
-function updatePlaybackInfo(): void {
-  if (frames.length === 0) return;
+function updatePlaybackInfo(frame: QovFrame | null): void {
+  if (!frame) return;
 
-  const frame = frames[currentFrameIndex];
-  infoCurrentFrame.textContent = `${currentFrameIndex + 1} / ${frames.length}`;
+  infoCurrentFrame.textContent = `${currentFrameIndex + 1} / ${totalFrames}`;
   infoFrameType.textContent = frame.isKeyframe ? 'Keyframe (I)' : 'P-Frame';
   infoTimestamp.textContent = `${(frame.timestamp / 1000).toFixed(1)} ms`;
 
@@ -137,10 +147,11 @@ function updatePlaybackInfo(): void {
 function renderTimelineKeyframes(): void {
   timelineKeyframes.innerHTML = '';
 
-  if (!fileStats || frames.length === 0) return;
+  if (!decoder || totalFrames === 0) return;
 
-  for (const kfIndex of fileStats.keyframeIndices) {
-    const percent = (kfIndex / frames.length) * 100;
+  const keyframeIndices = decoder.getKeyframeIndices();
+  for (const kfIndex of keyframeIndices) {
+    const percent = (kfIndex / totalFrames) * 100;
     const marker = document.createElement('div');
     marker.className = 'keyframe-marker';
     marker.style.left = `${percent}%`;
@@ -152,7 +163,10 @@ function renderTimelineKeyframes(): void {
 function renderChunkList(): void {
   chunkList.innerHTML = '';
 
-  if (!fileStats) return;
+  if (!fileStats) {
+    chunkList.innerHTML = '<div style="color: #64748b; font-size: 0.85rem;">Loading chunks...</div>';
+    return;
+  }
 
   // Show first 100 chunks to avoid performance issues
   const chunksToShow = fileStats.chunks.slice(0, 100);
@@ -166,8 +180,9 @@ function renderChunkList(): void {
     else if (chunk.type === QOV_CHUNK_SYNC) item.classList.add('sync');
     else if (chunk.type === QOV_CHUNK_AUDIO) item.classList.add('audio');
 
+    const compressedBadge = chunk.isCompressed ? ' <span style="color:#22c55e;font-size:0.7rem">[LZ4]</span>' : '';
     item.innerHTML = `
-      <span class="chunk-type">${chunk.typeName}</span>
+      <span class="chunk-type">${chunk.typeName}${compressedBadge}</span>
       <span class="chunk-offset">@${chunk.offset}</span>
       <span class="chunk-size">${formatSize(chunk.size)}</span>
     `;
@@ -183,41 +198,103 @@ function renderChunkList(): void {
 }
 
 // Display a frame on canvas
-function displayFrame(index: number): void {
-  if (index < 0 || index >= frames.length) return;
+async function displayFrame(index: number): Promise<void> {
+  if (!decoder || index < 0 || index >= totalFrames) return;
 
   currentFrameIndex = index;
-  const frame = frames[index];
+
+  // Check cache first
+  let frame: QovFrame | undefined = frameCache.get(index);
+
+  if (!frame) {
+    // Decode frame
+    const decoded = await decoder.decodeFrame(index);
+    if (!decoded) return;
+    frame = decoded;
+
+    // Add to cache
+    frameCache.set(index, frame);
+    framesDecoded++;
+
+    // Evict old frames if cache is too large
+    if (frameCache.size > MAX_CACHE_SIZE) {
+      // Remove frames far from current position
+      const keysToDelete: number[] = [];
+      for (const key of frameCache.keys()) {
+        if (Math.abs(key - index) > MAX_CACHE_SIZE / 2) {
+          keysToDelete.push(key);
+        }
+      }
+      for (const key of keysToDelete) {
+        frameCache.delete(key);
+      }
+    }
+  }
 
   // Create ImageData and put on canvas
-  const imageData = ctx.createImageData(
-    fileStats!.header.width,
-    fileStats!.header.height
-  );
+  const header = decoder.getHeader()!;
+  const imageData = ctx.createImageData(header.width, header.height);
   imageData.data.set(frame.pixels);
   ctx.putImageData(imageData, 0, 0);
 
   // Update UI
-  updatePlaybackInfo();
+  updatePlaybackInfo(frame);
   updateTimelinePosition();
   updateTimeDisplay();
+
+  // Pre-fetch next frames
+  prefetchFrames(index);
+}
+
+// Pre-fetch frames ahead for smooth playback
+async function prefetchFrames(currentIndex: number): Promise<void> {
+  if (!decoder) return;
+
+  const prefetchCount = 5;
+  for (let i = 1; i <= prefetchCount; i++) {
+    const idx = currentIndex + i;
+    if (idx >= totalFrames || frameCache.has(idx)) continue;
+
+    // Decode and cache in background
+    decoder.decodeFrame(idx).then(frame => {
+      if (frame) {
+        frameCache.set(idx, frame);
+      }
+    });
+  }
 }
 
 // Update timeline position
 function updateTimelinePosition(): void {
-  if (frames.length === 0) return;
+  if (totalFrames === 0) return;
 
-  const percent = (currentFrameIndex / (frames.length - 1)) * 100;
+  const percent = (currentFrameIndex / Math.max(1, totalFrames - 1)) * 100;
   timelineProgress.style.width = `${percent}%`;
   timelineCursor.style.left = `${percent}%`;
 }
 
 // Update time display
 function updateTimeDisplay(): void {
-  if (frames.length === 0 || !fileStats) return;
+  const frame = frameCache.get(currentFrameIndex);
+  const currentTime = frame?.timestamp || 0;
+  const duration = fileStats?.duration || 0;
+  timeDisplay.textContent = `${formatTime(currentTime)} / ${formatTime(duration)}`;
+}
 
-  const currentTime = frames[currentFrameIndex].timestamp;
-  timeDisplay.textContent = `${formatTime(currentTime)} / ${formatTime(fileStats.duration)}`;
+// Update loading progress
+function updateLoadingProgress(loadedBytes: number, totalBytes: number | null): void {
+  if (totalBytes && timelineLoaded) {
+    const percent = (loadedBytes / totalBytes) * 100;
+    timelineLoaded.style.width = `${percent}%`;
+  }
+
+  if (loadingText) {
+    if (totalBytes) {
+      loadingText.textContent = `Loading: ${formatSize(loadedBytes)} / ${formatSize(totalBytes)}`;
+    } else {
+      loadingText.textContent = `Loading: ${formatSize(loadedBytes)}`;
+    }
+  }
 }
 
 // Enable controls
@@ -229,74 +306,141 @@ function enableControls(): void {
   nextKeyframeBtn.disabled = false;
 }
 
-// Load QOV file
+// Show loading indicator
+function showLoading(message: string): void {
+  if (loadingIndicator) {
+    loadingIndicator.style.display = 'flex';
+    loadingText.textContent = message;
+  }
+}
+
+// Hide loading indicator
+function hideLoading(): void {
+  if (loadingIndicator) {
+    loadingIndicator.style.display = 'none';
+  }
+}
+
+// Load QOV file from File object
 async function loadFile(file: File): Promise<void> {
   console.log(`Loading QOV file: ${file.name}, size: ${file.size} bytes`);
+  showLoading('Loading file...');
 
   try {
     const buffer = await file.arrayBuffer();
     const data = new Uint8Array(buffer);
     console.log(`File loaded into buffer`);
 
-    decoder = new QovDecoder(data);
-    fileStats = decoder.getFileStats();
-    console.log(`File stats:`, fileStats.header);
-    console.log(`Chunks found: ${fileStats.chunks.length}`);
-    console.log(`Keyframes: ${fileStats.keyframeIndices.length}`);
-
-    // Set canvas size
-    playerCanvas.width = fileStats.header.width;
-    playerCanvas.height = fileStats.header.height;
-    console.log(`Canvas size: ${playerCanvas.width}x${playerCanvas.height}`);
-
-    // Decode all frames
-    frames = [];
-    decodeStartTime = performance.now();
-    framesDecoded = 0;
-
-    console.log(`Starting frame decode...`);
-    for (const frame of decoder.decodeFrames()) {
-      frames.push(frame);
-      framesDecoded++;
-      if (framesDecoded % 100 === 0) {
-        console.log(`Decoded ${framesDecoded} frames...`);
-      }
-    }
-    console.log(`Decoding complete: ${frames.length} frames`);
-
-    // Update UI
-    updateHeaderInfo();
-    renderTimelineKeyframes();
-    renderChunkList();
-    enableControls();
-    dropZone.classList.add('hidden');
-
-    // Display first frame
-    if (frames.length > 0) {
-      displayFrame(0);
-      console.log(`Displayed first frame`);
-    } else {
-      console.error(`No frames decoded!`);
-      alert(`No frames could be decoded from this file. Check console for details.`);
-    }
+    const source = new FileDataSource(data);
+    await loadFromSource(source);
   } catch (err) {
     console.error(`Error loading QOV file:`, err);
     alert(`Error loading QOV file: ${err}`);
+    hideLoading();
+  }
+}
+
+// Load QOV file from URL
+async function loadUrl(url: string): Promise<void> {
+  console.log(`Loading QOV from URL: ${url}`);
+  showLoading('Connecting...');
+
+  try {
+    const source = new UrlDataSource(url);
+    await source.init();
+    await loadFromSource(source);
+  } catch (err) {
+    console.error(`Error loading QOV from URL:`, err);
+    alert(`Error loading QOV from URL: ${err}`);
+    hideLoading();
+  }
+}
+
+// Load from any data source
+async function loadFromSource(source: FileDataSource | UrlDataSource): Promise<void> {
+  // Reset state
+  frameCache.clear();
+  currentFrameIndex = 0;
+  framesDecoded = 0;
+  decodeStartTime = performance.now();
+  totalFrames = 0;
+
+  // Create decoder
+  decoder = new QovStreamingDecoder(source);
+
+  // Setup callbacks
+  decoder.onProgress = (loaded, total) => {
+    updateLoadingProgress(loaded, total);
+  };
+
+  decoder.onHeaderReady = (header) => {
+    console.log(`Header ready:`, header);
+
+    // Set canvas size
+    playerCanvas.width = header.width;
+    playerCanvas.height = header.height;
+
+    updateHeaderInfo(header);
+    dropZone.classList.add('hidden');
+  };
+
+  decoder.onFrameReady = (frameIndex, estimatedTotal) => {
+    totalFrames = frameIndex;
+    if (loadingText) {
+      loadingText.textContent = `Indexing: ${frameIndex} frames`;
+    }
+    if (estimatedTotal > 0) {
+      infoTotalFrames.textContent = `${frameIndex} / ${estimatedTotal}`;
+    }
+  };
+
+  // Parse header
+  showLoading('Parsing header...');
+  await decoder.parseHeader();
+
+  // Build index (scans all chunks)
+  showLoading('Building index...');
+  await decoder.buildIndex();
+
+  totalFrames = decoder.getFrameCount();
+  console.log(`Index built: ${totalFrames} frames`);
+
+  // Get file stats
+  fileStats = decoder.getFileStats();
+
+  // Update UI
+  infoTotalFrames.textContent = totalFrames.toString();
+  infoDuration.textContent = fileStats ? formatTime(fileStats.duration) : '-';
+  infoFileSize.textContent = fileStats ? formatSize(fileStats.fileSize) : '-';
+
+  renderTimelineKeyframes();
+  renderChunkList();
+  enableControls();
+  hideLoading();
+
+  // Display first frame
+  if (totalFrames > 0) {
+    await displayFrame(0);
+    console.log(`Displayed first frame`);
+  } else {
+    console.error(`No frames found!`);
+    alert(`No frames could be found in this file.`);
   }
 }
 
 // Playback loop
 function playbackLoop(): void {
-  if (!isPlaying || frames.length === 0) return;
+  if (!isPlaying || !decoder || totalFrames === 0) return;
 
   const now = performance.now();
   const elapsed = now - lastPlaybackTime;
-  const frameInterval = (1000 / (fileStats!.header.frameRateNum / fileStats!.header.frameRateDen)) / playbackSpeed;
+  const header = decoder.getHeader()!;
+  const frameInterval = (1000 / (header.frameRateNum / header.frameRateDen)) / playbackSpeed;
 
   if (elapsed >= frameInterval) {
     lastPlaybackTime = now;
 
-    if (currentFrameIndex < frames.length - 1) {
+    if (currentFrameIndex < totalFrames - 1) {
       displayFrame(currentFrameIndex + 1);
     } else {
       // End of video
@@ -310,7 +454,7 @@ function playbackLoop(): void {
 
 // Start playback
 function startPlayback(): void {
-  if (frames.length === 0) return;
+  if (!decoder || totalFrames === 0) return;
 
   isPlaying = true;
   playBtn.innerHTML = '&#10074;&#10074; Pause';
@@ -330,11 +474,12 @@ function stopPlayback(): void {
 
 // Find nearest keyframe before given index
 function findPrevKeyframe(fromIndex: number): number {
-  if (!fileStats) return 0;
+  if (!decoder) return 0;
 
-  for (let i = fileStats.keyframeIndices.length - 1; i >= 0; i--) {
-    if (fileStats.keyframeIndices[i] < fromIndex) {
-      return fileStats.keyframeIndices[i];
+  const keyframeIndices = decoder.getKeyframeIndices();
+  for (let i = keyframeIndices.length - 1; i >= 0; i--) {
+    if (keyframeIndices[i] < fromIndex) {
+      return keyframeIndices[i];
     }
   }
   return 0;
@@ -342,14 +487,15 @@ function findPrevKeyframe(fromIndex: number): number {
 
 // Find nearest keyframe after given index
 function findNextKeyframe(fromIndex: number): number {
-  if (!fileStats) return frames.length - 1;
+  if (!decoder) return totalFrames - 1;
 
-  for (const kfIndex of fileStats.keyframeIndices) {
+  const keyframeIndices = decoder.getKeyframeIndices();
+  for (const kfIndex of keyframeIndices) {
     if (kfIndex > fromIndex) {
       return kfIndex;
     }
   }
-  return frames.length - 1;
+  return totalFrames - 1;
 }
 
 // Event listeners
@@ -383,13 +529,32 @@ fileInput.addEventListener('change', () => {
   }
 });
 
+// URL loading
+if (loadUrlBtn && urlInput) {
+  loadUrlBtn.addEventListener('click', () => {
+    const url = urlInput.value.trim();
+    if (url) {
+      loadUrl(url);
+    }
+  });
+
+  urlInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      const url = urlInput.value.trim();
+      if (url) {
+        loadUrl(url);
+      }
+    }
+  });
+}
+
 // Play/pause
 playBtn.addEventListener('click', () => {
   if (isPlaying) {
     stopPlayback();
   } else {
     // If at end, restart from beginning
-    if (currentFrameIndex >= frames.length - 1) {
+    if (currentFrameIndex >= totalFrames - 1) {
       displayFrame(0);
     }
     startPlayback();
@@ -406,7 +571,7 @@ prevFrameBtn.addEventListener('click', () => {
 
 nextFrameBtn.addEventListener('click', () => {
   stopPlayback();
-  if (currentFrameIndex < frames.length - 1) {
+  if (currentFrameIndex < totalFrames - 1) {
     displayFrame(currentFrameIndex + 1);
   }
 });
@@ -430,19 +595,22 @@ speedSelect.addEventListener('change', () => {
 
 // Timeline click
 timelineClickable.addEventListener('click', (e) => {
-  if (frames.length === 0) return;
+  if (totalFrames === 0) return;
 
   const rect = timelineClickable.getBoundingClientRect();
   const percent = (e.clientX - rect.left) / rect.width;
-  const frameIndex = Math.floor(percent * frames.length);
+  const frameIndex = Math.floor(percent * totalFrames);
 
   stopPlayback();
-  displayFrame(Math.max(0, Math.min(frameIndex, frames.length - 1)));
+  displayFrame(Math.max(0, Math.min(frameIndex, totalFrames - 1)));
 });
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
-  if (frames.length === 0) return;
+  if (totalFrames === 0) return;
+
+  // Ignore if typing in input
+  if (e.target instanceof HTMLInputElement) return;
 
   switch (e.key) {
     case ' ':
@@ -465,7 +633,7 @@ document.addEventListener('keydown', (e) => {
       if (e.shiftKey) {
         displayFrame(findNextKeyframe(currentFrameIndex));
       } else {
-        if (currentFrameIndex < frames.length - 1) displayFrame(currentFrameIndex + 1);
+        if (currentFrameIndex < totalFrames - 1) displayFrame(currentFrameIndex + 1);
       }
       break;
     case 'Home':
@@ -476,7 +644,14 @@ document.addEventListener('keydown', (e) => {
     case 'End':
       e.preventDefault();
       stopPlayback();
-      displayFrame(frames.length - 1);
+      displayFrame(totalFrames - 1);
       break;
   }
 });
+
+// Check for URL parameter
+const urlParams = new URLSearchParams(window.location.search);
+const sourceUrl = urlParams.get('url');
+if (sourceUrl) {
+  loadUrl(sourceUrl);
+}
