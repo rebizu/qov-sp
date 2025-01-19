@@ -1661,7 +1661,47 @@ int main() {
 3. **SIMD**: Color hash and LMS prediction are SIMD-friendly
 4. **Streaming**: Process chunks independently, no global state needed
 
-### 14.3 Recommended Settings
+### 14.3 Frame Buffer Initialization
+
+**Important:** Frame buffers must be initialized with alpha = 255 (fully opaque) for all pixels:
+
+```c
+// After allocating frame buffers
+for (size_t i = 0; i < pixel_count; i++) {
+    prev_frame[i].a = 255;
+    curr_frame[i].a = 255;
+}
+```
+
+This is critical because:
+- RGB opcodes (0xFE) do not modify alpha, they preserve the existing alpha value
+- DIFF and LUMA opcodes only modify RGB, not alpha
+- If alpha starts at 0, pixels encoded with RGB opcodes will appear transparent
+
+### 14.4 Streaming Decoder Considerations
+
+For on-demand/streaming decoders that decode frames out of order:
+
+1. **Concurrency Protection**: Prevent concurrent `decodeFrame()` calls from interleaving.
+   Use a mutex/lock since async operations can yield to the event loop:
+   ```
+   while (decoding) wait();
+   decoding = true;
+   try { decode... } finally { decoding = false; }
+   ```
+
+2. **Seeking**: To decode frame N, first find the preceding keyframe K, then decode
+   all frames from K to N sequentially to build proper reference frames.
+
+3. **State Reset**: When seeking to a new position:
+   - Reset the color index cache to zeros
+   - Reset prevPixel to {0, 0, 0, 255}
+   - Set lastDecodedFrameIndex appropriately
+
+4. **Frame Buffer Swapping**: After decoding each frame, swap prevFrame and currFrame.
+   The decoded frame is always in prevFrame after the swap.
+
+### 14.5 Recommended Settings
 
 | Use Case | Keyframe Interval | Motion | Colorspace |
 |----------|-------------------|--------|------------|
