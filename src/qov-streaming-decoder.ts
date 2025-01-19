@@ -213,6 +213,7 @@ export class QovStreamingDecoder {
   private prevFrame: Uint8ClampedArray | null = null;
   private currFrame: Uint8ClampedArray | null = null;
   private lastDecodedFrameIndex = -1;
+  private decoding = false;  // Lock to prevent concurrent decoding
 
   // YUV state
   private isYuvMode = false;
@@ -284,10 +285,16 @@ export class QovStreamingDecoder {
     this.isYuvMode = cs >= QOV_COLORSPACE_YUV420 && cs <= QOV_COLORSPACE_YUVA420;
     this.hasYuvAlpha = cs === QOV_COLORSPACE_YUVA420;
 
-    // Initialize frame buffers
+    // Initialize frame buffers with opaque black (alpha = 255)
     const pixelCount = this.header.width * this.header.height * 4;
     this.prevFrame = new Uint8ClampedArray(pixelCount);
     this.currFrame = new Uint8ClampedArray(pixelCount);
+
+    // Set alpha to 255 for all pixels (every 4th byte starting at index 3)
+    for (let i = 3; i < pixelCount; i += 4) {
+      this.prevFrame[i] = 255;
+      this.currFrame[i] = 255;
+    }
 
     // Initialize YUV planes if needed
     if (this.isYuvMode) {
@@ -424,39 +431,49 @@ export class QovStreamingDecoder {
 
   // Decode a specific frame
   async decodeFrame(frameIndex: number): Promise<QovFrame | null> {
-    if (!this.header) await this.parseHeader();
-    if (!this.indexBuilt) await this.buildIndex();
-
-    if (frameIndex < 0 || frameIndex >= this.totalFrames) {
-      return null;
+    // Wait if another decode is in progress (prevent race conditions)
+    while (this.decoding) {
+      await new Promise(resolve => setTimeout(resolve, 1));
     }
+    this.decoding = true;
 
-    // If we need to seek backward or forward past last decoded frame,
-    // we need to start from a keyframe
-    if (frameIndex <= this.lastDecodedFrameIndex - 1 ||
-        frameIndex > this.lastDecodedFrameIndex + 1) {
-      const keyframeIdx = this.findPrecedingKeyframe(frameIndex);
+    try {
+      if (!this.header) await this.parseHeader();
+      if (!this.indexBuilt) await this.buildIndex();
 
-      // Reset decoder state and decode from keyframe
-      this.resetIndex();
-      this.lastDecodedFrameIndex = keyframeIdx - 1;
-
-      // Decode from keyframe to target
-      for (let i = keyframeIdx; i <= frameIndex; i++) {
-        await this.decodeNextFrame(i);
+      if (frameIndex < 0 || frameIndex >= this.totalFrames) {
+        return null;
       }
-    } else if (frameIndex === this.lastDecodedFrameIndex + 1) {
-      // Sequential playback - decode next frame
-      await this.decodeNextFrame(frameIndex);
-    }
-    // If frameIndex === lastDecodedFrameIndex, return cached frame
 
-    return {
-      pixels: new Uint8ClampedArray(this.prevFrame!),
-      timestamp: this.getFrameTimestamp(frameIndex),
-      isKeyframe: this.keyframeIndices.includes(frameIndex),
-      frameNumber: frameIndex,
-    };
+      // If we need to seek backward or forward past last decoded frame,
+      // we need to start from a keyframe
+      if (frameIndex <= this.lastDecodedFrameIndex - 1 ||
+          frameIndex > this.lastDecodedFrameIndex + 1) {
+        const keyframeIdx = this.findPrecedingKeyframe(frameIndex);
+
+        // Reset decoder state and decode from keyframe
+        this.resetIndex();
+        this.lastDecodedFrameIndex = keyframeIdx - 1;
+
+        // Decode from keyframe to target
+        for (let i = keyframeIdx; i <= frameIndex; i++) {
+          await this.decodeNextFrame(i);
+        }
+      } else if (frameIndex === this.lastDecodedFrameIndex + 1) {
+        // Sequential playback - decode next frame
+        await this.decodeNextFrame(frameIndex);
+      }
+      // If frameIndex === lastDecodedFrameIndex, return cached frame
+
+      return {
+        pixels: new Uint8ClampedArray(this.prevFrame!),
+        timestamp: this.getFrameTimestamp(frameIndex),
+        isKeyframe: this.keyframeIndices.includes(frameIndex),
+        frameNumber: frameIndex,
+      };
+    } finally {
+      this.decoding = false;
+    }
   }
 
   private getFrameTimestamp(frameIndex: number): number {
@@ -778,9 +795,11 @@ export class QovStreamingDecoder {
       const b1 = this.readU8();
 
       if (b1 === 0x00 && isPFrame) {
+        // SKIP_LONG for P-frames only
         const skip = this.readU16();
         px += skip;
       } else if ((b1 & 0xc0) === 0xc0 && b1 < 0xfe) {
+        // RUN (keyframe) or SKIP (P-frame)
         const count = (b1 & 0x3f) + 1;
         if (isPFrame) {
           px += count; // Skip unchanged
@@ -789,7 +808,8 @@ export class QovStreamingDecoder {
             plane[px++] = prevVal;
           }
         }
-      } else if ((b1 & 0xc0) === 0x00 && b1 !== 0x00) {
+      } else if ((b1 & 0xc0) === 0x00) {
+        // INDEX - for keyframes 0x00 means INDEX[0], for P-frames 0x00 is caught above
         const idx = b1 & 0x3f;
         prevVal = yuvIndex[idx];
         plane[px++] = prevVal;

@@ -39,6 +39,7 @@ export class QovDecoder {
   private prevFrame: Uint8ClampedArray | null = null;
   private currFrame: Uint8ClampedArray | null = null;
   private use32BitChunkSize = false; // true for version 0x02+
+  private frameCount = 0; // For debug logging
 
   // YUV mode state
   private isYuvMode = false;
@@ -137,10 +138,17 @@ export class QovDecoder {
 
     console.log(`[Decoder] Colorspace: 0x${cs.toString(16)}, YUV mode: ${this.isYuvMode}, Has alpha: ${this.hasYuvAlpha}`);
 
-    // Initialize frame buffers
+    // Initialize frame buffers with opaque black (alpha = 255)
+    // This ensures any undecoded pixels are visible for debugging
     const pixelCount = this.header.width * this.header.height * 4;
     this.prevFrame = new Uint8ClampedArray(pixelCount);
     this.currFrame = new Uint8ClampedArray(pixelCount);
+
+    // Set alpha to 255 for all pixels (every 4th byte starting at index 3)
+    for (let i = 3; i < pixelCount; i += 4) {
+      this.prevFrame[i] = 255;
+      this.currFrame[i] = 255;
+    }
 
     // Initialize YUV plane buffers if needed
     if (this.isYuvMode) {
@@ -254,6 +262,11 @@ export class QovDecoder {
       px++;
     }
 
+    // Check if all pixels were decoded
+    if (px < pixelCount) {
+      console.warn(`[Decoder] Keyframe incomplete: decoded ${px}/${pixelCount} pixels, pos=${this.pos}, dataEnd=${dataEnd}`);
+    }
+
     // Skip to end of chunk (past end marker)
     this.pos = this.pos + (dataEnd - this.pos) + 8;
 
@@ -329,6 +342,11 @@ export class QovDecoder {
       this.currFrame![offset + 2] = this.prevPixel.b;
       this.currFrame![offset + 3] = this.prevPixel.a;
       px++;
+    }
+
+    // Check if all pixels were decoded
+    if (px < pixelCount) {
+      console.warn(`[Decoder] Keyframe incomplete: decoded ${px}/${pixelCount} pixels, activePos=${this.activePos}, dataEnd=${dataEnd}`);
     }
 
     // Swap frame buffers
@@ -674,6 +692,11 @@ export class QovDecoder {
     }
 
     let px = 0;
+    let indexOpcodeCount = 0; // Track unexpected INDEX opcodes
+
+    // Debug: track opcode counts and suspicious pixels
+    let skipCount = 0, skipLongCount = 0, tdiffCount = 0, tlumaCount = 0, rgbCount = 0, rgbaCount = 0;
+    let darkPixels: { px: number; r: number; g: number; b: number; opcode: string }[] = [];
 
     while (px < pixelCount && this.pos < dataEnd) {
       const b1 = this.readU8();
@@ -682,10 +705,12 @@ export class QovDecoder {
         // QOV_OP_SKIP_LONG
         const skip = this.readU16();
         px += skip;
+        skipLongCount++;
       } else if ((b1 & 0xc0) === 0xc0 && b1 < 0xfe) {
         // QOV_OP_SKIP
         const skip = (b1 & 0x3f) + 1;
         px += skip;
+        skipCount++;
       } else if ((b1 & 0xc0) === 0x40) {
         // QOV_OP_TDIFF
         const offset = px * 4;
@@ -699,7 +724,12 @@ export class QovDecoder {
           b: this.currFrame![offset + 2],
           a: this.currFrame![offset + 3],
         };
+        // Track dark pixels (potential artifacts)
+        if (c.r < 20 && c.g < 20 && c.b < 20 && darkPixels.length < 10) {
+          darkPixels.push({ px, r: c.r, g: c.g, b: c.b, opcode: 'TDIFF' });
+        }
         this.index[this.colorHash(c)] = c;
+        tdiffCount++;
         px++;
       } else if ((b1 & 0xc0) === 0x80) {
         // QOV_OP_TLUMA
@@ -719,10 +749,16 @@ export class QovDecoder {
           b: this.currFrame![offset + 2],
           a: this.currFrame![offset + 3],
         };
+        // Track dark pixels (potential artifacts)
+        if (c.r < 20 && c.g < 20 && c.b < 20 && darkPixels.length < 10) {
+          darkPixels.push({ px, r: c.r, g: c.g, b: c.b, opcode: 'TLUMA' });
+        }
         this.index[this.colorHash(c)] = c;
+        tlumaCount++;
         px++;
       } else if ((b1 & 0xc0) === 0x00) {
-        // QOV_OP_INDEX
+        // QOV_OP_INDEX - NOTE: encoder never writes this in P-frames!
+        // If we get here, something is wrong (data corruption or sync issue)
         const idx = b1 & 0x3f;
         const c = this.index[idx];
         const offset = px * 4;
@@ -730,6 +766,11 @@ export class QovDecoder {
         this.currFrame![offset + 1] = c.g;
         this.currFrame![offset + 2] = c.b;
         this.currFrame![offset + 3] = c.a;
+        // Track dark pixels from INDEX (potential artifacts)
+        if (c.r < 20 && c.g < 20 && c.b < 20 && darkPixels.length < 10) {
+          darkPixels.push({ px, r: c.r, g: c.g, b: c.b, opcode: `INDEX[${idx}]` });
+        }
+        indexOpcodeCount++;
         px++;
       } else if (b1 === 0xfe) {
         // QOV_OP_RGB
@@ -744,7 +785,12 @@ export class QovDecoder {
           b: this.currFrame![offset + 2],
           a: this.currFrame![offset + 3],
         };
+        // Track dark pixels (potential artifacts)
+        if (c.r < 20 && c.g < 20 && c.b < 20 && darkPixels.length < 10) {
+          darkPixels.push({ px, r: c.r, g: c.g, b: c.b, opcode: 'RGB' });
+        }
         this.index[this.colorHash(c)] = c;
+        rgbCount++;
         px++;
       } else if (b1 === 0xff) {
         // QOV_OP_RGBA
@@ -760,9 +806,28 @@ export class QovDecoder {
           b: this.currFrame![offset + 2],
           a: this.currFrame![offset + 3],
         };
+        // Track dark pixels (potential artifacts)
+        if (c.r < 20 && c.g < 20 && c.b < 20 && darkPixels.length < 10) {
+          darkPixels.push({ px, r: c.r, g: c.g, b: c.b, opcode: 'RGBA' });
+        }
         this.index[this.colorHash(c)] = c;
+        rgbaCount++;
         px++;
       }
+    }
+
+    // Debug: log P-frame statistics for first few frames
+    const frameNum = this.frameCount || 0;
+    if (frameNum < 5) {
+      console.log(`[Decoder] P-frame ${frameNum}: SKIP=${skipCount}, SKIP_LONG=${skipLongCount}, TDIFF=${tdiffCount}, TLUMA=${tlumaCount}, RGB=${rgbCount}, RGBA=${rgbaCount}, INDEX=${indexOpcodeCount}`);
+      if (darkPixels.length > 0) {
+        console.warn(`[Decoder] P-frame ${frameNum} dark pixels:`, darkPixels);
+      }
+    }
+
+    // Warn if unexpected INDEX opcodes were encountered in P-frame
+    if (indexOpcodeCount > 0) {
+      console.warn(`[Decoder] P-frame had ${indexOpcodeCount} unexpected INDEX opcodes (encoder bug or data corruption)`);
     }
 
     // Skip to end of chunk
@@ -773,6 +838,7 @@ export class QovDecoder {
     this.prevFrame = this.currFrame;
     this.currFrame = tmp;
 
+    this.frameCount++;
     return true;
   }
 

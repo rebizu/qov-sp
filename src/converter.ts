@@ -142,11 +142,32 @@ async function loadFile(file: File): Promise<void> {
   }
 }
 
+// Track if we've logged the alpha warning
+let alphaWarningLogged = false;
+
 // Extract frame at current video time
 function extractFrame(): Uint8ClampedArray {
   ctx.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
   const imageData = ctx.getImageData(0, 0, previewCanvas.width, previewCanvas.height);
-  return imageData.data;
+  const pixels = imageData.data;
+
+  // Ensure all pixels have alpha=255 (video frames should be fully opaque)
+  // Some browsers/codecs may leave alpha as 0 which causes encoding issues
+  let badAlphaCount = 0;
+  for (let i = 3; i < pixels.length; i += 4) {
+    if (pixels[i] !== 255) {
+      badAlphaCount++;
+      pixels[i] = 255;
+    }
+  }
+
+  // Log warning once if we found bad alpha values
+  if (badAlphaCount > 0 && !alphaWarningLogged) {
+    log(`Fixed ${badAlphaCount} pixels with alpha != 255 (video decoder issue)`, 'info');
+    alphaWarningLogged = true;
+  }
+
+  return pixels;
 }
 
 // Calculate output dimensions based on resolution setting
@@ -247,6 +268,11 @@ async function convertToQov(): Promise<void> {
   previewCanvas.width = outputWidth;
   previewCanvas.height = outputHeight;
 
+  // Fill canvas with opaque black to ensure known initial state
+  // (resizing clears to transparent which can cause issues)
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, outputWidth, outputHeight);
+
   // Estimate source fps (default to 30 if unknown)
   const sourceFps = 30;
   const targetFps = targetFpsValue || sourceFps;
@@ -256,6 +282,9 @@ async function convertToQov(): Promise<void> {
   if (maxFrames > 0) {
     estimatedFrames = Math.min(estimatedFrames, maxFrames);
   }
+
+  // Reset alpha warning flag for this conversion
+  alphaWarningLogged = false;
 
   log(`Converting to QOV...`);
   log(`Resolution: ${outputWidth}x${outputHeight}`);
