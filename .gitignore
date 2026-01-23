@@ -193,3 +193,5 @@ $RECYCLE.BIN/
 
 .claude/
 *.qov
+install.sh
+AGENTS.md
