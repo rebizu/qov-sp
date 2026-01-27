@@ -1,0 +1,36 @@
+using QovLibrary;
+
+class Program
+{
+    static int Main(string[] args)
+    {
+        string outputFilename = "test_fix.qov";
+        
+        if (args.Length > 0)
+        {
+            outputFilename = args[0];
+        }
+        
+        Console.WriteLine($"Creating test video: {outputFilename}");
+        
+        using var stream = File.Create(outputFilename);
+        var encoder = new QovEncoder(stream, 640, 480, 30, 1, QovTypes.FlagHasIndex, QovTypes.ColorspaceSrgb);
+
+        for (int i = 0; i < 300; i++)
+        {
+            var pixels = new byte[640 * 480 * 4];
+            uint timestamp = (uint)(i * 1000000 / 30);
+
+            if (i % 30 == 0)
+                encoder.EncodeKeyframe(pixels, timestamp);
+            else
+                encoder.EncodePFrame(pixels, timestamp);
+        }
+
+        encoder.Finish();
+        Console.WriteLine($"Encoded 300 frames to {outputFilename}");
+        Console.WriteLine($"File size: {stream.Length:N0} bytes");
+
+        return 0;
+    }
+}

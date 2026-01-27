@@ -1,0 +1,42 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QovLibrary", "QovLibrary\QovLibrary.csproj", "{A1B2C3D4-5678-90AB-CDEF-1234567890AB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QovLibrary.Tests", "QovLibrary.Tests\QovLibrary.Tests.csproj", "{B2C3D4E5-6789-0ABC-DEF1-234567890ABC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QovPlayer", "QovPlayer\QovPlayer.csproj", "{C3D4E5F6-7890-ABCD-EF12-34567890ABCD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QovEncoder", "QovEncoder\QovEncoder.csproj", "{D4E5F6A7-8901-BCDE-F123-4567890ABCDE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QovScreenRecorder", "QovScreenRecorder\QovScreenRecorder.csproj", "{E5F6A7B8-9012-CDEF-1234-567890ABCDEF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A1B2C3D4-5678-90AB-CDEF-1234567890AB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-5678-90AB-CDEF-1234567890AB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-5678-90AB-CDEF-1234567890AB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-5678-90AB-CDEF-1234567890AB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B2C3D4E5-6789-0ABC-DEF1-234567890ABC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2C3D4E5-6789-0ABC-DEF1-234567890ABC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2C3D4E5-6789-0ABC-DEF1-234567890ABC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2C3D4E5-6789-0ABC-DEF1-234567890ABC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C3D4E5F6-7890-ABCD-EF12-34567890ABCD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C3D4E5F6-7890-ABCD-EF12-34567890ABCD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C3D4E5F6-7890-ABCD-EF12-34567890ABCD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C3D4E5F6-7890-ABCD-EF12-34567890ABCD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D4E5F6A7-8901-BCDE-F123-4567890ABCDE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D4E5F6A7-8901-BCDE-F123-4567890ABCDE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D4E5F6A7-8901-BCDE-F123-4567890ABCDE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D4E5F6A7-8901-BCDE-F123-4567890ABCDE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E5F6A7B8-9012-CDEF-1234-567890ABCDEF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E5F6A7B8-9012-CDEF-1234-567890ABCDEF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E5F6A7B8-9012-CDEF-1234-567890ABCDEF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E5F6A7B8-9012-CDEF-1234-567890ABCDEF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
