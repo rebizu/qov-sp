@@ -494,7 +494,8 @@ export class QovEncoder {
         index[idx] = val;
       } else {
         // Check index
-        if (index[idx] === val) {
+        // Note: idx === 0 cannot be used in P-frames because 0x00 is reserved for SKIP_LONG
+        if (index[idx] === val && idx !== 0) {
           // INDEX: value already cached, just reference it
           this.writeU8(idx);
         } else {

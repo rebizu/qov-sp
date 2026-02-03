@@ -443,6 +443,7 @@ export class QovDecoder {
         px += skip;
       } else if ((b1 & 0xc0) === 0x00) {
         // INDEX: lookup from cache
+        // Note: b1 === 0x00 is handled above as SKIP_LONG, so idx here is 1-63
         const idx = b1 & 0x3f;
         if (index[idx] === -1) {
           console.error(`[Decoder] YUV P-frame: INDEX(${idx}) read from uninitialized slot! px=${px}, size=${size}`);

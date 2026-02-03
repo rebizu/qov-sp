@@ -811,7 +811,8 @@ export class QovStreamingDecoder {
           }
         }
       } else if ((b1 & 0xc0) === 0x00) {
-        // INDEX - for keyframes 0x00 means INDEX[0], for P-frames 0x00 is caught above
+        // INDEX - for keyframes 0x00 means INDEX[0], for P-frames 0x00 is SKIP_LONG (caught above)
+        // The encoder avoids emitting INDEX[0] in P-frames to prevent this conflict
         const idx = b1 & 0x3f;
         prevVal = yuvIndex[idx];
         if (prevVal === -1) {
