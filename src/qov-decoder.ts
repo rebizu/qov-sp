@@ -114,12 +114,14 @@ export class QovDecoder {
     this.pos = 4;
 
     const version = this.readU8();
-    if (version !== 0x01 && version !== 0x02) {
+    if (version !== 0x01 && version !== 0x02 && version !== 0x03) {
       throw new Error(`Unsupported QOV version: ${version}`);
     }
-    // Version 0x02 uses 32-bit chunk sizes for large frames
+    // Version 0x02+ uses 32-bit chunk sizes for large frames
+    // Version 0x03 is lossy mode with extended header
     this.use32BitChunkSize = version >= 0x02;
-    console.log(`[Decoder] Version 0x${version.toString(16)}, 32-bit chunks: ${this.use32BitChunkSize}`);
+    const isLossyMode = version >= 0x03;
+    console.log(`[Decoder] Version 0x${version.toString(16)}, 32-bit chunks: ${this.use32BitChunkSize}, lossy: ${isLossyMode}`);
 
     this.header = {
       magic,
@@ -135,8 +137,21 @@ export class QovDecoder {
       colorspace: this.readU8(),
     };
 
-    // Skip reserved byte
-    this.pos++;
+    // For version 0x03 (lossy), skip extended header bytes (quality + params + reserved)
+    // Bytes 23-31: quality(1) + yQuant(1) + uvQuant(1) + temporalThresh(1) + dctQp(1) + reserved(4)
+    if (version >= 0x03) {
+      // Read lossy parameters (for info, decoder doesn't need them)
+      const quality = this.readU8();        // byte 23
+      const yQuant = this.readU8();         // byte 24
+      const uvQuant = this.readU8();        // byte 25
+      const temporalThresh = this.readU8(); // byte 26
+      const dctQp = this.readU8();          // byte 27
+      this.pos += 4;                        // skip reserved bytes 28-31
+      console.log(`[Decoder] Lossy params: quality=${quality}, yQuant=${yQuant}, uvQuant=${uvQuant}, temporalThresh=${temporalThresh}, dctQp=${dctQp}`);
+    } else {
+      // Skip reserved byte for v0x01/v0x02
+      this.pos++;
+    }
 
     // Detect YUV mode from colorspace
     const cs = this.header.colorspace;
@@ -979,7 +994,8 @@ export class QovDecoder {
       this.decodeHeader();
     }
 
-    this.pos = 24; // After header
+    // Position after header depends on version (24 bytes for v1/v2, 32 bytes for v3+)
+    this.pos = this.header.version >= 0x03 ? 32 : 24;
     let frameNumber = 0;
 
     console.log(`[Decoder] Starting frame decode at pos ${this.pos}, file length: ${this.data.length}`);
@@ -1127,7 +1143,8 @@ export class QovDecoder {
     let frameIndex = 0;
     let lastTimestamp = 0;
 
-    this.pos = 24; // After header
+    // Position after header depends on version (24 bytes for v1/v2, 32 bytes for v3+)
+    this.pos = this.header.version >= 0x03 ? 32 : 24;
 
     while (this.pos < this.data.length) {
       const offset = this.pos;

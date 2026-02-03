@@ -253,7 +253,9 @@ export class QovStreamingDecoder {
   async parseHeader(): Promise<QovHeader> {
     if (this.header) return this.header;
 
-    const headerData = await this.source.read(0, 24);
+    // Read extended header (32 bytes) to support lossy mode (v0x03)
+    // For v0x01/v0x02, extra bytes are ignored
+    const headerData = await this.source.read(0, 32);
 
     // Check magic
     const magic = String.fromCharCode(headerData[0], headerData[1], headerData[2], headerData[3]);
@@ -262,10 +264,12 @@ export class QovStreamingDecoder {
     }
 
     const version = headerData[4];
-    if (version !== 0x01 && version !== 0x02) {
+    if (version !== 0x01 && version !== 0x02 && version !== 0x03) {
       throw new Error(`Unsupported QOV version: ${version}`);
     }
+    // Version 0x02+ uses 32-bit chunk sizes, version 0x03 is lossy mode
     this.use32BitChunkSize = version >= 0x02;
+    const isLossyMode = version >= 0x03;
 
     this.header = {
       magic,
@@ -280,6 +284,15 @@ export class QovStreamingDecoder {
       audioRate: (headerData[19] << 16) | (headerData[20] << 8) | headerData[21],
       colorspace: headerData[22],
     };
+
+    // Log lossy parameters if version 0x03
+    if (isLossyMode) {
+      const quality = headerData[23];
+      const yQuant = headerData[24];
+      const uvQuant = headerData[25];
+      const temporalThresh = headerData[26];
+      console.log(`[StreamingDecoder] Lossy mode: quality=${quality}, yQuant=${yQuant}, uvQuant=${uvQuant}, temporalThresh=${temporalThresh}`);
+    }
 
     // Detect YUV mode
     const cs = this.header.colorspace;
@@ -346,7 +359,8 @@ export class QovStreamingDecoder {
     this.keyframeIndices = [];
     this.totalFrames = 0;
 
-    let offset = 24; // After header
+    // Offset after header depends on version (24 bytes for v1/v2, 32 bytes for v3+)
+    let offset = this.header && this.header.version >= 0x03 ? 32 : 24;
     const fileSize = this.source.getSize();
 
     while (fileSize === null || offset < fileSize) {
