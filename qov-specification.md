@@ -271,6 +271,9 @@ Byte Range   Name              Structure
                                Temporal luma diff from reference
 ```
 
+**Note:** In P-frames, opcode `0x00` is reserved for QOV_OP_SKIP_LONG. If an encoder
+uses INDEX opcodes in P-frames, INDEX[0] cannot be used (see Section 3.4 for details).
+
 ### 3.4 YUV Temporal Opcodes (P-frames)
 
 For YUV mode P-frames, each plane uses these opcodes:
@@ -284,8 +287,8 @@ Byte Range   Name              Structure
 0x00         QOV_YUV_SKIP_LONG | 00000000 | count_hi | count_lo |
                                Skip 1-65535 values (2-byte count)
 
-0x00-0x3F    QOV_YUV_INDEX     | 00 | index (6 bits) |
-                               Index into value cache (only if not 0x00)
+0x01-0x3F    QOV_YUV_INDEX     | 00 | index (6 bits) |
+                               Index into value cache (INDEX 1-63 only)
 
 0x40-0x4F    QOV_YUV_TDIFF     | 0100 | d (4 bits) |
                                Temporal diff from reference value
@@ -299,8 +302,22 @@ Byte Range   Name              Structure
                                Literal 8-bit value
 ```
 
-**Important:** For P-frames, the encoder MUST update the index cache after
-encoding TDIFF and TLUMA opcodes to keep encoder/decoder caches in sync.
+**CRITICAL - INDEX[0] Restriction in P-frames:**
+
+In YUV P-frames, the encoder MUST NOT emit INDEX[0] (opcode `0x00`) because it
+conflicts with QOV_YUV_SKIP_LONG which also uses `0x00` as its opcode byte.
+
+- Opcode `0x00` in P-frames is **always** interpreted as SKIP_LONG (reads 2 more bytes)
+- INDEX opcodes in P-frames are limited to indices 1-63 (opcodes `0x01`-`0x3F`)
+- When the encoder would emit INDEX[0], it MUST fall back to QOV_YUV_FULL instead
+
+This restriction does NOT apply to keyframes, where `0x00` means INDEX[0].
+
+**Index Cache Updates:**
+
+For P-frames, the encoder MUST update the index cache after encoding TDIFF,
+TLUMA, and FULL opcodes to keep encoder/decoder caches in sync. The INDEX
+opcode retrieves a cached value but does not update the cache.
 
 ---
 
