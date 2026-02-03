@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>QOV Recorder</title>
   <style>
     * {
@@ -238,6 +241,16 @@
         </select>
       </div>
 
+      <div class="setting">
+        <label for="colorspaceSelect">Colorspace</label>
+        <select id="colorspaceSelect">
+          <option value="0x00">sRGB (Best quality, larger files)</option>
+          <option value="0x10" selected>YUV420 (Smaller files, best compression)</option>
+          <option value="0x11">YUV422 (Balanced)</option>
+          <option value="0x12">YUV444 (High quality YUV)</option>
+        </select>
+      </div>
+
       <h2>Recording Stats</h2>
       <div class="stats">
         <div class="stat-row">
@@ -264,6 +277,6 @@
     </div>
   </div>
 
-  <script type="module" src="/src/recorder.ts"></script>
+  <script type="module" src="/src/recorder.ts?t=1687833600000"></script>
 </body>
 </html>

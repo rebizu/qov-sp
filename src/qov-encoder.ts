@@ -336,6 +336,10 @@ export class QovEncoder {
 
     if (colorspace === QOV_COLORSPACE_YUV420 || colorspace === QOV_COLORSPACE_YUVA420) {
       planes = rgbaToYuv420Planes(pixels, width, height, this.hasAlpha);
+      console.log(`[Encoder] YUV420 keyframe ${frameNumber}: width=${width}, height=${height}`);
+      console.log(`[Encoder] Plane sizes: Y=${planes.yPlane.length}, U=${planes.uPlane.length}, V=${planes.vPlane.length}`);
+      console.log(`[Encoder] U plane first 10:`, Array.from(planes.uPlane.slice(0, 10)));
+      console.log(`[Encoder] V plane first 10:`, Array.from(planes.vPlane.slice(0, 10)));
     } else if (colorspace === QOV_COLORSPACE_YUV422) {
       planes = rgbaToYuv422Planes(pixels, width, height, this.hasAlpha);
     } else {
@@ -396,7 +400,7 @@ export class QovEncoder {
     const size = plane.length;
     let prevVal = 0;
     let run = 0;
-    const index: number[] = new Array(64).fill(0);
+    const index: number[] = new Array(64).fill(-1); // Initialize to -1 to avoid false matches with value 0
 
     for (let i = 0; i < size; i++) {
       const val = plane[i];
@@ -420,6 +424,9 @@ export class QovEncoder {
       // Check index
       const idx = (val * 3) % 64;
       if (index[idx] === val && i > 0) {
+        if (index[idx] === -1) {
+          console.error(`[Encoder] YUV keyframe: Emitting INDEX(${idx}) for uninitialized slot! val=${val}, i=${i}`);
+        }
         this.writeU8(idx); // INDEX
       } else {
         // Try diff
@@ -446,7 +453,7 @@ export class QovEncoder {
   private encodeYuvPlanePFrame(plane: Uint8Array, prevPlane: Uint8Array): void {
     const size = plane.length;
     let skip = 0;
-    const index: number[] = new Array(64).fill(0);
+    const index: number[] = new Array(64).fill(-1); // Initialize to -1 to avoid false matches with value 0
 
     for (let i = 0; i < size; i++) {
       const val = plane[i];
@@ -488,13 +495,14 @@ export class QovEncoder {
       } else {
         // Check index
         if (index[idx] === val) {
+          // INDEX: value already cached, just reference it
           this.writeU8(idx);
         } else {
-          // FULL
+          // FULL: emit literal value and cache it
           this.writeU8(0xfe);
           this.writeU8(val);
+          index[idx] = val;
         }
-        index[idx] = val;
       }
     }
 

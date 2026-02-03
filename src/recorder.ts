@@ -12,6 +12,7 @@ const cameraSelect = document.getElementById('cameraSelect') as HTMLSelectElemen
 const resolutionSelect = document.getElementById('resolutionSelect') as HTMLSelectElement;
 const fpsSelect = document.getElementById('fpsSelect') as HTMLSelectElement;
 const keyframeIntervalSelect = document.getElementById('keyframeInterval') as HTMLSelectElement;
+const colorspaceSelect = document.getElementById('colorspaceSelect') as HTMLSelectElement;
 const recordingIndicator = document.getElementById('recordingIndicator') as HTMLDivElement;
 
 // Stats elements
@@ -262,11 +263,12 @@ function startRecording(): void {
   const width = captureCanvas.width;
   const height = captureCanvas.height;
   const frameRate = parseInt(fpsSelect.value);
+  const colorspace = parseInt(colorspaceSelect.value);
 
-  log(`Starting recording: ${width}x${height} @ ${frameRate}fps`);
+  log(`Starting recording: ${width}x${height} @ ${frameRate}fps, colorspace: 0x${colorspace.toString(16)}`);
 
-  // Initialize encoder
-  encoder = new QovEncoder(width, height, frameRate, 1, QOV_FLAG_HAS_INDEX);
+  // Initialize encoder with selected colorspace
+  encoder = new QovEncoder(width, height, frameRate, 1, QOV_FLAG_HAS_INDEX, colorspace, true);
   encoder.writeHeader();
 
   // Reset state
@@ -285,6 +287,7 @@ function startRecording(): void {
   resolutionSelect.disabled = true;
   fpsSelect.disabled = true;
   keyframeIntervalSelect.disabled = true;
+  colorspaceSelect.disabled = true;
 
   // Start capture loop
   captureFrame();
@@ -315,6 +318,7 @@ function stopRecording(): void {
   resolutionSelect.disabled = false;
   fpsSelect.disabled = false;
   keyframeIntervalSelect.disabled = false;
+  colorspaceSelect.disabled = false;
 }
 
 // Download QOV file

@@ -1,0 +1,33 @@
+ENCODER hash (line 485):
+const idx = (val * 3) % 64;
+
+DECODER hash (line 455):
+const idx = (plane[px] * 3) % 64;
+
+KEYFRAME DECODER hash (line 392, 399):
+const idx = (prevVal * 3) % 64;
+
+They all use the same formula!
+
+But wait... in the DECODER, line 455 uses plane[px], which is the VALUE AFTER applying temporal diff!
+In the ENCODER, line 485 uses val, which is the NEW value.
+
+These should match... let me trace through an example:
+
+ENCODER:
+- val=150 (new pixel value)
+- refVal=100 (previous frame value)
+- d=50 (too large for TDIFF/TLUMA)
+- idx=(150*3)%64=34
+- if index[34]==150: emit INDEX(34)
+- else: emit FULL(150), set index[34]=150
+
+DECODER:
+- Read opcode
+- If FULL:
+   - Read val=150
+   - plane[px]=150
+   - idx=(plane[px]*3)%64=(150*3)%64=34
+   - index[34]=150
+   
+This should work! So why uninitialized errors?

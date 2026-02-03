@@ -544,7 +544,8 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
         int size = plane.Length;
         byte prevVal = 0;
         int[] index = new int[64];
-        Array.Fill(index, 0);
+        // Initialize to -1 to prevent false matches with value 0 (critical for YUV)
+        Array.Fill(index, -1);
         int px = 0;
         int run = 0;
 
@@ -611,7 +612,8 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
     {
         int size = plane.Length;
         int[] index = new int[64];
-        Array.Fill(index, 0);
+        // Initialize to -1 to prevent false matches with value 0 (critical for YUV)
+        Array.Fill(index, -1);
         int px = 0;
         int skip = 0;
 

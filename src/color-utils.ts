@@ -40,11 +40,11 @@ const KB = 0.114;
  */
 export function rgbToYuv(r: number, g: number, b: number): YUV {
   // Y = 0.299*R + 0.587*G + 0.114*B
-  // U = 0.492*(B-Y) + 128 = -0.147*R - 0.289*G + 0.436*B + 128
-  // V = 0.877*(R-Y) + 128 = 0.615*R - 0.515*G - 0.100*B + 128
+  // U = 0.5*(B-Y)/(1-Kb) + 128 = -0.169*R - 0.331*G + 0.500*B + 128
+  // V = 0.5*(R-Y)/(1-Kr) + 128 = 0.500*R - 0.419*G - 0.081*B + 128
   const y = Math.round(KR * r + KG * g + KB * b);
-  const u = Math.round(-0.147 * r - 0.289 * g + 0.436 * b + 128);
-  const v = Math.round(0.615 * r - 0.515 * g - 0.100 * b + 128);
+  const u = Math.round(-0.169 * r - 0.331 * g + 0.500 * b + 128);
+  const v = Math.round(0.500 * r - 0.419 * g - 0.081 * b + 128);
 
   return {
     y: Math.max(0, Math.min(255, y)),
@@ -57,12 +57,12 @@ export function rgbToYuv(r: number, g: number, b: number): YUV {
  * Convert YUV to RGB (BT.601)
  */
 export function yuvToRgb(y: number, u: number, v: number): RGB {
-  // R = Y + 1.140*(V-128)
-  // G = Y - 0.395*(U-128) - 0.581*(V-128)
-  // B = Y + 2.032*(U-128)
-  const r = Math.round(y + 1.140 * (v - 128));
-  const g = Math.round(y - 0.395 * (u - 128) - 0.581 * (v - 128));
-  const b = Math.round(y + 2.032 * (u - 128));
+  // R = Y + 1.402*(V-128)
+  // G = Y - 0.344*(U-128) - 0.714*(V-128)
+  // B = Y + 1.772*(U-128)
+  const r = Math.round(y + 1.402 * (v - 128));
+  const g = Math.round(y - 0.344 * (u - 128) - 0.714 * (v - 128));
+  const b = Math.round(y + 1.772 * (u - 128));
 
   return {
     r: Math.max(0, Math.min(255, r)),
@@ -109,14 +109,14 @@ export function rgbaToYuv420Planes(
     }
   }
 
-  // Second pass: compute U and V with 2x2 subsampling (average of 4 pixels)
+  // Second pass: compute U and V with 2x2 subsampling (luminance-weighted average)
   for (let py = 0; py < uvHeight; py++) {
     for (let px = 0; px < uvWidth; px++) {
       let uSum = 0;
       let vSum = 0;
-      let count = 0;
+      let weightSum = 0;
 
-      // Sample 2x2 block
+      // Sample 2x2 block with luminance weighting
       for (let dy = 0; dy < 2; dy++) {
         for (let dx = 0; dx < 2; dx++) {
           const srcX = px * 2 + dx;
@@ -129,16 +129,26 @@ export function rgbaToYuv420Planes(
             const b = pixels[idx + 2];
 
             const yuv = rgbToYuv(r, g, b);
-            uSum += yuv.u;
-            vSum += yuv.v;
-            count++;
+
+            // Weight by luminance: darker pixels contribute less to chroma
+            // Use (Y + 16) to avoid zero weight and give some influence to dark pixels
+            const weight = yuv.y + 16;
+
+            uSum += yuv.u * weight;
+            vSum += yuv.v * weight;
+            weightSum += weight;
           }
         }
       }
 
       const uvIdx = py * uvWidth + px;
-      uPlane[uvIdx] = Math.round(uSum / count);
-      vPlane[uvIdx] = Math.round(vSum / count);
+      if (weightSum > 0) {
+        uPlane[uvIdx] = Math.round(uSum / weightSum);
+        vPlane[uvIdx] = Math.round(vSum / weightSum);
+      } else {
+        uPlane[uvIdx] = 128;
+        vPlane[uvIdx] = 128;
+      }
     }
   }
 
@@ -214,11 +224,11 @@ export function rgbaToYuv422Planes(
       }
     }
 
-    // Subsample U/V horizontally (average of 2 pixels)
+    // Subsample U/V horizontally (luminance-weighted average of 2 pixels)
     for (let px = 0; px < uvWidth; px++) {
       let uSum = 0;
       let vSum = 0;
-      let count = 0;
+      let weightSum = 0;
 
       for (let dx = 0; dx < 2; dx++) {
         const srcX = px * 2 + dx;
@@ -229,15 +239,24 @@ export function rgbaToYuv422Planes(
           const b = pixels[idx + 2];
 
           const yuv = rgbToYuv(r, g, b);
-          uSum += yuv.u;
-          vSum += yuv.v;
-          count++;
+
+          // Weight by luminance: darker pixels contribute less to chroma
+          const weight = yuv.y + 16;
+
+          uSum += yuv.u * weight;
+          vSum += yuv.v * weight;
+          weightSum += weight;
         }
       }
 
       const uvIdx = py * uvWidth + px;
-      uPlane[uvIdx] = Math.round(uSum / count);
-      vPlane[uvIdx] = Math.round(vSum / count);
+      if (weightSum > 0) {
+        uPlane[uvIdx] = Math.round(uSum / weightSum);
+        vPlane[uvIdx] = Math.round(vSum / weightSum);
+      } else {
+        uPlane[uvIdx] = 128;
+        vPlane[uvIdx] = 128;
+      }
     }
   }
 

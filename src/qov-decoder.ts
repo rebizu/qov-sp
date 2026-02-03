@@ -19,6 +19,7 @@ import {
   QOV_COLORSPACE_YUV422,
   QOV_COLORSPACE_YUVA420,
   QOV_CHUNK_FLAG_COMPRESSED,
+  QOV_FLAG_HAS_ALPHA,
   getChunkTypeName,
 } from './qov-types';
 
@@ -70,7 +71,13 @@ export class QovDecoder {
 
   private readU8(): number {
     if (this.activeData) {
+      if (this.activePos >= this.activeData.length) {
+        throw new Error(`readU8: activePos ${this.activePos} >= activeData.length ${this.activeData.length}`);
+      }
       return this.activeData[this.activePos++];
+    }
+    if (this.pos >= this.data.length) {
+      throw new Error(`readU8: pos ${this.pos} >= data.length ${this.data.length}`);
     }
     return this.data[this.pos++];
   }
@@ -134,7 +141,8 @@ export class QovDecoder {
     // Detect YUV mode from colorspace
     const cs = this.header.colorspace;
     this.isYuvMode = cs >= QOV_COLORSPACE_YUV420 && cs <= QOV_COLORSPACE_YUVA420;
-    this.hasYuvAlpha = cs === QOV_COLORSPACE_YUVA420;
+    this.hasYuvAlpha = (this.header.flags & QOV_FLAG_HAS_ALPHA) !== 0 ||
+                       cs === QOV_COLORSPACE_YUVA420;
 
     console.log(`[Decoder] Colorspace: 0x${cs.toString(16)}, YUV mode: ${this.isYuvMode}, Has alpha: ${this.hasYuvAlpha}`);
 
@@ -360,9 +368,8 @@ export class QovDecoder {
   // Decode a single YUV plane for keyframe
   private decodeYuvPlaneKeyframe(plane: Uint8Array, size: number): number {
     let prevVal = 0;
-    const index: number[] = new Array(64).fill(0);
+    const index: number[] = new Array(64).fill(-1); // Initialize to -1 to avoid false matches with value 0
     let px = 0;
-    const startPos = this.pos;
 
     while (px < size) {
       const b1 = this.readU8();
@@ -377,7 +384,13 @@ export class QovDecoder {
         // INDEX: lookup from cache
         const idx = b1 & 0x3f;
         prevVal = index[idx];
+        if (prevVal === -1) {
+          console.error(`[Decoder] YUV keyframe: INDEX(${idx}) read from uninitialized slot! px=${px}, size=${size}`);
+          prevVal = 128; // Use neutral value (128 is neutral for YUV, 0 causes black artifacts)
+        }
         plane[px++] = prevVal;
+        // BUG FIX: Update index table after using INDEX, to match encoder behavior
+        index[idx] = prevVal;
       } else if ((b1 & 0xc0) === 0x40) {
         // DIFF: small difference (4-bit)
         const d = (b1 & 0x0f) - 8;
@@ -405,13 +418,12 @@ export class QovDecoder {
       }
     }
 
-    console.log(`[Decoder] Decoded YUV plane: ${px} pixels, ${this.pos - startPos} bytes`);
     return px;
   }
 
   // Decode a single YUV plane for P-frame (temporal)
   private decodeYuvPlanePFrame(plane: Uint8Array, prevPlane: Uint8Array, size: number): number {
-    const index: number[] = new Array(64).fill(0);
+    const index: number[] = new Array(64).fill(-1); // Initialize to -1 to avoid false matches with value 0
     let px = 0;
     const startPos = this.pos;
 
@@ -432,7 +444,16 @@ export class QovDecoder {
       } else if ((b1 & 0xc0) === 0x00) {
         // INDEX: lookup from cache
         const idx = b1 & 0x3f;
-        plane[px++] = index[idx];
+        if (index[idx] === -1) {
+          console.error(`[Decoder] YUV P-frame: INDEX(${idx}) read from uninitialized slot! px=${px}, size=${size}`);
+          // This should never happen if encoder/decoder are in sync
+          // Use neutral value instead of black
+          plane[px++] = 128;
+        } else {
+          plane[px++] = index[idx];
+        }
+        // INDEX opcode retrieves a value, it doesn't update the table
+        // The table is only updated when TDIFF, TLUMA, or FULL are used
       } else if ((b1 & 0xc0) === 0x40) {
         // TDIFF: small temporal difference
         const d = (b1 & 0x0f) - 8;
@@ -1109,9 +1130,22 @@ export class QovDecoder {
 
     while (this.pos < this.data.length) {
       const offset = this.pos;
+      const headerSize = this.use32BitChunkSize ? 10 : 8;
+
+      // Ensure enough bytes for chunk header
+      if (this.pos + headerSize > this.data.length) {
+        console.warn(`[Decoder] Not enough bytes for chunk header at pos ${this.pos}`);
+        break;
+      }
+
       const chunkHeader = this.readChunkHeader();
 
-      const headerSize = this.use32BitChunkSize ? 10 : 8;
+      // Validate chunk header
+      if (chunkHeader.chunkType === undefined) {
+        console.warn(`[Decoder] Invalid chunk header at pos ${offset}, stopping scan`);
+        break;
+      }
+
       const isCompressed = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_COMPRESSED) !== 0;
       const chunkInfo: QovChunkInfo = {
         type: chunkHeader.chunkType,

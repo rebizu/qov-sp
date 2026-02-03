@@ -14,6 +14,7 @@ import {
   QOV_COLORSPACE_YUV422,
   QOV_COLORSPACE_YUVA420,
   QOV_CHUNK_FLAG_COMPRESSED,
+  QOV_FLAG_HAS_ALPHA,
   getChunkTypeName,
 } from './qov-types';
 
@@ -283,7 +284,8 @@ export class QovStreamingDecoder {
     // Detect YUV mode
     const cs = this.header.colorspace;
     this.isYuvMode = cs >= QOV_COLORSPACE_YUV420 && cs <= QOV_COLORSPACE_YUVA420;
-    this.hasYuvAlpha = cs === QOV_COLORSPACE_YUVA420;
+    this.hasYuvAlpha = (this.header.flags & QOV_FLAG_HAS_ALPHA) !== 0 ||
+                       cs === QOV_COLORSPACE_YUVA420;
 
     // Initialize frame buffers with opaque black (alpha = 255)
     const pixelCount = this.header.width * this.header.height * 4;
@@ -787,8 +789,8 @@ export class QovStreamingDecoder {
 
   // Decode YUV plane
   private decodeYuvPlane(plane: Uint8Array, size: number, isPFrame: boolean): void {
-    let prevVal = isPFrame ? 0 : 0;
-    const yuvIndex: number[] = new Array(64).fill(0);
+    let prevVal = 0;
+    const yuvIndex: number[] = new Array(64).fill(-1); // Initialize to -1 to avoid false matches with value 0
     let px = 0;
 
     while (px < size && this.activePos < this.activeData!.length - 8) {
@@ -812,7 +814,14 @@ export class QovStreamingDecoder {
         // INDEX - for keyframes 0x00 means INDEX[0], for P-frames 0x00 is caught above
         const idx = b1 & 0x3f;
         prevVal = yuvIndex[idx];
+        if (prevVal === -1) {
+          console.error(`[StreamingDecoder] YUV: INDEX(${idx}) read from uninitialized slot! px=${px}, isPFrame=${isPFrame}`);
+          console.error(`[StreamingDecoder] Index table state:`, yuvIndex.map((v, i) => v !== -1 ? `${i}:${v}` : null).filter(Boolean).join(', '));
+          prevVal = 128; // Use neutral value (128 is neutral for YUV, 0 causes black artifacts)
+        }
         plane[px++] = prevVal;
+        // INDEX opcode retrieves a value, it doesn't update the table
+        // The table is only updated when TDIFF, TLUMA, or FULL are used
       } else if ((b1 & 0xc0) === 0x40) {
         const d = (b1 & 0x0f) - 8;
         if (isPFrame) {

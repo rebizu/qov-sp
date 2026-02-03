@@ -221,6 +221,21 @@ Byte Range   Name            Structure
                              Literal 8-bit value (1 byte)
 ```
 
+**Index Cache Initialization (CRITICAL):**
+
+The 64-entry index cache MUST be initialized to **-1** (or any value outside the valid 0-255 range) at the start of each keyframe. This prevents false matches when encoding/decoding the value 0:
+
+- If initialized to 0, the encoder will incorrectly emit `QOV_YUV_INDEX(0)` when it encounters value 0 (because `cache[0] == 0` matches)
+- This causes artifacts when uninitialized cache slots are later read, particularly in U/V chroma planes where 0 represents extreme color shift (neutral is 128)
+
+**Example (pseudocode):**
+```
+int cache[64];
+for (int i = 0; i < 64; i++) cache[i] = -1;  // NOT 0!
+```
+
+For RGB mode (Section 3.1), initializing to all-zeros is acceptable because the full RGBA struct {0,0,0,0} can be distinguished from uninitialized state.
+
 **Color Conversion (BT.601):**
 ```
 RGB to YUV:
@@ -338,6 +353,7 @@ For YUV colorspaces, planes are encoded separately in sequence:
 **Encoding Rules:**
 - Each plane is encoded independently using YUV opcodes (Section 3.2)
 - Each plane maintains its own 64-entry index cache
+- **CRITICAL:** The index cache MUST be initialized to -1 (or any value outside 0-255 range) to prevent false matches with legitimate value 0
 - The previous value for DIFF/LUMA starts at 0 for Y, 128 for U/V
 - Planes are written sequentially without delimiters
 - The decoder must decode exactly the expected number of values per plane
@@ -609,7 +625,8 @@ bool qov_decode_header(qov_decoder_t* dec, const uint8_t* data, size_t size) {
     dec->prev_frame = calloc(pixels, sizeof(qov_rgba_t));
     dec->curr_frame = calloc(pixels, sizeof(qov_rgba_t));
 
-    // Initialize decoder state
+    // Initialize decoder state (RGB mode)
+    // Note: For YUV mode, use -1 initialization (see Section 3.2)
     memset(dec->index, 0, sizeof(dec->index));
     dec->prev_pixel = (qov_rgba_t){0, 0, 0, 255};
 
@@ -631,7 +648,8 @@ bool qov_decode_keyframe(qov_decoder_t* dec, const uint8_t* data, size_t size) {
     size_t pixel_count = dec->header.width * dec->header.height;
     size_t px = 0;
 
-    // Reset state for new frame
+    // Reset state for new frame (RGB mode)
+    // Note: For YUV mode, initialize to -1 (see Section 3.2)
     memset(dec->index, 0, sizeof(dec->index));
     dec->prev_pixel = (qov_rgba_t){0, 0, 0, 255};
 
@@ -1081,6 +1099,7 @@ void qov_encoder_init(qov_encoder_t* enc, uint16_t width, uint16_t height,
     enc->output_size = 0;
 
     enc->prev_pixel = (qov_rgba_t){0, 0, 0, 255};
+    // RGB mode initialization (for YUV mode, use -1 - see Section 3.2)
     memset(enc->index, 0, sizeof(enc->index));
 
     // Initialize LMS weights
@@ -1180,7 +1199,8 @@ void qov_encode_keyframe(qov_encoder_t* enc, const qov_rgba_t* pixels,
 
     size_t data_start = enc->output_size;
 
-    // Reset encoder state
+    // Reset encoder state (RGB mode)
+    // Note: For YUV mode, initialize to -1 (see Section 3.2)
     memset(enc->index, 0, sizeof(enc->index));
     enc->prev_pixel = (qov_rgba_t){0, 0, 0, 255};
 
@@ -1694,8 +1714,8 @@ For on-demand/streaming decoders that decode frames out of order:
    all frames from K to N sequentially to build proper reference frames.
 
 3. **State Reset**: When seeking to a new position:
-   - Reset the color index cache to zeros
-   - Reset prevPixel to {0, 0, 0, 255}
+   - Reset the color index cache (to zeros for RGB mode, to -1 for YUV mode - see Section 3.2)
+   - Reset prevPixel to {0, 0, 0, 255} (RGB) or prevValue to 0/128 (YUV)
    - Set lastDecodedFrameIndex appropriately
 
 4. **Frame Buffer Swapping**: After decoding each frame, swap prevFrame and currFrame.

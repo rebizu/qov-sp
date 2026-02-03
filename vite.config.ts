@@ -27,6 +27,7 @@ export default defineConfig({
         player: resolve(__dirname, 'player.html'),
         converter: resolve(__dirname, 'converter.html'),
         spec: resolve(__dirname, 'spec.html'),
+        diagnose: resolve(__dirname, 'diagnose.html'),
       },
     },
   },

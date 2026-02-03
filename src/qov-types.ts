@@ -102,7 +102,10 @@ export interface QovChunkInfo {
   uncompressedSize?: number;
 }
 
-export function getChunkTypeName(type: number): string {
+export function getChunkTypeName(type: number | undefined): string {
+  if (type === undefined || type === null) {
+    return 'INVALID(undefined)';
+  }
   switch (type) {
     case QOV_CHUNK_SYNC: return 'SYNC';
     case QOV_CHUNK_KEYFRAME: return 'KEYFRAME';

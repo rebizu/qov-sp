@@ -1,0 +1,17 @@
+ENCODER P-frame (lines 487-505):
+- TDIFF (d in -8..7): emit TDIFF, UPDATE index[idx]=val
+- TLUMA (d in -32..31): emit TLUMA, UPDATE index[idx]=val
+- Large diff:
+  - if index[idx]==val: emit INDEX (NO update)
+  - else: emit FULL, UPDATE index[idx]=val
+
+DECODER P-frame (lines 451-470):
+- TDIFF: decode, UPDATE index[idx]=val
+- TLUMA: decode, UPDATE index[idx]=val  
+- INDEX: read index[idx], NO update (line 449 comment)
+- FULL: decode, UPDATE index[idx]=val
+
+KEY DIFFERENCE:
+- Encoder updates index for TDIFF/TLUMA/FULL, NOT for INDEX
+- Decoder ALSO doesn't update for INDEX
+- Both match!

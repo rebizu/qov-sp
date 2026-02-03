@@ -416,6 +416,8 @@ public class QovDecoder
         int size = output.Length;
         byte prevVal = 0;
         int[] index = new int[64];
+        // Initialize to -1 to prevent false matches with value 0 (critical for YUV)
+        Array.Fill(index, -1);
         int px = 0;
         int pos = startPos;
 
@@ -469,6 +471,8 @@ public class QovDecoder
     {
         int size = output.Length;
         int[] index = new int[64];
+        // Initialize to -1 to prevent false matches with value 0 (critical for YUV)
+        Array.Fill(index, -1);
         int px = 0;
         int pos = startPos;
 

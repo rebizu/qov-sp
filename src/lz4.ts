@@ -126,8 +126,8 @@ export function lz4Compress(input: Uint8Array): Uint8Array | null {
     }
   }
 
-  // Check if compression was worthwhile (at least 5% reduction)
-  if (outPos >= inputSize * 0.95) {
+  // Check if compression was worthwhile (at least 20% reduction)
+  if (outPos >= inputSize * 0.80) {
     return null; // Not worth compressing
   }
 
