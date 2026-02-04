@@ -1,7 +1,7 @@
 // Video to QOV Converter - Uses native browser video decoding
 
 import { QovEncoder } from './qov-encoder';
-import { QOV_FLAG_HAS_INDEX, QOV_FLAG_HAS_ALPHA } from './qov-types';
+import { QOV_FLAG_HAS_INDEX, QOV_FLAG_HAS_ALPHA, getQualityName } from './qov-types';
 
 // DOM Elements
 const previewCanvas = document.getElementById('previewCanvas') as HTMLCanvasElement;
@@ -16,6 +16,11 @@ const colorspaceSelect = document.getElementById('colorspace') as HTMLSelectElem
 const flagIndexCheckbox = document.getElementById('flagIndex') as HTMLInputElement;
 const flagAlphaCheckbox = document.getElementById('flagAlpha') as HTMLInputElement;
 const compressionCheckbox = document.getElementById('compressionEnabled') as HTMLInputElement;
+const encodingModeSelect = document.getElementById('encodingMode') as HTMLSelectElement;
+const qualitySetting = document.getElementById('qualitySetting') as HTMLDivElement;
+const qualitySlider = document.getElementById('qualitySlider') as HTMLInputElement;
+const qualityValueSpan = document.getElementById('qualityValue') as HTMLSpanElement;
+const qualityNameSpan = document.getElementById('qualityName') as HTMLSpanElement;
 const startTimeInput = document.getElementById('startTime') as HTMLInputElement;
 const endTimeInput = document.getElementById('endTime') as HTMLInputElement;
 const maxFramesInput = document.getElementById('maxFrames') as HTMLInputElement;
@@ -291,7 +296,12 @@ async function convertToQov(): Promise<void> {
   log(`Frame rate: ${targetFps} fps, keyframe interval: ${keyframeInterval}`);
   log(`Time range: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
   const isYuv = colorspace >= 0x10 && colorspace <= 0x13;
+  // Determine lossy mode and quality
+  const isLossy = encodingModeSelect.value === 'lossy';
+  const quality = isLossy ? parseInt(qualitySlider.value) : undefined;
+
   log(`Colorspace: 0x${colorspace.toString(16).padStart(2, '0')} (${isYuv ? 'YUV' : 'RGB'}), Flags: 0x${flags.toString(16).padStart(2, '0')}`);
+  log(`Encoding mode: ${isLossy ? `lossy (quality=${quality})` : 'lossless'}`);
   log(`LZ4 Compression: ${compressionEnabled ? 'enabled' : 'disabled'}`);
   log(`Estimated frames: ${estimatedFrames}`);
 
@@ -300,7 +310,7 @@ async function convertToQov(): Promise<void> {
   progressFill.style.width = '0%';
   progressText.textContent = 'Starting conversion...';
 
-  // Create encoder with all parameters
+  // Create encoder with all parameters (including optional quality for lossy)
   const encoder = new QovEncoder(
     outputWidth,
     outputHeight,
@@ -308,7 +318,8 @@ async function convertToQov(): Promise<void> {
     1,
     flags,
     colorspace,
-    compressionEnabled
+    compressionEnabled,
+    quality
   );
   encoder.writeHeader();
 
@@ -442,6 +453,19 @@ targetFpsSelect.addEventListener('change', updateOutputPreview);
 startTimeInput.addEventListener('input', updateOutputPreview);
 endTimeInput.addEventListener('input', updateOutputPreview);
 maxFramesInput.addEventListener('input', updateOutputPreview);
+
+// Encoding mode toggle
+encodingModeSelect.addEventListener('change', () => {
+  const isLossy = encodingModeSelect.value === 'lossy';
+  qualitySetting.style.display = isLossy ? 'block' : 'none';
+});
+
+// Quality slider
+qualitySlider.addEventListener('input', () => {
+  const q = parseInt(qualitySlider.value);
+  qualityValueSpan.textContent = q.toString();
+  qualityNameSpan.textContent = getQualityName(q);
+});
 
 // Initialize
 log('Video to QOV Converter ready');

@@ -15,10 +15,12 @@ import {
   QOV_FLAG_HAS_INDEX,
   QOV_FLAG_HAS_BFRAMES,
   QOV_FLAG_ENHANCED_COMP,
+  QOV_FLAG_LOSSY_MODE,
   QOV_CHUNK_KEYFRAME,
   QOV_CHUNK_PFRAME,
   QOV_CHUNK_SYNC,
   QOV_CHUNK_AUDIO,
+  getQualityName,
 } from './qov-types';
 
 // DOM Elements
@@ -54,6 +56,10 @@ const infoDuration = document.getElementById('infoDuration') as HTMLDivElement;
 const infoFileSize = document.getElementById('infoFileSize') as HTMLDivElement;
 const infoColorspace = document.getElementById('infoColorspace') as HTMLDivElement;
 const infoFlags = document.getElementById('infoFlags') as HTMLDivElement;
+const infoEncodingModeItem = document.getElementById('infoEncodingModeItem') as HTMLDivElement;
+const infoEncodingMode = document.getElementById('infoEncodingMode') as HTMLDivElement;
+const infoQualityItem = document.getElementById('infoQualityItem') as HTMLDivElement;
+const infoQuality = document.getElementById('infoQuality') as HTMLDivElement;
 const infoCurrentFrame = document.getElementById('infoCurrentFrame') as HTMLDivElement;
 const infoFrameType = document.getElementById('infoFrameType') as HTMLDivElement;
 const infoTimestamp = document.getElementById('infoTimestamp') as HTMLDivElement;
@@ -137,6 +143,7 @@ function getFlagsDescription(flags: number): string {
   if (flags & QOV_FLAG_HAS_INDEX) parts.push('Index');
   if (flags & QOV_FLAG_HAS_BFRAMES) parts.push('B-frames');
   if (flags & QOV_FLAG_ENHANCED_COMP) parts.push('Enhanced');
+  if (flags & QOV_FLAG_LOSSY_MODE) parts.push('Lossy');
   return parts.length > 0 ? parts.join(', ') : 'None';
 }
 
@@ -151,6 +158,19 @@ function updateHeaderInfo(header: QovHeader): void {
   infoFileSize.textContent = fileStats ? formatSize(fileStats.fileSize) : '-';
   infoColorspace.textContent = getColorspaceName(header.colorspace);
   infoFlags.textContent = getFlagsDescription(header.flags);
+
+  // Show lossy info if applicable
+  const isLossy = (header.flags & QOV_FLAG_LOSSY_MODE) !== 0;
+  if (isLossy && header.quality !== undefined) {
+    infoEncodingModeItem.style.display = '';
+    infoEncodingMode.textContent = 'Lossy';
+    infoQualityItem.style.display = '';
+    infoQuality.textContent = `${header.quality} (${getQualityName(header.quality)})`;
+  } else {
+    infoEncodingModeItem.style.display = '';
+    infoEncodingMode.textContent = 'Lossless';
+    infoQualityItem.style.display = 'none';
+  }
 }
 
 // Update playback info display

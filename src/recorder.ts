@@ -1,7 +1,7 @@
 // QOV Recorder - Camera capture and encoding
 
 import { QovEncoder } from './qov-encoder';
-import { QOV_FLAG_HAS_INDEX } from './qov-types';
+import { QOV_FLAG_HAS_INDEX, getQualityName } from './qov-types';
 
 // DOM Elements
 const preview = document.getElementById('preview') as HTMLVideoElement;
@@ -13,6 +13,11 @@ const resolutionSelect = document.getElementById('resolutionSelect') as HTMLSele
 const fpsSelect = document.getElementById('fpsSelect') as HTMLSelectElement;
 const keyframeIntervalSelect = document.getElementById('keyframeInterval') as HTMLSelectElement;
 const colorspaceSelect = document.getElementById('colorspaceSelect') as HTMLSelectElement;
+const encodingModeSelect = document.getElementById('encodingMode') as HTMLSelectElement;
+const qualitySetting = document.getElementById('qualitySetting') as HTMLDivElement;
+const qualitySlider = document.getElementById('qualitySlider') as HTMLInputElement;
+const qualityValueSpan = document.getElementById('qualityValue') as HTMLSpanElement;
+const qualityNameSpan = document.getElementById('qualityName') as HTMLSpanElement;
 const recordingIndicator = document.getElementById('recordingIndicator') as HTMLDivElement;
 
 // Stats elements
@@ -265,10 +270,14 @@ function startRecording(): void {
   const frameRate = parseInt(fpsSelect.value);
   const colorspace = parseInt(colorspaceSelect.value);
 
-  log(`Starting recording: ${width}x${height} @ ${frameRate}fps, colorspace: 0x${colorspace.toString(16)}`);
+  // Determine lossy mode and quality
+  const isLossy = encodingModeSelect.value === 'lossy';
+  const quality = isLossy ? parseInt(qualitySlider.value) : undefined;
 
-  // Initialize encoder with selected colorspace
-  encoder = new QovEncoder(width, height, frameRate, 1, QOV_FLAG_HAS_INDEX, colorspace, true);
+  log(`Starting recording: ${width}x${height} @ ${frameRate}fps, colorspace: 0x${colorspace.toString(16)}, mode: ${isLossy ? `lossy (q=${quality})` : 'lossless'}`);
+
+  // Initialize encoder with selected colorspace and optional quality
+  encoder = new QovEncoder(width, height, frameRate, 1, QOV_FLAG_HAS_INDEX, colorspace, true, quality);
   encoder.writeHeader();
 
   // Reset state
@@ -288,6 +297,8 @@ function startRecording(): void {
   fpsSelect.disabled = true;
   keyframeIntervalSelect.disabled = true;
   colorspaceSelect.disabled = true;
+  encodingModeSelect.disabled = true;
+  qualitySlider.disabled = true;
 
   // Start capture loop
   captureFrame();
@@ -319,6 +330,8 @@ function stopRecording(): void {
   fpsSelect.disabled = false;
   keyframeIntervalSelect.disabled = false;
   colorspaceSelect.disabled = false;
+  encodingModeSelect.disabled = false;
+  qualitySlider.disabled = false;
 }
 
 // Download QOV file
@@ -356,6 +369,19 @@ fpsSelect.addEventListener('change', () => {
   if (!isRecording) {
     startPreview();
   }
+});
+
+// Encoding mode toggle
+encodingModeSelect.addEventListener('change', () => {
+  const isLossy = encodingModeSelect.value === 'lossy';
+  qualitySetting.style.display = isLossy ? 'block' : 'none';
+});
+
+// Quality slider
+qualitySlider.addEventListener('input', () => {
+  const q = parseInt(qualitySlider.value);
+  qualityValueSpan.textContent = q.toString();
+  qualityNameSpan.textContent = getQualityName(q);
 });
 
 // Cleanup on page unload

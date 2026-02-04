@@ -338,6 +338,19 @@
         </select>
       </div>
 
+      <div class="setting">
+        <label for="encodingMode">Encoding Mode</label>
+        <select id="encodingMode">
+          <option value="lossless" selected>Lossless</option>
+          <option value="lossy">Lossy</option>
+        </select>
+      </div>
+
+      <div class="setting" id="qualitySetting" style="display: none;">
+        <label for="qualitySlider">Quality: <span id="qualityValue">75</span> (<span id="qualityName">Medium-High</span>)</label>
+        <input type="range" id="qualitySlider" min="0" max="100" value="75" style="accent-color: #00d4ff;">
+      </div>
+
       <h2>Format Options</h2>
       <div class="setting checkboxes">
         <label class="checkbox-label">

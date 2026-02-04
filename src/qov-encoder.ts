@@ -3,12 +3,16 @@
 import {
   QovHeader,
   QovRGBA,
+  LossyParams,
   QOV_COLORSPACE_SRGB,
   QOV_COLORSPACE_YUV420,
   QOV_COLORSPACE_YUV422,
   QOV_COLORSPACE_YUVA420,
   QOV_FLAG_HAS_INDEX,
   QOV_FLAG_HAS_ALPHA,
+  QOV_FLAG_LOSSY_MODE,
+  QOV_VERSION_EXTENDED,
+  QOV_VERSION_LOSSY,
   QOV_CHUNK_SYNC,
   QOV_CHUNK_KEYFRAME,
   QOV_CHUNK_PFRAME,
@@ -16,6 +20,7 @@ import {
   QOV_CHUNK_END,
   QOV_CHUNK_FLAG_YUV,
   QOV_CHUNK_FLAG_COMPRESSED,
+  deriveLossyParams,
 } from './qov-types';
 
 import { lz4Compress } from './lz4';
@@ -124,6 +129,11 @@ export class QovEncoder {
   private isYuvMode = false;
   private hasAlpha = false;
 
+  // Lossy mode parameters
+  private lossyMode = false;
+  private quality = 0;
+  private lossyParams: LossyParams | null = null;
+
   constructor(
     width: number,
     height: number,
@@ -131,11 +141,22 @@ export class QovEncoder {
     frameRateDen = 1,
     flags = QOV_FLAG_HAS_INDEX,
     colorspace = QOV_COLORSPACE_SRGB,
-    compressionEnabled = true
+    compressionEnabled = true,
+    quality?: number  // Optional quality parameter (0-100, undefined = lossless)
   ) {
+    // Determine if lossy mode is enabled
+    this.lossyMode = quality !== undefined && quality < 100;
+    this.quality = quality ?? 0;
+
+    // If lossy mode, derive parameters and set flag
+    if (this.lossyMode) {
+      this.lossyParams = deriveLossyParams(this.quality);
+      flags |= QOV_FLAG_LOSSY_MODE;
+    }
+
     this.header = {
       magic: 'qovf',
-      version: 0x01,
+      version: this.lossyMode ? QOV_VERSION_LOSSY : QOV_VERSION_EXTENDED,
       flags,
       width,
       height,
@@ -145,6 +166,11 @@ export class QovEncoder {
       audioChannels: 0,
       audioRate: 0,
       colorspace,
+      quality: this.lossyMode ? this.quality : undefined,
+      yQuantBase: this.lossyParams?.yQuant,
+      uvQuantBase: this.lossyParams?.uvQuant,
+      temporalThresh: this.lossyParams?.temporalThresh,
+      dctQpBase: this.lossyParams?.dctQp,
     };
 
     this.compressionEnabled = compressionEnabled;
@@ -154,7 +180,7 @@ export class QovEncoder {
     this.hasAlpha = (flags & QOV_FLAG_HAS_ALPHA) !== 0 ||
                     colorspace === QOV_COLORSPACE_YUVA420;
 
-    console.log(`[Encoder] Created with colorspace: 0x${colorspace.toString(16)}, YUV mode: ${this.isYuvMode}, hasAlpha: ${this.hasAlpha}, compression: ${compressionEnabled}`);
+    console.log(`[Encoder] Created with colorspace: 0x${colorspace.toString(16)}, YUV mode: ${this.isYuvMode}, hasAlpha: ${this.hasAlpha}, compression: ${compressionEnabled}, lossy: ${this.lossyMode}, quality: ${this.quality}`);
 
     // Initialize buffer with appropriate chunk size based on resolution
     const pixelsPerFrame = width * height;
@@ -267,8 +293,8 @@ export class QovEncoder {
     this.writeU8(0x76); // 'v'
     this.writeU8(0x66); // 'f'
 
-    // Version (0x02 = 32-bit chunk sizes)
-    this.writeU8(0x02);
+    // Version (0x02 = 32-bit chunk sizes, 0x03 = lossy support)
+    this.writeU8(this.header.version);
 
     // Flags
     this.writeU8(this.header.flags);
@@ -290,9 +316,86 @@ export class QovEncoder {
     this.writeU8(0); // rate mid
     this.writeU8(0); // rate low
 
-    // Colorspace and reserved
+    // Colorspace
     this.writeU8(this.header.colorspace);
-    this.writeU8(0x00);
+
+    // Quality byte (offset 23) - used for lossy mode
+    this.writeU8(this.lossyMode ? this.quality : 0x00);
+
+    // Extended header for lossy mode (version 0x03, 32 bytes total)
+    if (this.header.version === QOV_VERSION_LOSSY) {
+      // Bytes 24-27: lossy parameters
+      this.writeU8(this.lossyParams?.yQuant ?? 0);     // y_quant_base
+      this.writeU8(this.lossyParams?.uvQuant ?? 0);    // uv_quant_base
+      this.writeU8(this.lossyParams?.temporalThresh ?? 0); // temporal_thresh
+      this.writeU8(this.lossyParams?.dctQp ?? 0);      // dct_qp_base
+      // Bytes 28-31: reserved
+      this.writeU32(0);
+    }
+  }
+
+  // Quantize a plane value for lossy encoding
+  private quantizePlaneValue(value: number, quantStep: number): number {
+    if (quantStep <= 1) return value;
+    return Math.max(0, Math.min(255, Math.round(value / quantStep) * quantStep));
+  }
+
+  // Quantize a YUV plane for lossy encoding
+  private quantizePlane(plane: Uint8Array, quantStep: number): Uint8Array {
+    if (!this.lossyMode || quantStep <= 1) return plane;
+
+    const result = new Uint8Array(plane.length);
+    for (let i = 0; i < plane.length; i++) {
+      result[i] = this.quantizePlaneValue(plane[i], quantStep);
+    }
+    return result;
+  }
+
+  // Check if two pixel values are similar within threshold (for lossy temporal encoding)
+  private valuesAreSimilar(a: number, b: number, threshold: number): boolean {
+    return Math.abs(a - b) <= threshold;
+  }
+
+  // Check if two pixels are similar within threshold (for lossy P-frames)
+  private pixelsAreSimilar(c: QovRGBA, ref: QovRGBA, threshold: number): boolean {
+    return this.valuesAreSimilar(c.r, ref.r, threshold) &&
+           this.valuesAreSimilar(c.g, ref.g, threshold) &&
+           this.valuesAreSimilar(c.b, ref.b, threshold) &&
+           this.valuesAreSimilar(c.a, ref.a, Math.floor(threshold / 2));
+  }
+
+  // Quantize RGBA pixel for lossy encoding (perceptual quantization via YUV)
+  private quantizePixel(c: QovRGBA): QovRGBA {
+    if (!this.lossyMode || !this.lossyParams) return c;
+
+    const yQuant = this.lossyParams.yQuant;
+    const uvQuant = this.lossyParams.uvQuant;
+
+    // Convert to YUV for perceptual quantization
+    let y = Math.floor((66 * c.r + 129 * c.g + 25 * c.b + 128) / 256);
+    let cb = Math.floor((-38 * c.r - 74 * c.g + 112 * c.b + 128) / 256);
+    let cr = Math.floor((112 * c.r - 94 * c.g - 18 * c.b + 128) / 256);
+
+    y = 16 + y;
+    cb = 128 + cb;
+    cr = 128 + cr;
+
+    // Quantize (Y less, UV more)
+    y = Math.round(y / yQuant) * yQuant;
+    cb = Math.round(cb / uvQuant) * uvQuant;
+    cr = Math.round(cr / uvQuant) * uvQuant;
+
+    // Convert back to RGB
+    const cy = y - 16;
+    const d = cb - 128;
+    const e = cr - 128;
+
+    return {
+      r: Math.max(0, Math.min(255, Math.floor((298 * cy + 409 * e + 128) / 256))),
+      g: Math.max(0, Math.min(255, Math.floor((298 * cy - 100 * d - 208 * e + 128) / 256))),
+      b: Math.max(0, Math.min(255, Math.floor((298 * cy + 516 * d + 128) / 256))),
+      a: c.a, // Alpha unchanged
+    };
   }
 
   private writeSync(frameNumber: number, timestamp: number): void {
@@ -344,6 +447,17 @@ export class QovEncoder {
       planes = rgbaToYuv422Planes(pixels, width, height, this.hasAlpha);
     } else {
       planes = rgbaToYuv444Planes(pixels, width, height, this.hasAlpha);
+    }
+
+    // Apply lossy quantization if enabled
+    if (this.lossyMode && this.lossyParams) {
+      planes.yPlane = this.quantizePlane(planes.yPlane, this.lossyParams.yQuant);
+      planes.uPlane = this.quantizePlane(planes.uPlane, this.lossyParams.uvQuant);
+      planes.vPlane = this.quantizePlane(planes.vPlane, this.lossyParams.uvQuant);
+      // Alpha plane uses Y quantization (less aggressive)
+      if (planes.aPlane) {
+        planes.aPlane = this.quantizePlane(planes.aPlane, this.lossyParams.yQuant);
+      }
     }
 
     if (this.compressionEnabled) {
@@ -450,7 +564,7 @@ export class QovEncoder {
   }
 
   // Encode a single plane for P-frame (temporal)
-  private encodeYuvPlanePFrame(plane: Uint8Array, prevPlane: Uint8Array): void {
+  private encodeYuvPlanePFrame(plane: Uint8Array, prevPlane: Uint8Array, temporalThresh = 0): void {
     const size = plane.length;
     let skip = 0;
     const index: number[] = new Array(64).fill(-1); // Initialize to -1 to avoid false matches with value 0
@@ -459,8 +573,12 @@ export class QovEncoder {
       const val = plane[i];
       const refVal = prevPlane[i];
 
-      // Check if unchanged
-      if (val === refVal) {
+      // Check if unchanged or similar enough (lossy mode)
+      const isSimilar = temporalThresh > 0
+        ? Math.abs(val - refVal) <= temporalThresh
+        : val === refVal;
+
+      if (isSimilar) {
         skip++;
         if (skip === 62 || i === size - 1) {
           this.writeU8(0xc0 | (skip - 1)); // SKIP
@@ -539,16 +657,29 @@ export class QovEncoder {
       planes = rgbaToYuv444Planes(pixels, width, height, this.hasAlpha);
     }
 
+    // Apply lossy quantization if enabled
+    if (this.lossyMode && this.lossyParams) {
+      planes.yPlane = this.quantizePlane(planes.yPlane, this.lossyParams.yQuant);
+      planes.uPlane = this.quantizePlane(planes.uPlane, this.lossyParams.uvQuant);
+      planes.vPlane = this.quantizePlane(planes.vPlane, this.lossyParams.uvQuant);
+      if (planes.aPlane) {
+        planes.aPlane = this.quantizePlane(planes.aPlane, this.lossyParams.yQuant);
+      }
+    }
+
+    // Get temporal threshold for lossy mode
+    const temporalThresh = this.lossyMode && this.lossyParams ? this.lossyParams.temporalThresh : 0;
+
     if (this.compressionEnabled) {
       // Compression mode: encode to temp buffer, then compress
       this.startFrameData();
 
       // Encode planes with temporal prediction
-      this.encodeYuvPlanePFrame(planes.yPlane, this.prevYPlane);
-      this.encodeYuvPlanePFrame(planes.uPlane, this.prevUPlane);
-      this.encodeYuvPlanePFrame(planes.vPlane, this.prevVPlane);
+      this.encodeYuvPlanePFrame(planes.yPlane, this.prevYPlane, temporalThresh);
+      this.encodeYuvPlanePFrame(planes.uPlane, this.prevUPlane, temporalThresh);
+      this.encodeYuvPlanePFrame(planes.vPlane, this.prevVPlane, temporalThresh);
       if (planes.aPlane && this.prevAPlane) {
-        this.encodeYuvPlanePFrame(planes.aPlane, this.prevAPlane);
+        this.encodeYuvPlanePFrame(planes.aPlane, this.prevAPlane, Math.floor(temporalThresh / 2));
       }
       this.writeEndMarker();
 
@@ -564,11 +695,11 @@ export class QovEncoder {
 
       const dataStart = this.buffer.getSize();
 
-      this.encodeYuvPlanePFrame(planes.yPlane, this.prevYPlane);
-      this.encodeYuvPlanePFrame(planes.uPlane, this.prevUPlane);
-      this.encodeYuvPlanePFrame(planes.vPlane, this.prevVPlane);
+      this.encodeYuvPlanePFrame(planes.yPlane, this.prevYPlane, temporalThresh);
+      this.encodeYuvPlanePFrame(planes.uPlane, this.prevUPlane, temporalThresh);
+      this.encodeYuvPlanePFrame(planes.vPlane, this.prevVPlane, temporalThresh);
       if (planes.aPlane && this.prevAPlane) {
-        this.encodeYuvPlanePFrame(planes.aPlane, this.prevAPlane);
+        this.encodeYuvPlanePFrame(planes.aPlane, this.prevAPlane, Math.floor(temporalThresh / 2));
       }
       this.writeEndMarker();
 
@@ -621,12 +752,13 @@ export class QovEncoder {
 
       for (let px = 0; px < pixelCount; px++) {
         const offset = px * 4;
-        const c: QovRGBA = {
+        // Apply lossy quantization if enabled
+        const c: QovRGBA = this.quantizePixel({
           r: pixels[offset],
           g: pixels[offset + 1],
           b: pixels[offset + 2],
           a: pixels[offset + 3],
-        };
+        });
 
         // Check for run
         if (c.r === this.prevPixel.r && c.g === this.prevPixel.g &&
@@ -745,18 +877,22 @@ export class QovEncoder {
     const pixelCount = this.header.width * this.header.height;
     const prevFrameRef = this.prevFrame;
 
+    // Get temporal threshold for lossy mode
+    const temporalThresh = this.lossyMode && this.lossyParams ? this.lossyParams.temporalThresh : 0;
+
     // Encode frame data
     const encodeRgbPFrameData = () => {
       let skip = 0;
 
       for (let px = 0; px < pixelCount; px++) {
         const offset = px * 4;
-        const c: QovRGBA = {
+        // Apply lossy quantization if enabled
+        const c: QovRGBA = this.quantizePixel({
           r: pixels[offset],
           g: pixels[offset + 1],
           b: pixels[offset + 2],
           a: pixels[offset + 3],
-        };
+        });
         const ref: QovRGBA = {
           r: prevFrameRef[offset],
           g: prevFrameRef[offset + 1],
@@ -764,8 +900,12 @@ export class QovEncoder {
           a: prevFrameRef[offset + 3],
         };
 
-        // Check if pixel unchanged from reference
-        if (c.r === ref.r && c.g === ref.g && c.b === ref.b && c.a === ref.a) {
+        // Check if pixel unchanged or similar enough (lossy mode)
+        const isSimilar = temporalThresh > 0
+          ? this.pixelsAreSimilar(c, ref, temporalThresh)
+          : (c.r === ref.r && c.g === ref.g && c.b === ref.b && c.a === ref.a);
+
+        if (isSimilar) {
           skip++;
           if (skip === 62 || px === pixelCount - 1) {
             this.writeU8(0xc0 | (skip - 1)); // QOV_OP_SKIP
