@@ -1,7 +1,7 @@
 // QOV Recorder - Camera capture and encoding
 
 import { QovEncoder } from './qov-encoder';
-import { QOV_FLAG_HAS_INDEX, getQualityName } from './qov-types';
+import { QOV_FLAG_HAS_INDEX, LossyParams, getQualityName } from './qov-types';
 
 // DOM Elements
 const preview = document.getElementById('preview') as HTMLVideoElement;
@@ -18,6 +18,15 @@ const qualitySetting = document.getElementById('qualitySetting') as HTMLDivEleme
 const qualitySlider = document.getElementById('qualitySlider') as HTMLInputElement;
 const qualityValueSpan = document.getElementById('qualityValue') as HTMLSpanElement;
 const qualityNameSpan = document.getElementById('qualityName') as HTMLSpanElement;
+const customLossySettings = document.getElementById('customLossySettings') as HTMLDivElement;
+const customYQuantSlider = document.getElementById('customYQuant') as HTMLInputElement;
+const customUvQuantSlider = document.getElementById('customUvQuant') as HTMLInputElement;
+const customTemporalThreshSlider = document.getElementById('customTemporalThresh') as HTMLInputElement;
+const customDctQpSlider = document.getElementById('customDctQp') as HTMLInputElement;
+const customYQuantValue = document.getElementById('customYQuantValue') as HTMLSpanElement;
+const customUvQuantValue = document.getElementById('customUvQuantValue') as HTMLSpanElement;
+const customTemporalThreshValue = document.getElementById('customTemporalThreshValue') as HTMLSpanElement;
+const customDctQpValue = document.getElementById('customDctQpValue') as HTMLSpanElement;
 const recordingIndicator = document.getElementById('recordingIndicator') as HTMLDivElement;
 
 // Stats elements
@@ -270,14 +279,29 @@ function startRecording(): void {
   const frameRate = parseInt(fpsSelect.value);
   const colorspace = parseInt(colorspaceSelect.value);
 
-  // Determine lossy mode and quality
-  const isLossy = encodingModeSelect.value === 'lossy';
-  const quality = isLossy ? parseInt(qualitySlider.value) : undefined;
+  // Determine encoding mode
+  const mode = encodingModeSelect.value;
+  let quality: number | undefined;
+  let customParams: LossyParams | undefined;
 
-  log(`Starting recording: ${width}x${height} @ ${frameRate}fps, colorspace: 0x${colorspace.toString(16)}, mode: ${isLossy ? `lossy (q=${quality})` : 'lossless'}`);
+  if (mode === 'lossy') {
+    quality = parseInt(qualitySlider.value);
+    log(`Starting recording: ${width}x${height} @ ${frameRate}fps, colorspace: 0x${colorspace.toString(16)}, mode: lossy (q=${quality})`);
+  } else if (mode === 'custom') {
+    quality = 0; // Custom mode uses explicit params
+    customParams = {
+      yQuant: parseInt(customYQuantSlider.value),
+      uvQuant: parseInt(customUvQuantSlider.value),
+      temporalThresh: parseInt(customTemporalThreshSlider.value),
+      dctQp: parseInt(customDctQpSlider.value),
+    };
+    log(`Starting recording: ${width}x${height} @ ${frameRate}fps, colorspace: 0x${colorspace.toString(16)}, mode: custom lossy (yQ=${customParams.yQuant}, uvQ=${customParams.uvQuant}, tThresh=${customParams.temporalThresh}, dctQp=${customParams.dctQp})`);
+  } else {
+    log(`Starting recording: ${width}x${height} @ ${frameRate}fps, colorspace: 0x${colorspace.toString(16)}, mode: lossless`);
+  }
 
-  // Initialize encoder with selected colorspace and optional quality
-  encoder = new QovEncoder(width, height, frameRate, 1, QOV_FLAG_HAS_INDEX, colorspace, true, quality);
+  // Initialize encoder with selected colorspace and encoding mode
+  encoder = new QovEncoder(width, height, frameRate, 1, QOV_FLAG_HAS_INDEX, colorspace, true, quality, customParams);
   encoder.writeHeader();
 
   // Reset state
@@ -373,8 +397,9 @@ fpsSelect.addEventListener('change', () => {
 
 // Encoding mode toggle
 encodingModeSelect.addEventListener('change', () => {
-  const isLossy = encodingModeSelect.value === 'lossy';
-  qualitySetting.style.display = isLossy ? 'block' : 'none';
+  const mode = encodingModeSelect.value;
+  qualitySetting.style.display = mode === 'lossy' ? 'block' : 'none';
+  customLossySettings.style.display = mode === 'custom' ? 'block' : 'none';
 });
 
 // Quality slider
@@ -382,6 +407,20 @@ qualitySlider.addEventListener('input', () => {
   const q = parseInt(qualitySlider.value);
   qualityValueSpan.textContent = q.toString();
   qualityNameSpan.textContent = getQualityName(q);
+});
+
+// Custom lossy parameter sliders
+customYQuantSlider.addEventListener('input', () => {
+  customYQuantValue.textContent = customYQuantSlider.value;
+});
+customUvQuantSlider.addEventListener('input', () => {
+  customUvQuantValue.textContent = customUvQuantSlider.value;
+});
+customTemporalThreshSlider.addEventListener('input', () => {
+  customTemporalThreshValue.textContent = customTemporalThreshSlider.value;
+});
+customDctQpSlider.addEventListener('input', () => {
+  customDctQpValue.textContent = customDctQpSlider.value;
 });
 
 // Cleanup on page unload

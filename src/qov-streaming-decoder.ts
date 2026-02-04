@@ -15,7 +15,6 @@ import {
   QOV_COLORSPACE_YUVA420,
   QOV_CHUNK_FLAG_COMPRESSED,
   QOV_FLAG_HAS_ALPHA,
-  QOV_FLAG_LOSSY_MODE,
   QOV_VERSION_LOSSY,
   getChunkTypeName,
 } from './qov-types';
