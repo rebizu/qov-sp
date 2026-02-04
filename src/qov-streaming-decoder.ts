@@ -15,6 +15,8 @@ import {
   QOV_COLORSPACE_YUVA420,
   QOV_CHUNK_FLAG_COMPRESSED,
   QOV_FLAG_HAS_ALPHA,
+  QOV_FLAG_LOSSY_MODE,
+  QOV_VERSION_LOSSY,
   getChunkTypeName,
 } from './qov-types';
 
@@ -205,6 +207,7 @@ export class QovStreamingDecoder {
   private keyframeIndices: number[] = [];  // Frame indices that are keyframes
   private totalFrames = 0;
   private use32BitChunkSize = false;
+  private headerSize = 24;
   private headerParsed = false;
   private indexBuilt = false;
 
@@ -253,6 +256,7 @@ export class QovStreamingDecoder {
   async parseHeader(): Promise<QovHeader> {
     if (this.header) return this.header;
 
+    // Read initial 24 bytes (common to all versions)
     const headerData = await this.source.read(0, 24);
 
     // Check magic
@@ -262,10 +266,11 @@ export class QovStreamingDecoder {
     }
 
     const version = headerData[4];
-    if (version !== 0x01 && version !== 0x02) {
+    if (version !== 0x01 && version !== 0x02 && version !== 0x03) {
       throw new Error(`Unsupported QOV version: ${version}`);
     }
     this.use32BitChunkSize = version >= 0x02;
+    this.headerSize = version === QOV_VERSION_LOSSY ? 32 : 24;
 
     this.header = {
       magic,
@@ -280,6 +285,19 @@ export class QovStreamingDecoder {
       audioRate: (headerData[19] << 16) | (headerData[20] << 8) | headerData[21],
       colorspace: headerData[22],
     };
+
+    // Parse lossy extension for version 0x03
+    if (version === QOV_VERSION_LOSSY) {
+      this.header.quality = headerData[23];
+
+      // Read additional 8 bytes for extended header
+      const extData = await this.source.read(24, 8);
+      this.header.yQuantBase = extData[0];
+      this.header.uvQuantBase = extData[1];
+      this.header.temporalThresh = extData[2];
+      this.header.dctQpBase = extData[3];
+      // extData[4..7] are reserved
+    }
 
     // Detect YUV mode
     const cs = this.header.colorspace;
@@ -346,7 +364,7 @@ export class QovStreamingDecoder {
     this.keyframeIndices = [];
     this.totalFrames = 0;
 
-    let offset = 24; // After header
+    let offset = this.headerSize; // After header
     const fileSize = this.source.getSize();
 
     while (fileSize === null || offset < fileSize) {

@@ -20,6 +20,8 @@ import {
   QOV_COLORSPACE_YUVA420,
   QOV_CHUNK_FLAG_COMPRESSED,
   QOV_FLAG_HAS_ALPHA,
+  QOV_FLAG_LOSSY_MODE,
+  QOV_VERSION_LOSSY,
   getChunkTypeName,
 } from './qov-types';
 
@@ -40,6 +42,7 @@ export class QovDecoder {
   private prevFrame: Uint8ClampedArray | null = null;
   private currFrame: Uint8ClampedArray | null = null;
   private use32BitChunkSize = false; // true for version 0x02+
+  private headerSize = 24; // 24 bytes for v1/v2, 32 bytes for v3 (lossy)
   private frameCount = 0; // For debug logging
 
   // YUV mode state
@@ -114,17 +117,21 @@ export class QovDecoder {
     this.pos = 4;
 
     const version = this.readU8();
-    if (version !== 0x01 && version !== 0x02) {
+    if (version !== 0x01 && version !== 0x02 && version !== 0x03) {
       throw new Error(`Unsupported QOV version: ${version}`);
     }
-    // Version 0x02 uses 32-bit chunk sizes for large frames
+    // Version 0x02+ uses 32-bit chunk sizes for large frames
     this.use32BitChunkSize = version >= 0x02;
-    console.log(`[Decoder] Version 0x${version.toString(16)}, 32-bit chunks: ${this.use32BitChunkSize}`);
+    const isLossyVersion = version === QOV_VERSION_LOSSY;
+    console.log(`[Decoder] Version 0x${version.toString(16)}, 32-bit chunks: ${this.use32BitChunkSize}, lossy capable: ${isLossyVersion}`);
+
+    const flags = this.readU8();
+    const isLossyMode = (flags & QOV_FLAG_LOSSY_MODE) !== 0;
 
     this.header = {
       magic,
       version,
-      flags: this.readU8(),
+      flags,
       width: this.readU16(),
       height: this.readU16(),
       frameRateNum: this.readU16(),
@@ -135,8 +142,28 @@ export class QovDecoder {
       colorspace: this.readU8(),
     };
 
-    // Skip reserved byte
-    this.pos++;
+    // Quality byte (offset 23)
+    const quality = this.readU8();
+    if (isLossyMode) {
+      this.header.quality = quality;
+    }
+
+    // Extended header for lossy mode (version 0x03, 32 bytes total)
+    if (isLossyVersion) {
+      this.header.yQuantBase = this.readU8();
+      this.header.uvQuantBase = this.readU8();
+      this.header.temporalThresh = this.readU8();
+      this.header.dctQpBase = this.readU8();
+      // Skip reserved bytes (4 bytes)
+      this.pos += 4;
+    }
+
+    if (isLossyMode) {
+      console.log(`[Decoder] Lossy mode: quality=${quality}, yQuant=${this.header.yQuantBase}, uvQuant=${this.header.uvQuantBase}, temporal=${this.header.temporalThresh}`);
+    }
+
+    // Set header size based on version
+    this.headerSize = isLossyVersion ? 32 : 24;
 
     // Detect YUV mode from colorspace
     const cs = this.header.colorspace;
@@ -979,7 +1006,7 @@ export class QovDecoder {
       this.decodeHeader();
     }
 
-    this.pos = 24; // After header
+    this.pos = this.headerSize; // After header
     let frameNumber = 0;
 
     console.log(`[Decoder] Starting frame decode at pos ${this.pos}, file length: ${this.data.length}`);
@@ -1127,7 +1154,7 @@ export class QovDecoder {
     let frameIndex = 0;
     let lastTimestamp = 0;
 
-    this.pos = 24; // After header
+    this.pos = this.headerSize; // After header
 
     while (this.pos < this.data.length) {
       const offset = this.pos;
