@@ -49,7 +49,7 @@ public class QovDecoder
             throw new QovException($"Invalid QOV magic: {magicStr}");
 
         byte version = ReadByte();
-        if (version != QovTypes.Version1 && version != QovTypes.Version2)
+        if (version != QovTypes.Version1 && version != QovTypes.Version2 && version != QovTypes.Version3)
             throw new QovException($"Unsupported QOV version: 0x{version:X2}");
 
         _use32BitChunkSize = version >= QovTypes.Version2;
@@ -63,9 +63,36 @@ public class QovDecoder
         byte audioChannels = ReadByte();
         uint audioRate = ReadBigEndianU24();
         byte colorspace = ReadByte();
-        ReadByte();
+        // Reserved byte read handled later conditionally
 
-        _header = new QovHeader(flags, width, height, frameRateNum, frameRateDen, colorspace, audioChannels, audioRate, totalFrames);        
+        _header = new QovHeader(flags, width, height, frameRateNum, frameRateDen, colorspace, audioChannels, audioRate, totalFrames);
+        
+        if (version >= QovTypes.Version3)
+        {
+             // Byte 23 is Quality in V3
+             byte quality = ReadByte();
+
+             // V3 extended header fields (bytes 24+)
+             byte yQuant = ReadByte();
+             byte uvQuant = ReadByte();
+             byte tempThresh = ReadByte();
+             byte dctQp = ReadByte();
+             ReadBigEndianU32(); // Reserved 4 bytes
+             
+             // Re-create header with these values
+             _header = new QovHeader(flags, width, height, frameRateNum, frameRateDen, colorspace, audioChannels, audioRate, totalFrames, quality)
+             {
+                 YQuant = yQuant,
+                 UvQuant = uvQuant,
+                 TemporalThresh = tempThresh,
+                 DctQp = dctQp
+             };
+        }
+        else
+        {
+             ReadByte(); // Reserved byte in V1/V2
+        }
+
         _prevFrame = new byte[width * height * 4];
         _currFrame = new byte[width * height * 4];
 
@@ -335,6 +362,20 @@ public class QovDecoder
                 px += skip;
                 continue;
             }
+            else if (b1 == QovTypes.OpCodeSkipSimilar)
+            {
+                 int count = data[pos++];
+                 int threshold = data[pos++]; // Warning: Unused in decoder currently
+                 px += count;
+                 continue;
+            }
+             else if (b1 == QovTypes.OpCodeSkipSimilarLong)
+            {
+                 ushort count = ReadBigEndianU16(data, ref pos);
+                 int threshold = data[pos++]; // Unused
+                 px += count;
+                 continue;
+            }
             else if ((b1 & 0xC0) == 0xC0 && b1 < 0xFE)
             {
                 int skip = (b1 & 0x3F) + 1;
@@ -486,6 +527,18 @@ public class QovDecoder
             {
                 ushort skipCount = ReadBigEndianU16(data, ref pos);
                 px += skipCount;
+            }
+            else if (b1 == QovTypes.OpCodeSkipSimilar)
+            {
+                 int count = data[pos++];
+                 int threshold = data[pos++]; 
+                 px += count;
+            }
+             else if (b1 == QovTypes.OpCodeSkipSimilarLong)
+            {
+                 ushort count = ReadBigEndianU16(data, ref pos);
+                 int threshold = data[pos++]; 
+                 px += count;
             }
             else if ((b1 & 0xC0) == 0xC0 && b1 < 0xFE)
             {

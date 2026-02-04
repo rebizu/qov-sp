@@ -582,3 +582,6 @@ install.sh
 AGENTS.md
 /bin
 /obj
+GEMINI.md
+YUV_FILL_ZERO_BUG_FIX.md
+YUV_PFRAME_FIX.md

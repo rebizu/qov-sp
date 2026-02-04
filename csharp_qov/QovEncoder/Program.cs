@@ -11,6 +11,19 @@ class Program
             outputFilename = args[0];
         }
         
+        int quality = 100;
+        for (int i = 0; i < args.Length; i++)
+        {
+            if ((args[i] == "-q" || args[i] == "--quality") && i + 1 < args.Length)
+            {
+                if (int.TryParse(args[i+1], out int q))
+                {
+                    quality = Math.Clamp(q, 1, 100);
+                    Console.WriteLine($"Quality set to {quality}");
+                }
+            }
+        }
+        
         Console.WriteLine($"Creating DVD logo test video: {outputFilename}");
         
         int width = 640;
@@ -20,7 +33,7 @@ class Program
         int totalFrames = fps * durationSec;
         
         using var stream = File.Create(outputFilename);
-        var encoder = new QovEncoder(stream, (ushort)width, (ushort)height, (ushort)fps, 1, QovTypes.FlagHasIndex, QovTypes.ColorspaceSrgb, true);
+        var encoder = new QovEncoder(stream, (ushort)width, (ushort)height, (ushort)fps, 1, QovTypes.FlagHasIndex, QovTypes.ColorspaceSrgb, true, quality);
 
         // DVD logo bouncing parameters
         int logoX = 100, logoY = 100;

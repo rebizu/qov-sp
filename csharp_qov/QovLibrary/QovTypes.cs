@@ -9,16 +9,21 @@ public static partial class QovTypes
     public const string Magic = "qovf";
     public const byte Version1 = 0x01;
     public const byte Version2 = 0x02;
+    public const byte Version3 = 0x03;
 
     public const byte FlagHasAlpha = 0x01;
     public const byte FlagHasMotion = 0x02;
     public const byte FlagHasIndex = 0x04;
     public const byte FlagHasBFrames = 0x08;
     public const byte FlagEnhancedComp = 0x10;
+    public const byte FlagLossyMode = 0x20;
+    public const byte FlagDctEnabled = 0x40;
 
     public const byte ChunkFlagYuv = 0x01;
     public const byte ChunkFlagMotion = 0x02;
     public const byte ChunkFlagCompressed = 0x10;
+    public const byte ChunkFlagDct = 0x20;
+    public const byte ChunkFlagAdaptiveQ = 0x40;
 
     public const byte ChunkTypeSync = 0x00;
     public const byte ChunkTypeKeyframe = 0x01;
@@ -39,6 +44,9 @@ public static partial class QovTypes
 
     public const byte RunMaxCount = 62;
     public const byte SkipMaxCount = 62;
+
+    public const byte OpCodeSkipSimilar = 0x58;
+    public const byte OpCodeSkipSimilarLong = 0x59;
 
     public static string GetChunkTypeName(byte chunkType) => chunkType switch
     {
@@ -66,13 +74,21 @@ public readonly struct QovHeader
     public byte AudioChannels { get; init; }
     public uint AudioRate { get; init; }
     public byte Colorspace { get; init; }
+    public byte Quality { get; init; }
+    public byte YQuant { get; init; }
+    public byte UvQuant { get; init; }
+    public byte TemporalThresh { get; init; }
+    public byte DctQp { get; init; }
 
     public QovHeader(byte flags, ushort width, ushort height, ushort frameRateNum = 30, ushort frameRateDen = 1,
-        byte colorspace = QovTypes.ColorspaceSrgb, byte audioChannels = 0, uint audioRate = 0,uint totalFrames=0)
+        byte colorspace = QovTypes.ColorspaceSrgb, byte audioChannels = 0, uint audioRate = 0, uint totalFrames = 0,
+        byte quality = 100)
     {
         Magic = QovTypes.Magic;
-        Version = QovTypes.Version2;
+        Version = quality < 100 ? QovTypes.Version3 : QovTypes.Version2;
         Flags = flags;
+        if (quality < 100) Flags |= QovTypes.FlagLossyMode;
+
         Width = width;
         Height = height;
         FrameRateNum = frameRateNum;
@@ -81,6 +97,13 @@ public readonly struct QovHeader
         AudioChannels = audioChannels;
         AudioRate = audioRate;
         Colorspace = colorspace;
+        Quality = quality;
+        
+        // Default to 0 for these, derived during encoding/decoding if 0
+        YQuant = 0;
+        UvQuant = 0;
+        TemporalThresh = 0;
+        DctQp = 0;
     }
 }
 

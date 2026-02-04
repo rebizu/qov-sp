@@ -143,13 +143,15 @@ class QovFileValidator
 
         // Version
         _version = header[4];
-        if (_version != 0x01 && _version != 0x02)
+        if (_version != 0x01 && _version != 0x02 && _version != 0x03)
         {
-            _errors.Add($"Invalid version: expected 0x01 or 0x02, got 0x{_version:X2}");
+            _errors.Add($"Invalid version: expected 0x01, 0x02 or 0x03, got 0x{_version:X2}");
         }
         else
         {
-            Console.WriteLine($"  Version: 0x{_version:X2} ({(_version == 1 ? "16-bit chunks" : "32-bit chunks")}) [OK]");
+            string vName = _version == 1 ? "16-bit chunks" : "32-bit chunks";
+            if (_version == 3) vName += ", lossy";
+            Console.WriteLine($"  Version: 0x{_version:X2} ({vName}) [OK]");
         }
 
         // Flags
@@ -160,7 +162,9 @@ class QovFileValidator
         if ((flags & 0x04) != 0) flagNames.Add("HAS_INDEX");
         if ((flags & 0x08) != 0) flagNames.Add("HAS_BFRAMES");
         if ((flags & 0x10) != 0) flagNames.Add("ENHANCED_COMP");
-        if ((flags & 0xE0) != 0) _warnings.Add($"Reserved flag bits set: 0x{(flags & 0xE0):X2}");
+        if ((flags & 0x20) != 0) flagNames.Add("LOSSY_MODE");
+        if ((flags & 0x40) != 0) flagNames.Add("DCT_ENABLED");
+        if ((flags & 0x80) != 0) _warnings.Add($"Reserved flag bits set: 0x{(flags & 0x80):X2}");
         string flagStr = flagNames.Count > 0 ? string.Join(", ", flagNames) : "none";
         Console.WriteLine($"  Flags: 0x{flags:X2} [{flagStr}]");
 
@@ -220,11 +224,26 @@ class QovFileValidator
         }
         Console.WriteLine($"  Colorspace: {csName}");
 
-        // Reserved byte
-        byte reserved = header[23];
-        if (reserved != 0)
+        // Reserved byte / Quality
+        byte quality = header[23];
+        if (_version >= 3)
         {
-            _warnings.Add($"Reserved byte is non-zero: 0x{reserved:X2}");
+             Console.WriteLine($"  Quality: {quality}");
+             
+             // Read extended header (8 bytes)
+             var extended = new byte[8];
+             int read = stream.Read(extended, 0, 8);
+             if (read < 8)
+             {
+                 _errors.Add($"Truncated extended header (read {read} bytes)");
+                 return false;
+             }
+             
+             Console.WriteLine($"  YQuant: {extended[0]}, UVQuant: {extended[1]}, TempThresh: {extended[2]}, DCT_QP: {extended[3]}");
+        }
+        else if (quality != 0)
+        {
+            _warnings.Add($"Reserved byte is non-zero: 0x{quality:X2}");
         }
 
         Console.WriteLine();
@@ -235,9 +254,10 @@ class QovFileValidator
     {
         Console.WriteLine("=== Chunk Validation ===");
 
-        int chunkHeaderSize = _version == 0x02 ? 10 : 8;
+        int chunkHeaderSize = _version >= 0x02 ? 10 : 8;
 
-        stream.Position = 24; // After file header
+        // Skip header (24 bytes for V1/V2, 32 bytes for V3)
+        stream.Position = _version >= 3 ? 32 : 24; 
 
         bool foundEnd = false;
         bool foundIndex = false;
@@ -261,7 +281,7 @@ class QovFileValidator
             byte chunkFlags = chunkHeader[1];
             uint chunkSize, timestamp;
 
-            if (_version == 0x02)
+            if (_version >= 0x02)
             {
                 chunkSize = ReadU32BE(chunkHeader, 2);
                 timestamp = ReadU32BE(chunkHeader, 6);

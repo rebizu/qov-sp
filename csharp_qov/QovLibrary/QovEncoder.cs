@@ -15,21 +15,46 @@ public class QovEncoder
     private int _frameCount;
     private readonly bool _isYuvMode;
     private readonly bool _useCompression;
+    private readonly int _quality;
+    private readonly int _yQuant;
+    private readonly int _uvQuant;
+    private readonly int _temporalThresh;
 
     public QovEncoder(Stream output, ushort width, ushort height,
         ushort frameRateNum = 30, ushort frameRateDen = 1,
         byte flags = QovTypes.FlagHasIndex,
         byte colorspace = QovTypes.ColorspaceSrgb,
-        bool useCompression = true)
+        bool useCompression = true,
+        int quality = 100)
     {
         _writer = new BinaryWriter(output, System.Text.Encoding.ASCII, leaveOpen: true);
-        _header = new QovHeader(flags, width, height, frameRateNum, frameRateDen, colorspace);
+        _header = new QovHeader(flags, width, height, frameRateNum, frameRateDen, colorspace, totalFrames: 0, quality: (byte)quality);
         _prevFrame = new byte[width * height * 4];
         _colorIndex = new QovPixel[64];
         _colorCache = new QovPixel[64];
         _prevPixel = new QovPixel(0, 0, 0, 255);
         _keyframes = new List<QovIndexEntry>();
         _useCompression = useCompression;
+        _quality = quality;
+
+        if (_quality < 100)
+        {
+             // Derive lossy parameters
+             _yQuant = 1 + (100 - _quality) / 8;     // 1-13
+             _uvQuant = 2 + (100 - _quality) / 4;    // 2-27
+             _temporalThresh = (100 - _quality) / 12; // 0-8
+             
+             // Clamp
+             _yQuant = Math.Clamp(_yQuant, 1, 64);
+             _uvQuant = Math.Clamp(_uvQuant, 1, 64);
+             _temporalThresh = Math.Clamp(_temporalThresh, 0, 32);
+        }
+        else
+        {
+            _yQuant = 1;
+            _uvQuant = 1;
+            _temporalThresh = 0;
+        }
 
         _isYuvMode = colorspace >= QovTypes.ColorspaceYuv420;
 
@@ -45,7 +70,7 @@ public class QovEncoder
         _writer.Write((byte)0x66); // 'f'
 
         // Version
-        _writer.Write(QovTypes.Version2);
+        _writer.Write(_header.Version);
 
         // Flags
         _writer.Write(_header.Flags);
@@ -69,7 +94,19 @@ public class QovEncoder
 
         // Colorspace and reserved
         _writer.Write(_header.Colorspace);
-        _writer.Write((byte)0); // reserved
+        _writer.Write(_header.Version >= QovTypes.Version3 ? _header.Quality : (byte)0);
+        
+        // Extended header for V3
+        if (_header.Version >= QovTypes.Version3)
+        {
+            // bytes 24-27
+            _writer.Write(_header.YQuant);
+            _writer.Write(_header.UvQuant);
+            _writer.Write(_header.TemporalThresh);
+            _writer.Write(_header.DctQp);
+            // Size is 32 bytes for V3
+            _writer.Write((uint)0); // Reserved 4 bytes
+        }
     }
 
     public void EncodeKeyframe(ReadOnlySpan<byte> pixels, uint timestamp)
@@ -84,7 +121,8 @@ public class QovEncoder
         }
         
         // Update previous frame buffer
-        pixels.CopyTo(_prevFrame);
+        // Update previous frame buffer (Done inside Encode function)
+
     }
 
     private void EncodeRgbKeyframe(ReadOnlySpan<byte> pixels, uint timestamp)
@@ -118,6 +156,17 @@ public class QovEncoder
         {
             int idx = px * 4;
             QovPixel current = new QovPixel(pixels[idx], pixels[idx + 1], pixels[idx + 2], pixels[idx + 3]);
+            
+            if (_quality < 100)
+            {
+                current = QuantizePixel(current);
+            }
+
+            // Update reconstructed frame
+            _prevFrame[idx] = current.R;
+            _prevFrame[idx + 1] = current.G;
+            _prevFrame[idx + 2] = current.B;
+            _prevFrame[idx + 3] = current.A;
 
             // Check for run-length encoding
             if (QovPixel.Equals(current, prevPixel))
@@ -263,7 +312,7 @@ public class QovEncoder
         }
         
         // Update previous frame buffer
-        pixels.CopyTo(_prevFrame);
+        // Update previous frame buffer (Done inside Encode function)
     }
 
     private void EncodeRgbPFrame(ReadOnlySpan<byte> pixels, uint timestamp)
@@ -284,6 +333,27 @@ public class QovEncoder
             QovPixel current = new QovPixel(pixels[idx], pixels[idx + 1], pixels[idx + 2], pixels[idx + 3]);
             QovPixel prev = new QovPixel(_prevFrame[prevIdx], _prevFrame[prevIdx + 1], _prevFrame[prevIdx + 2], _prevFrame[prevIdx + 3]);
 
+            if (_quality < 100)
+            {
+                // In P-frames, we check similarity first before full quantization
+                if (PixelsSimilar(current, prev, _temporalThresh))
+                {
+                     // Treat as identical to skip
+                     current = prev; 
+                }
+                else
+                {
+                    // If not similar enough to skip, we quantize the target
+                    current = QuantizePixel(current);
+                }
+            }
+            
+            // Update reconstructed frame (for next frame prediction)
+            _prevFrame[idx] = current.R;
+            _prevFrame[idx + 1] = current.G;
+            _prevFrame[idx + 2] = current.B;
+            _prevFrame[idx + 3] = current.A;
+
             // Check if pixel unchanged from reference
             if (QovPixel.Equals(current, prev))
             {
@@ -301,6 +371,7 @@ public class QovEncoder
                         tempWriter.Write((byte)0x00);
                         tempWriter.Write((ushort)skipCount);
                     }
+
                     skipCount = 0;
                 }
                 continue;
@@ -798,6 +869,44 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
         // Update frame count in header last (safe to seek now, all data written)
         UpdateFrameCount();
         _writer.Flush();
+    }
+
+    private QovPixel QuantizePixel(QovPixel pixel)
+    {
+        // Convert to YUV for perceptual quantization
+        int y  = (66 * pixel.R + 129 * pixel.G + 25 * pixel.B + 128) >> 8;
+        int cb = (-38 * pixel.R - 74 * pixel.G + 112 * pixel.B + 128) >> 8;
+        int cr = (112 * pixel.R - 94 * pixel.G - 18 * pixel.B + 128) >> 8;
+
+        y = 16 + y;
+        cb = 128 + cb;
+        cr = 128 + cr;
+
+        // Quantize (Y less, UV more)
+        y = ((y / _yQuant) * _yQuant);
+        cb = ((cb / _uvQuant) * _uvQuant);
+        cr = ((cr / _uvQuant) * _uvQuant);
+
+        // Convert back to RGB
+        int c = y - 16;
+        int d = cb - 128;
+        int e = cr - 128;
+
+        byte r = (byte)Math.Clamp((298 * c + 409 * e + 128) >> 8, 0, 255);
+        byte g = (byte)Math.Clamp((298 * c - 100 * d - 208 * e + 128) >> 8, 0, 255);
+        byte b = (byte)Math.Clamp((298 * c + 516 * d + 128) >> 8, 0, 255);
+        
+        return new QovPixel(r, g, b, pixel.A);
+    }
+    
+    private bool PixelsSimilar(QovPixel a, QovPixel b, int threshold)
+    {
+        if (threshold == 0) return QovPixel.Equals(a, b);
+        
+        return Math.Abs(a.R - b.R) <= threshold &&
+               Math.Abs(a.G - b.G) <= threshold &&
+               Math.Abs(a.B - b.B) <= threshold &&
+               Math.Abs(a.A - b.A) <= (threshold / 2);
     }
 
     private void WriteIndex()
