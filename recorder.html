@@ -256,12 +256,32 @@
         <select id="encodingMode">
           <option value="lossless" selected>Lossless</option>
           <option value="lossy">Lossy</option>
+          <option value="custom">Custom Lossy</option>
         </select>
       </div>
 
       <div class="setting" id="qualitySetting" style="display: none;">
         <label for="qualitySlider">Quality: <span id="qualityValue">75</span> (<span id="qualityName">Medium-High</span>)</label>
         <input type="range" id="qualitySlider" min="0" max="100" value="75" style="accent-color: #00d4ff;">
+      </div>
+
+      <div id="customLossySettings" style="display: none;">
+        <div class="setting">
+          <label for="customYQuant">Y Quantization (luminance): <span id="customYQuantValue">4</span></label>
+          <input type="range" id="customYQuant" min="1" max="64" value="4" style="accent-color: #00d4ff;">
+        </div>
+        <div class="setting">
+          <label for="customUvQuant">UV Quantization (chroma): <span id="customUvQuantValue">8</span></label>
+          <input type="range" id="customUvQuant" min="1" max="64" value="8" style="accent-color: #00d4ff;">
+        </div>
+        <div class="setting">
+          <label for="customTemporalThresh">Temporal Threshold: <span id="customTemporalThreshValue">3</span></label>
+          <input type="range" id="customTemporalThresh" min="0" max="32" value="3" style="accent-color: #00d4ff;">
+        </div>
+        <div class="setting">
+          <label for="customDctQp">DCT QP: <span id="customDctQpValue">26</span></label>
+          <input type="range" id="customDctQp" min="0" max="51" value="26" style="accent-color: #00d4ff;">
+        </div>
       </div>
 
       <h2>Recording Stats</h2>

@@ -142,15 +142,16 @@ export class QovEncoder {
     flags = QOV_FLAG_HAS_INDEX,
     colorspace = QOV_COLORSPACE_SRGB,
     compressionEnabled = true,
-    quality?: number  // Optional quality parameter (0-100, undefined = lossless)
+    quality?: number,  // Optional quality parameter (0-100, undefined = lossless)
+    customParams?: LossyParams  // Optional custom lossy params (overrides quality-derived)
   ) {
     // Determine if lossy mode is enabled
-    this.lossyMode = quality !== undefined && quality < 100;
+    this.lossyMode = (quality !== undefined && quality < 100) || customParams !== undefined;
     this.quality = quality ?? 0;
 
-    // If lossy mode, derive parameters and set flag
+    // If lossy mode, derive or use custom parameters and set flag
     if (this.lossyMode) {
-      this.lossyParams = deriveLossyParams(this.quality);
+      this.lossyParams = customParams ?? deriveLossyParams(this.quality);
       flags |= QOV_FLAG_LOSSY_MODE;
     }
 
