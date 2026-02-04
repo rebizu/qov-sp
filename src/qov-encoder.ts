@@ -747,6 +747,9 @@ export class QovEncoder {
     // Reset encoder state
     this.resetRgbIndex();
 
+    // Build quantized frame buffer for accurate P-frame reference in lossy mode
+    const quantizedFrame = this.lossyMode ? new Uint8ClampedArray(pixels.length) : null;
+
     // Encode frame data
     const encodeRgbKeyframeData = () => {
       let run = 0;
@@ -760,6 +763,14 @@ export class QovEncoder {
           b: pixels[offset + 2],
           a: pixels[offset + 3],
         });
+
+        // Store quantized pixel for P-frame reference
+        if (quantizedFrame) {
+          quantizedFrame[offset] = c.r;
+          quantizedFrame[offset + 1] = c.g;
+          quantizedFrame[offset + 2] = c.b;
+          quantizedFrame[offset + 3] = c.a;
+        }
 
         // Check for run
         if (c.r === this.prevPixel.r && c.g === this.prevPixel.g &&
@@ -858,8 +869,9 @@ export class QovEncoder {
       this.buffer.setByte(headerPos + 5, chunkSize & 0xff);
     }
 
-    // Store frame for P-frame reference
-    this.prevFrame = new Uint8ClampedArray(pixels);
+    // Store frame for P-frame reference (use quantized pixels in lossy mode
+    // so reference matches what the decoder reconstructs)
+    this.prevFrame = quantizedFrame || new Uint8ClampedArray(pixels);
   }
 
   encodePFrame(pixels: Uint8ClampedArray, timestamp: number): void {
@@ -881,6 +893,9 @@ export class QovEncoder {
     // Get temporal threshold for lossy mode
     const temporalThresh = this.lossyMode && this.lossyParams ? this.lossyParams.temporalThresh : 0;
 
+    // Build quantized frame buffer for accurate next P-frame reference in lossy mode
+    const quantizedFrame = this.lossyMode ? new Uint8ClampedArray(pixels.length) : null;
+
     // Encode frame data
     const encodeRgbPFrameData = () => {
       let skip = 0;
@@ -894,6 +909,7 @@ export class QovEncoder {
           b: pixels[offset + 2],
           a: pixels[offset + 3],
         });
+
         const ref: QovRGBA = {
           r: prevFrameRef[offset],
           g: prevFrameRef[offset + 1],
@@ -907,12 +923,27 @@ export class QovEncoder {
           : (c.r === ref.r && c.g === ref.g && c.b === ref.b && c.a === ref.a);
 
         if (isSimilar) {
+          // Decoder retains the reference pixel when skipping, so store ref
+          if (quantizedFrame) {
+            quantizedFrame[offset] = ref.r;
+            quantizedFrame[offset + 1] = ref.g;
+            quantizedFrame[offset + 2] = ref.b;
+            quantizedFrame[offset + 3] = ref.a;
+          }
           skip++;
           if (skip === 62 || px === pixelCount - 1) {
             this.writeU8(0xc0 | (skip - 1)); // QOV_OP_SKIP
             skip = 0;
           }
           continue;
+        }
+
+        // Store quantized pixel for next P-frame reference
+        if (quantizedFrame) {
+          quantizedFrame[offset] = c.r;
+          quantizedFrame[offset + 1] = c.g;
+          quantizedFrame[offset + 2] = c.b;
+          quantizedFrame[offset + 3] = c.a;
         }
 
         // Flush skip
@@ -996,8 +1027,9 @@ export class QovEncoder {
       this.buffer.setByte(headerPos + 5, chunkSize & 0xff);
     }
 
-    // Store frame for next P-frame reference
-    this.prevFrame = new Uint8ClampedArray(pixels);
+    // Store frame for next P-frame reference (use quantized pixels in lossy mode
+    // so reference matches what the decoder reconstructs)
+    this.prevFrame = quantizedFrame || new Uint8ClampedArray(pixels);
   }
 
   private writeIndex(): void {
