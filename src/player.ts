@@ -601,6 +601,36 @@ async function loadFromSource(source: FileDataSource | UrlDataSource): Promise<v
     console.error(`No frames found!`);
     alert(`No frames could be found in this file.`);
   }
+
+  // Load Audio for Streaming Mode
+  if (streamingDecoder) {
+    showLoading('Loading audio...');
+    try {
+      const audioData = await streamingDecoder.getAudioTracks();
+      if (audioData) {
+        if (!audioContext) audioContext = new AudioContext();
+        const { samples, channels, rate } = audioData;
+
+        const totalSamples = samples.reduce((acc, val) => acc + val.length / channels, 0);
+        audioBuffer = audioContext.createBuffer(channels, totalSamples, rate);
+
+        let offset = 0;
+        for (const sampleChunk of samples) {
+          for (let c = 0; c < channels; c++) {
+            const channelData = audioBuffer.getChannelData(c);
+            for (let i = 0; i < sampleChunk.length / channels; i++) {
+              channelData[offset + i] = sampleChunk[i * channels + c];
+            }
+          }
+          offset += sampleChunk.length / channels;
+        }
+        console.log(`[Streaming] Audio loaded: ${audioBuffer.duration.toFixed(2)}s`);
+      }
+    } catch (e) {
+      console.error("Failed to load audio tracks:", e);
+    }
+    hideLoading();
+  }
 }
 
 // Playback loop
