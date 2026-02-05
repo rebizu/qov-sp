@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Diagnostic tool to analyze QOV files for black dot artifacts
 import * as fs from 'fs';
-import { QovDecoder } from './src/qov-decoder';
+import { QovDecoder } from '../../src/qov-decoder';
 function analyzePixels(pixels, width, height, frameNum) {
     let blackPixels = 0;
     let darkPixels = 0;

@@ -2,7 +2,7 @@
 // Diagnostic tool to analyze QOV files for black dot artifacts
 
 import fs from 'fs';
-import { QovDecoder } from './diagnostic-build/qov-decoder.js';
+import { QovDecoder } from '../diagnostic-build/qov-decoder.js';
 
 function analyzePixels(pixels, width, height, frameNum) {
   let blackPixels = 0;
@@ -33,12 +33,12 @@ function analyzePixels(pixels, width, height, frameNum) {
       if (r === 0 && g === 0 && b === 0) {
         blackPixels++;
         if (blackLocations.length < 20) {
-          blackLocations.push({x, y, r, g, b, a});
+          blackLocations.push({ x, y, r, g, b, a });
         }
       } else if (r < 20 && g < 20 && b < 20) {
         darkPixels++;
         if (blackLocations.length < 20) {
-          blackLocations.push({x, y, r, g, b, a});
+          blackLocations.push({ x, y, r, g, b, a });
         }
       } else {
         normalPixels++;
@@ -49,9 +49,9 @@ function analyzePixels(pixels, width, height, frameNum) {
   avgY /= (width * height);
 
   console.log(`\n=== Frame ${frameNum} Pixel Analysis ===`);
-  console.log(`Black pixels (R=G=B=0): ${blackPixels} (${(blackPixels/(width*height)*100).toFixed(2)}%)`);
-  console.log(`Dark pixels (R,G,B < 20): ${darkPixels} (${(darkPixels/(width*height)*100).toFixed(2)}%)`);
-  console.log(`Normal pixels: ${normalPixels} (${(normalPixels/(width*height)*100).toFixed(2)}%)`);
+  console.log(`Black pixels (R=G=B=0): ${blackPixels} (${(blackPixels / (width * height) * 100).toFixed(2)}%)`);
+  console.log(`Dark pixels (R,G,B < 20): ${darkPixels} (${(darkPixels / (width * height) * 100).toFixed(2)}%)`);
+  console.log(`Normal pixels: ${normalPixels} (${(normalPixels / (width * height) * 100).toFixed(2)}%)`);
   console.log(`Luminance: min=${minY}, max=${maxY}, avg=${avgY.toFixed(1)}`);
 
   // Show Y histogram for very dark values
@@ -103,7 +103,7 @@ function analyzeYuvPlanes(decoder, frameNum) {
     }
   }
 
-  console.log(`Y plane: min=${yMin}, max=${yMax}, avg=${(ySum/yPlane.length).toFixed(1)}, zero count=${yZeroCount}`);
+  console.log(`Y plane: min=${yMin}, max=${yMax}, avg=${(ySum / yPlane.length).toFixed(1)}, zero count=${yZeroCount}`);
 
   if (yZeroLocations.length > 0) {
     console.log(`Y plane zero locations (first 10):`);
@@ -121,7 +121,7 @@ function analyzeYuvPlanes(decoder, frameNum) {
     uMax = Math.max(uMax, u);
   }
 
-  console.log(`U plane: min=${uMin}, max=${uMax}, avg=${(uSum/uPlane.length).toFixed(1)}`);
+  console.log(`U plane: min=${uMin}, max=${uMax}, avg=${(uSum / uPlane.length).toFixed(1)}`);
 
   // Analyze V plane
   let vMin = 255, vMax = 0, vSum = 0;
@@ -132,7 +132,7 @@ function analyzeYuvPlanes(decoder, frameNum) {
     vMax = Math.max(vMax, v);
   }
 
-  console.log(`V plane: min=${vMin}, max=${vMax}, avg=${(vSum/vPlane.length).toFixed(1)}`);
+  console.log(`V plane: min=${vMin}, max=${vMax}, avg=${(vSum / vPlane.length).toFixed(1)}`);
 
   // Show Y histogram for very dark values
   console.log(`\nY plane histogram (0-20):`);
@@ -194,7 +194,7 @@ async function main() {
   console.log(`Magic: ${header.magic}`);
   console.log(`Version: 0x${header.version.toString(16)}`);
   console.log(`Dimensions: ${header.width}x${header.height}`);
-  console.log(`Frame rate: ${header.frameRateNum}/${header.frameRateDen} = ${(header.frameRateNum/header.frameRateDen).toFixed(2)} fps`);
+  console.log(`Frame rate: ${header.frameRateNum}/${header.frameRateDen} = ${(header.frameRateNum / header.frameRateDen).toFixed(2)} fps`);
   console.log(`Total frames: ${header.totalFrames}`);
   console.log(`Flags: 0x${header.flags.toString(16).padStart(2, '0')}`);
   console.log(`  Has alpha: ${(header.flags & 0x01) !== 0}`);

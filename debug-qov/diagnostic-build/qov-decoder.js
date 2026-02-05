@@ -1,7 +1,7 @@
 // QOV Decoder based on qov-specification.md
-import { QOV_CHUNK_SYNC, QOV_CHUNK_KEYFRAME, QOV_CHUNK_PFRAME, QOV_CHUNK_BFRAME, QOV_CHUNK_AUDIO, QOV_CHUNK_INDEX, QOV_CHUNK_END, QOV_COLORSPACE_YUV420, QOV_COLORSPACE_YUV422, QOV_COLORSPACE_YUVA420, QOV_CHUNK_FLAG_COMPRESSED, QOV_FLAG_HAS_ALPHA, getChunkTypeName, } from './qov-types';
-import { lz4Decompress } from './lz4';
-import { yuv420PlanesToRgba, yuv422PlanesToRgba, yuv444PlanesToRgba, } from './color-utils';
+import { QOV_CHUNK_SYNC, QOV_CHUNK_KEYFRAME, QOV_CHUNK_PFRAME, QOV_CHUNK_BFRAME, QOV_CHUNK_AUDIO, QOV_CHUNK_INDEX, QOV_CHUNK_END, QOV_COLORSPACE_YUV420, QOV_COLORSPACE_YUV422, QOV_COLORSPACE_YUVA420, QOV_CHUNK_FLAG_COMPRESSED, QOV_FLAG_HAS_ALPHA, getChunkTypeName, } from './qov-types.js';
+import { lz4Decompress } from './lz4.js';
+import { yuv420PlanesToRgba, yuv422PlanesToRgba, yuv444PlanesToRgba, } from './color-utils.js';
 export class QovDecoder {
     constructor(data) {
         this.pos = 0;
