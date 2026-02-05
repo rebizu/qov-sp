@@ -651,7 +651,12 @@ function startPlayback(): void {
     // Current frame timestamp in seconds
     const startOffset = (frameCache.get(currentFrameIndex)?.timestamp || 0) / 1000000;
 
-    audioSourceNode.start(0, startOffset);
+    // Ensure we don't start past the end
+    if (startOffset < audioBuffer.duration) {
+      audioSourceNode.start(0, startOffset);
+    } else {
+      console.log("Audio offset past duration, not starting audio");
+    }
 
   }
 

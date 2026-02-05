@@ -175,10 +175,11 @@ export class QovEncoder {
 
     // If lossy mode, derive or use custom parameters and set flag
     this.lossyParams = customParams ?? deriveLossyParams(this.quality);
-    flags |= QOV_FLAG_LOSSY_MODE;
-    // Enable DCT by default for lossy mode
-    // Enable DCT by default for lossy mode
-    flags |= QOV_FLAG_DCT_ENABLED;
+    // Enable DCT only if lossy
+    if (this.lossyMode) {
+      flags |= QOV_FLAG_LOSSY_MODE;
+      flags |= QOV_FLAG_DCT_ENABLED;
+    }
 
     this.header = {
       magic: 'qovf',
@@ -340,11 +341,11 @@ export class QovEncoder {
     // Total frames (placeholder - updated at finish)
     this.writeU32(0);
 
-    // Audio (none for now)
-    this.writeU8(0); // channels
-    this.writeU8(0); // rate high
-    this.writeU8(0); // rate mid
-    this.writeU8(0); // rate low
+    // Audio
+    this.writeU8(this.header.audioChannels); // channels
+    this.writeU8((this.header.audioRate >> 16) & 0xff); // rate high
+    this.writeU8((this.header.audioRate >> 8) & 0xff);  // rate mid
+    this.writeU8(this.header.audioRate & 0xff);         // rate low
 
     // Colorspace
     this.writeU8(this.header.colorspace);

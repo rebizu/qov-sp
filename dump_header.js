@@ -1,0 +1,14 @@
+const fs = require('fs');
+const fd = fs.openSync('debug.qov', 'r');
+const buffer = Buffer.alloc(128);
+fs.readSync(fd, buffer, 0, 64, 0);
+console.log('Hex:', buffer.slice(0, 32).toString('hex'));
+console.log('Magic:', buffer.slice(0, 4).toString());
+console.log('Version:', buffer[4]);
+console.log('Width:', buffer.readUInt16BE(6));
+console.log('Height:', buffer.readUInt16BE(8));
+console.log('FrameRate:', buffer.readUInt16BE(10));
+console.log('Frames:', buffer.readUInt32BE(12));
+console.log('AudioChannels:', buffer[16]);
+console.log('AudioRate:', (buffer[17] << 16) | (buffer[18] << 8) | buffer[19]);
+fs.closeSync(fd);

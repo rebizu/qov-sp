@@ -337,11 +337,13 @@ async function startRecording(): Promise<void> {
     };
 
     audioSource.connect(audioProcessor);
-    audioProcessor.connect(audioContext.destination); // Needed for processing to happen in some browsers
-    // Note: this might cause feedback if not muted! 
-    // Usually we want to mute the destination output or create a dummy destination.
-    // To prevent feedback, we should avoid connecting to destination if possible, 
-    // or connect to a gain node with gain 0.
+    // Connect to a GainNode with 0 gain to prevent feedback while keeping the graph active
+    const zeroGain = audioContext.createGain();
+    zeroGain.gain.value = 0;
+    audioProcessor.connect(zeroGain);
+    zeroGain.connect(audioContext.destination);
+
+    // audioProcessor.connect(audioContext.destination); // Caused feedback loop!
   }
 
   // Initialize encoder with selected colorspace and encoding mode
