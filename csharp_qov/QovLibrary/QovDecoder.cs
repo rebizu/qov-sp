@@ -15,6 +15,7 @@ public class QovDecoder
     private byte[] _currFrame;
     private bool _use32BitChunkSize;
     private int _frameCount;
+    private QoaDecoder? _qoaDecoder;
 
     public QovDecoder(Stream input) : base()
     {
@@ -81,16 +82,32 @@ public class QovDecoder
             quality, yQuant, uvQuant, tempThresh, dctQp);        
         _prevFrame = new byte[width * height * 4];
         _currFrame = new byte[width * height * 4];
+        
+        if (audioChannels > 0)
+        {
+            _qoaDecoder = new QoaDecoder();
+        }
 
         return _header;
     }
 
     public IEnumerable<QovFrame> DecodeFrames()
     {
+        foreach (var item in DecodeAll())
+        {
+            if (item is QovFrame frame)
+            {
+                yield return frame;
+            }
+        }
+    }
+
+    public IEnumerable<object> DecodeAll()
+    {
         while (true)
         {
             bool shouldContinue = true;
-            QovFrame? frame = null;
+            object? decodedItem = null;
 
             try
             {
@@ -109,11 +126,11 @@ public class QovDecoder
                         break;
 
                     case QovTypes.ChunkTypeKeyframe:
-                        frame = DecodeKeyframe(chunkFlags, timestamp, chunkSize);
+                        decodedItem = DecodeKeyframe(chunkFlags, timestamp, chunkSize);
                         break;
 
                     case QovTypes.ChunkTypePframe:
-                        frame = DecodePFrame(chunkFlags, timestamp, chunkSize);
+                        decodedItem = DecodePFrame(chunkFlags, timestamp, chunkSize);
                         break;
 
                     case QovTypes.ChunkTypeBframe:
@@ -121,7 +138,22 @@ public class QovDecoder
                         break;
 
                     case QovTypes.ChunkTypeAudio:
-                        ReadBytes((int)chunkSize);
+                        byte[] audioBytes = ReadBytes((int)chunkSize);
+                        if (_qoaDecoder != null)
+                        {
+                            var result = _qoaDecoder.DecodeFrame(audioBytes);
+                            if (result.HasValue)
+                            {
+                                var tuple = result.Value;
+                                decodedItem = new QovAudioFrame
+                                {
+                                    Samples = tuple.Samples,
+                                    Channels = tuple.Channels,
+                                    SampleRate = tuple.SampleRate,
+                                    Timestamp = timestamp
+                                };
+                            }
+                        }
                         break;
 
                     case QovTypes.ChunkTypeIndex:
@@ -141,8 +173,8 @@ public class QovDecoder
             if (!shouldContinue)
                 break;
 
-            if (frame.HasValue)
-                yield return frame.Value;
+            if (decodedItem != null)
+                yield return decodedItem;
         }
     }
 
@@ -730,4 +762,12 @@ public readonly struct QovFrame
     public uint Timestamp { get; init; }
     public bool IsKeyframe { get; init; }
     public uint FrameNumber { get; init; }
+}
+
+public readonly struct QovAudioFrame
+{
+    public float[] Samples { get; init; }
+    public int Channels { get; init; }
+    public int SampleRate { get; init; }
+    public uint Timestamp { get; init; }
 }

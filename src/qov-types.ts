@@ -101,6 +101,13 @@ export interface QovFrame {
   frameNumber: number;
 }
 
+export interface QovAudioFrame {
+  samples: Float32Array;
+  channels: number;
+  sampleRate: number;
+  timestamp: number;
+}
+
 // File statistics for player UI
 export interface QovFileStats {
   header: QovHeader;

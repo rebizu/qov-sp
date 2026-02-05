@@ -17,6 +17,7 @@ import {
   QOV_CHUNK_SYNC,
   QOV_CHUNK_KEYFRAME,
   QOV_CHUNK_PFRAME,
+  QOV_CHUNK_AUDIO,
   QOV_CHUNK_INDEX,
   QOV_CHUNK_END,
   QOV_CHUNK_FLAG_YUV,
@@ -47,6 +48,8 @@ import {
   QOV_FLAG_DCT_ENABLED,
   QOV_CHUNK_FLAG_DCT_BLOCKS,
 } from './qov-types';
+
+import { QoaEncoder } from './qoa';
 
 interface KeyframeInfo {
   frameNumber: number;
@@ -151,6 +154,8 @@ export class QovEncoder {
   private quality = 0;
   private lossyParams: LossyParams | null = null;
 
+  private qoaEncoder: QoaEncoder | null = null;
+
   constructor(
     width: number,
     height: number,
@@ -160,7 +165,9 @@ export class QovEncoder {
     colorspace = QOV_COLORSPACE_SRGB,
     compressionEnabled = true,
     quality?: number,  // Optional quality parameter (0-100, undefined = lossless)
-    customParams?: LossyParams  // Optional custom lossy params (overrides quality-derived)
+    customParams?: LossyParams,  // Optional custom lossy params (overrides quality-derived)
+    audioChannels = 0,
+    audioRate = 0
   ) {
     // Determine if lossy mode is enabled
     this.lossyMode = (quality !== undefined && quality < 100) || customParams !== undefined;
@@ -182,8 +189,8 @@ export class QovEncoder {
       frameRateNum,
       frameRateDen,
       totalFrames: 0,
-      audioChannels: 0,
-      audioRate: 0,
+      audioChannels,
+      audioRate,
       colorspace,
       quality: this.lossyMode ? this.quality : undefined,
       yQuantBase: this.lossyParams?.yQuant,
@@ -191,6 +198,10 @@ export class QovEncoder {
       temporalThresh: this.lossyParams?.temporalThresh,
       dctQpBase: this.lossyParams?.dctQp,
     };
+
+    if (audioChannels > 0 && audioRate > 0) {
+      this.qoaEncoder = new QoaEncoder(audioChannels, audioRate);
+    }
 
     this.compressionEnabled = compressionEnabled;
 
@@ -1327,5 +1338,28 @@ export class QovEncoder {
 
   getFrameCount(): number {
     return this.frameCount;
+  }
+
+  encodeAudio(samples: Float32Array, timestamp: number): void {
+    if (!this.qoaEncoder) {
+      console.warn("Audio encoding requested but not initialized (channels/rate=0)");
+      return;
+    }
+
+    const encodedData = this.qoaEncoder.encodeFrame(samples);
+
+    // QOV_CHUNK_AUDIO using imported constant
+    const chunkType = QOV_CHUNK_AUDIO;
+    const chunkSize = encodedData.length;
+    const chunkFlags = 0; // No extra flags for audio yet
+
+    this.buffer.writeByte(chunkType);
+    this.buffer.writeByte(chunkFlags);
+    this.buffer.writeU32(chunkSize);
+    this.buffer.writeU32(timestamp);
+
+    for (let i = 0; i < encodedData.length; i++) {
+      this.buffer.writeByte(encodedData[i]);
+    }
   }
 }

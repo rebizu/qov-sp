@@ -15,13 +15,16 @@ public class QovEncoder
     private int _frameCount;
     private readonly bool _isYuvMode;
     private readonly bool _useCompression;
+    private readonly QoaEncoder? _qoaEncoder;
 
     public QovEncoder(Stream output, ushort width, ushort height,
         ushort frameRateNum = 30, ushort frameRateDen = 1,
         byte flags = QovTypes.FlagHasIndex,
         byte colorspace = QovTypes.ColorspaceSrgb,
         bool useCompression = true,
-        int quality = 0)
+        int quality = 0,
+        int audioChannels = 0,
+        int audioRate = 0)
     {
         // Lossy logic
         if (quality > 0 && quality < 100)
@@ -34,8 +37,13 @@ public class QovEncoder
 
         _writer = new BinaryWriter(output, System.Text.Encoding.ASCII, leaveOpen: true);
         _header = new QovHeader(flags, width, height, frameRateNum, frameRateDen, colorspace,
-            0, 0, 0, // Audio defaults
+            (byte)audioChannels, (uint)audioRate, 0, 
             (byte)quality, lp.YQuant, lp.UvQuant, lp.TemporalThresh, lp.DctQp);
+            
+        if (audioChannels > 0 && audioRate > 0)
+        {
+            _qoaEncoder = new QoaEncoder(audioChannels, audioRate);
+        }
             
         _prevFrame = new byte[width * height * 4];
         _colorIndex = new QovPixel[64];
@@ -74,11 +82,9 @@ public class QovEncoder
         // Total frames (big-endian, placeholder - updated later)
         WriteBigEndian(_header.TotalFrames);
 
-        // Audio fields - explicitly write 0 to avoid struct issues
-        _writer.Write((byte)0);      // audio_channels (0 = no audio)
-        _writer.Write((byte)0);      // audio_rate byte 1
-        _writer.Write((byte)0);      // audio_rate byte 2
-        _writer.Write((byte)0);      // audio_rate byte 3
+        // Audio fields
+        _writer.Write(_header.AudioChannels);
+        WriteBigEndian24(_header.AudioRate);
 
         // Colorspace and reserved
         _writer.Write(_header.Colorspace);
@@ -95,6 +101,26 @@ public class QovEncoder
         {
             EncodeRgbKeyframe(pixels, timestamp);
         }
+    }
+
+    public void EncodeAudio(ReadOnlySpan<float> samples, uint timestamp)
+    {
+        if (_qoaEncoder == null) return;
+        
+        byte[] encodedData = _qoaEncoder.EncodeFrame(samples);
+        
+        _writer.Write(QovTypes.ChunkTypeAudio);
+        _writer.Write((byte)0); // flags
+        WriteBigEndian((uint)encodedData.Length);
+        WriteBigEndian(timestamp);
+        _writer.Write(encodedData);
+    }
+    
+    private void WriteBigEndian24(uint value)
+    {
+        _writer.Write((byte)((value >> 16) & 0xff));
+        _writer.Write((byte)((value >> 8) & 0xff));
+        _writer.Write((byte)(value & 0xff));
     }
 
     private void EncodeRgbKeyframe(ReadOnlySpan<byte> pixels, uint timestamp)
@@ -1006,12 +1032,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
         _writer.Write((byte)(value & 0xFF));
     }
 
-    private void WriteBigEndian24(uint value)
-    {
-        _writer.Write((byte)((value >> 16) & 0xFF));
-        _writer.Write((byte)((value >> 8) & 0xFF));
-        _writer.Write((byte)(value & 0xFF));
-    }
+
 
     public void Finish()
     {

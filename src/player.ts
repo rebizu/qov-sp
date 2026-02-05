@@ -8,6 +8,7 @@ import {
 import { QovDecoder } from './qov-decoder';
 import {
   QovFrame,
+
   QovFileStats,
   QovHeader,
   QOV_FLAG_HAS_ALPHA,
@@ -472,7 +473,13 @@ async function loadFromSource(source: FileDataSource | UrlDataSource): Promise<v
 
     let frameIndex = 0;
     for (const frame of regularDecoder.decodeFrames()) {
-      allFramesDecoded.push(frame);
+      if ('samples' in frame) {
+        // Audio frame - skip for now or buffer
+        // console.log("Audio frame", frame.timestamp);
+        continue;
+      }
+
+      allFramesDecoded.push(frame as QovFrame);
       if (frameIndex % 10 === 0) {
         loadingText.textContent = `Decoded ${frameIndex} frames...`;
       }

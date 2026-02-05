@@ -4,6 +4,7 @@ import {
   QovHeader,
   QovChunkHeader,
   QovFrame,
+  QovAudioFrame,
   QovFileStats,
   QovChunkInfo,
   QovIndexEntry,
@@ -45,6 +46,8 @@ import {
   yuv444PlanesToRgba,
 } from './color-utils';
 
+import { QoaDecoder } from './qoa';
+
 export class QovDecoder {
   private data: Uint8Array;
   private pos = 0;
@@ -72,6 +75,8 @@ export class QovDecoder {
   // For decompression - allow reading from a temporary buffer
   private activeData: Uint8Array | null = null;
   private activePos = 0;
+
+  private qoaDecoder = new QoaDecoder();
 
   constructor(data: Uint8Array) {
     this.data = data;
@@ -1178,7 +1183,7 @@ export class QovDecoder {
     }
   }
 
-  *decodeFrames(): Generator<QovFrame> {
+  *decodeFrames(): Generator<QovFrame | QovAudioFrame> {
     if (!this.header) {
       this.decodeHeader();
     }
@@ -1189,10 +1194,9 @@ export class QovDecoder {
     console.log(`[Decoder] Starting frame decode at pos ${this.pos}, file length: ${this.data.length}`);
 
     while (this.pos < this.data.length) {
-      const chunkStartPos = this.pos;
       const chunkHeader = this.readChunkHeader();
 
-      console.log(`[Decoder] Chunk at ${chunkStartPos}: type=0x${chunkHeader.chunkType.toString(16)}, size=${chunkHeader.chunkSize}, timestamp=${chunkHeader.timestamp}`);
+
 
       // Sanity check - if chunk size would go past end of file, there's likely a problem
       if (this.pos + chunkHeader.chunkSize > this.data.length) {
@@ -1209,7 +1213,7 @@ export class QovDecoder {
         case QOV_CHUNK_KEYFRAME: {
           const isYuvChunk = (chunkHeader.chunkFlags & 0x01) !== 0;
           const isCompressed = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_COMPRESSED) !== 0;
-          console.log(`[Decoder] Decoding keyframe ${frameNumber}, YUV: ${isYuvChunk}, Compressed: ${isCompressed}...`);
+          // console.log(`[Decoder] Decoding keyframe ${frameNumber}, YUV: ${isYuvChunk}, Compressed: ${isCompressed}...`);
 
           // Determine the effective chunk size (excluding uncompressed_size if compressed)
           let effectiveChunkSize = chunkHeader.chunkSize;
@@ -1255,7 +1259,7 @@ export class QovDecoder {
           const isCompressed = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_COMPRESSED) !== 0;
           const isDctBlocks = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_DCT_BLOCKS) !== 0;
 
-          console.log(`[Decoder] Decoding P-frame ${frameNumber}, YUV: ${isYuvChunk}, Compressed: ${isCompressed}, DCT: ${isDctBlocks}...`);
+          // console.log(`[Decoder] Decoding P-frame ${frameNumber}, YUV: ${isYuvChunk}, Compressed: ${isCompressed}, DCT: ${isDctBlocks}...`);
 
           // Determine the effective chunk size (excluding uncompressed_size if compressed)
           let effectiveChunkSize = chunkHeader.chunkSize;
@@ -1307,10 +1311,21 @@ export class QovDecoder {
           this.pos += chunkHeader.chunkSize;
           break;
 
-        case QOV_CHUNK_AUDIO:
-          // Audio not implemented yet, skip
+        case QOV_CHUNK_AUDIO: {
+          const audioData = this.data.subarray(this.pos, this.pos + chunkHeader.chunkSize);
+          const result = this.qoaDecoder.decodeFrame(audioData);
           this.pos += chunkHeader.chunkSize;
+
+          if (result) {
+            yield {
+              samples: result.samples,
+              channels: result.header.channels,
+              sampleRate: result.header.samplerate,
+              timestamp: chunkHeader.timestamp
+            } as QovAudioFrame;
+          }
           break;
+        }
 
         case QOV_CHUNK_INDEX:
           // Skip index table
