@@ -27,6 +27,9 @@ import {
   yuv444PlanesToRgba,
 } from './color-utils';
 
+import { QoaDecoder } from './qoa';
+import { QOV_CHUNK_AUDIO } from './qov-types';
+
 // Chunk metadata for seeking
 interface ChunkMeta {
   offset: number;
@@ -302,7 +305,7 @@ export class QovStreamingDecoder {
     const cs = this.header.colorspace;
     this.isYuvMode = cs >= QOV_COLORSPACE_YUV420 && cs <= QOV_COLORSPACE_YUVA420;
     this.hasYuvAlpha = (this.header.flags & QOV_FLAG_HAS_ALPHA) !== 0 ||
-                       cs === QOV_COLORSPACE_YUVA420;
+      cs === QOV_COLORSPACE_YUVA420;
 
     // Initialize frame buffers with opaque black (alpha = 255)
     const pixelCount = this.header.width * this.header.height * 4;
@@ -467,7 +470,7 @@ export class QovStreamingDecoder {
       // If we need to seek backward or forward past last decoded frame,
       // we need to start from a keyframe
       if (frameIndex <= this.lastDecodedFrameIndex - 1 ||
-          frameIndex > this.lastDecodedFrameIndex + 1) {
+        frameIndex > this.lastDecodedFrameIndex + 1) {
         const keyframeIdx = this.findPrecedingKeyframe(frameIndex);
 
         // Reset decoder state and decode from keyframe
@@ -493,6 +496,42 @@ export class QovStreamingDecoder {
     } finally {
       this.decoding = false;
     }
+  }
+
+  // Fetch and decode all audio chunks
+  async getAudioTracks(): Promise<{ samples: Float32Array[], channels: number, rate: number } | null> {
+    if (!this.header) await this.parseHeader();
+    if (!this.indexBuilt) await this.buildIndex();
+
+    if (this.header!.audioChannels === 0) return null;
+
+    const audioChunks = this.chunks.filter(c => c.type === QOV_CHUNK_AUDIO);
+    if (audioChunks.length === 0) return null;
+
+    const qoa = new QoaDecoder();
+    const samples: Float32Array[] = [];
+
+    // Decode all audio chunks
+    for (const chunk of audioChunks) {
+      // Read chunk data
+      const headerSize = this.use32BitChunkSize ? 10 : 8;
+      const dataSize = chunk.size - headerSize;
+
+      // We need to read the data. Since this might be scattered, it could be slow on HTTP.
+      // But audio chunks are small.
+      const chunkData = await this.source.read(chunk.offset + headerSize, dataSize);
+
+      const frame = qoa.decodeFrame(chunkData);
+      if (frame) {
+        samples.push(frame.samples);
+      }
+    }
+
+    return {
+      samples,
+      channels: this.header!.audioChannels,
+      rate: this.header!.audioRate
+    };
   }
 
   private getFrameTimestamp(frameIndex: number): number {
@@ -522,7 +561,7 @@ export class QovStreamingDecoder {
     // Handle decompression
     if (isCompressed) {
       const uncompressedSize = (chunkData[0] << 24) | (chunkData[1] << 16) |
-                               (chunkData[2] << 8) | chunkData[3];
+        (chunkData[2] << 8) | chunkData[3];
       const compressedData = chunkData.subarray(4);
       chunkData = lz4Decompress(compressedData, uncompressedSize);
     }

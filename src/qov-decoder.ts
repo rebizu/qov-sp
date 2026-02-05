@@ -4,6 +4,7 @@ import {
   QovHeader,
   QovChunkHeader,
   QovFrame,
+  QovAudioFrame,
   QovFileStats,
   QovChunkInfo,
   QovIndexEntry,
@@ -22,8 +23,20 @@ import {
   QOV_FLAG_HAS_ALPHA,
   QOV_FLAG_LOSSY_MODE,
   QOV_VERSION_LOSSY,
+  QOV_OP_DCT_Y,
+  QOV_OP_DCT_UV,
+  QOV_OP_DCT_SKIP,
+  QOV_OP_DCT_ZERO,
+  QOV_CHUNK_FLAG_DCT_BLOCKS,
   getChunkTypeName,
 } from './qov-types';
+
+import {
+  inverseDCTRaw,
+  DEFAULT_QUANT_LUMA,
+  DEFAULT_QUANT_CHROMA,
+  ZIGZAG
+} from './dct';
 
 import { lz4Decompress } from './lz4';
 
@@ -32,6 +45,8 @@ import {
   yuv422PlanesToRgba,
   yuv444PlanesToRgba,
 } from './color-utils';
+
+import { QoaDecoder } from './qoa';
 
 export class QovDecoder {
   private data: Uint8Array;
@@ -60,6 +75,8 @@ export class QovDecoder {
   // For decompression - allow reading from a temporary buffer
   private activeData: Uint8Array | null = null;
   private activePos = 0;
+
+  private qoaDecoder = new QoaDecoder();
 
   constructor(data: Uint8Array) {
     this.data = data;
@@ -169,7 +186,7 @@ export class QovDecoder {
     const cs = this.header.colorspace;
     this.isYuvMode = cs >= QOV_COLORSPACE_YUV420 && cs <= QOV_COLORSPACE_YUVA420;
     this.hasYuvAlpha = (this.header.flags & QOV_FLAG_HAS_ALPHA) !== 0 ||
-                       cs === QOV_COLORSPACE_YUVA420;
+      cs === QOV_COLORSPACE_YUVA420;
 
     console.log(`[Decoder] Colorspace: 0x${cs.toString(16)}, YUV mode: ${this.isYuvMode}, Has alpha: ${this.hasYuvAlpha}`);
 
@@ -1001,7 +1018,172 @@ export class QovDecoder {
     return true;
   }
 
-  *decodeFrames(): Generator<QovFrame> {
+  // Helper for DCT block decoding
+  private decodeDctBlock(quantTable: number[], qpBase: number, out: Float32Array): number {
+    // 1. QP delta (1 byte: | 0 | delta (7 bits, bias 64) | )
+    const qpByte = this.readU8();
+    // const zeroBit = (qpByte & 0x80) !== 0; // Should be 0
+    const qpDelta = (qpByte & 0x7F) - 64;
+    const finalQp = Math.max(0, Math.min(100, qpBase + qpDelta)); // Heuristic clamping
+
+    // Derive scale factor from QP (approximate standard scaling)
+    // Scale = 2^(qp/10) ?? Or linear?
+    // Using simple linear scaling for now: scale = 0.5 + qp/10
+    const scale = 0.1 + (finalQp * 0.1);
+
+    // 2. DC Coeff (2 bytes, signed 16-bit)
+    const dcRaw = this.readU16();
+    const dc = (dcRaw & 0x8000) ? dcRaw - 65536 : dcRaw;
+
+    const coeffs = new Float32Array(64);
+    coeffs[0] = dc * quantTable[0] * scale;
+
+    // 3. AC Coeffs (Run-Level)
+    let k = 1;
+    while (k < 64) {
+      const b1 = this.readU8();
+
+      if (b1 === 0x00) {
+        // EOB
+        break;
+      }
+      if (b1 === 0xF0) {
+        // Zero run of 16
+        k += 16;
+        continue;
+      }
+
+      const run = (b1 >> 4) & 0x0F;
+      const size = b1 & 0x0F;
+
+      k += run;
+      if (k >= 64) break;
+
+      // Read level
+      let level = 0;
+      if (size > 0) {
+        // Read 'size' bytes? Spec says "level (1-4 bytes)?" or standard JPEG Huffman sizing?
+        // Spec 3.4.2 says: "pair: | run (4b) | level_size (4b) | + level (1-4 bytes)"
+        // Assuming level_size is literally bytes.
+        let rawLevel = 0;
+        for (let i = 0; i < size; i++) {
+          rawLevel = (rawLevel << 8) | this.readU8();
+        }
+
+        // Handle sign - if MSB of generic logic?
+        // Let's assume standard integer mapping or 2's complement
+        // For simplicity: it's signed int of 'size' bytes.
+        // If size=1, int8. Size=2, int16.
+        if (size === 1) level = (rawLevel & 0x80) ? rawLevel - 256 : rawLevel;
+        else if (size === 2) level = (rawLevel & 0x8000) ? rawLevel - 65536 : rawLevel;
+        else level = rawLevel; // 32-bit not fully handled for sign here
+      }
+
+      coeffs[ZIGZAG[k]] = level * quantTable[ZIGZAG[k]] * scale;
+      k++;
+    }
+
+    // IDCT
+    inverseDCTRaw(coeffs, out);
+    return k;
+  }
+
+  private decodeYuvPFrameDataDct(chunkSize: number): boolean {
+    const dataEnd = this.pos + chunkSize - 8;
+    const { width, height } = this.header;
+    const yW = width;
+    const yH = height;
+
+    // Copy reference
+    this.currYPlane!.set(this.prevYPlane!);
+    this.currUPlane!.set(this.prevUPlane!);
+    this.currVPlane!.set(this.prevVPlane!);
+    if (this.hasYuvAlpha) this.currAPlane!.set(this.prevAPlane!);
+
+    const blockBuf = new Float32Array(64);
+
+    // Decoding loop for Y
+    this.decodePlaneDct(this.currYPlane!, yW, yH, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
+
+    // Decoding loop for UV
+    const uvW = Math.ceil(width / 2);
+    const uvH = Math.ceil(height / 2); // Assuming 4:2:0 for now
+    this.decodePlaneDct(this.currUPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
+    this.decodePlaneDct(this.currVPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
+
+    this.pos = dataEnd + 8;
+    this.yuvPlanesToRgba();
+    // Swap buffers
+    [this.prevYPlane, this.currYPlane] = [this.currYPlane, this.prevYPlane];
+    [this.prevUPlane, this.currUPlane] = [this.currUPlane, this.prevUPlane];
+    [this.prevVPlane, this.currVPlane] = [this.currVPlane, this.prevVPlane];
+    const tmp = this.prevFrame;
+    this.prevFrame = this.currFrame;
+    this.currFrame = tmp;
+    return true;
+  }
+
+  private decodeYuvPFrameDataDctFromBuffer(uncompressedSize: number): boolean {
+    // Similar logic but using activeData / activePos
+    // For simplicity, reusing same logic since we use readU8 abstraction
+    return this.decodeYuvPFrameDataDct(uncompressedSize + 8); // +8 hack because original subtracts 8
+  }
+
+  private decodePlaneDct(plane: Uint8Array, w: number, h: number, quant: number[], opType: number, blockBuf: Float32Array): void {
+    const qpBase = this.header.dctQpBase || 20; // Default
+    const blocksX = Math.ceil(w / 8);
+    const blocksY = Math.ceil(h / 8);
+
+    for (let by = 0; by < blocksY; by++) {
+      for (let bx = 0; bx < blocksX; bx++) {
+        // Read opcode
+        // Wait, is it one opcode per block?
+        // Or can one opcode skip multiple blocks?
+        // "0x52 QOV_OP_DCT_SKIP ... count"
+        // So we need a loop that fills blocks
+        // This loop structure handles one block at a time, but needs to respect skips
+        // We can't use simple for loops here, need linear block index
+      }
+    }
+
+    // Linear block loop
+    let blockIdx = 0;
+    const totalBlocks = blocksX * blocksY;
+
+    while (blockIdx < totalBlocks) {
+      const b1 = this.readU8();
+      if (b1 === QOV_OP_DCT_SKIP) {
+        const count = this.readU8(); // Or U16? Spec says "count". Assuming U8 for now unless U16 specified? Spec 3.3 says SKIP_LONG is U16. 3.4.2 says "count". Usually 1 byte.
+        blockIdx += count;
+      } else if (b1 === QOV_OP_DCT_ZERO) {
+        const count = this.readU8();
+        // Zero residual = copy ref (already done by init copy)
+        blockIdx += count;
+      } else if (b1 === opType) {
+        // Decode block
+        this.decodeDctBlock(quant, qpBase, blockBuf);
+        // Add residual to plane
+        const bx = (blockIdx % blocksX) * 8;
+        const by = Math.floor(blockIdx / blocksX) * 8;
+
+        for (let y = 0; y < 8; y++) {
+          if (by + y >= h) break;
+          for (let x = 0; x < 8; x++) {
+            if (bx + x >= w) break;
+            const idx = (by + y) * w + (bx + x);
+            const res = blockBuf[y * 8 + x];
+            plane[idx] = Math.max(0, Math.min(255, plane[idx] + res));
+          }
+        }
+        blockIdx++;
+      } else {
+        console.warn(`Unexpected opcode 0x${b1.toString(16)} in DCT block stream at block ${blockIdx}`);
+        blockIdx++;
+      }
+    }
+  }
+
+  *decodeFrames(): Generator<QovFrame | QovAudioFrame> {
     if (!this.header) {
       this.decodeHeader();
     }
@@ -1012,10 +1194,9 @@ export class QovDecoder {
     console.log(`[Decoder] Starting frame decode at pos ${this.pos}, file length: ${this.data.length}`);
 
     while (this.pos < this.data.length) {
-      const chunkStartPos = this.pos;
       const chunkHeader = this.readChunkHeader();
 
-      console.log(`[Decoder] Chunk at ${chunkStartPos}: type=0x${chunkHeader.chunkType.toString(16)}, size=${chunkHeader.chunkSize}, timestamp=${chunkHeader.timestamp}`);
+
 
       // Sanity check - if chunk size would go past end of file, there's likely a problem
       if (this.pos + chunkHeader.chunkSize > this.data.length) {
@@ -1032,7 +1213,7 @@ export class QovDecoder {
         case QOV_CHUNK_KEYFRAME: {
           const isYuvChunk = (chunkHeader.chunkFlags & 0x01) !== 0;
           const isCompressed = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_COMPRESSED) !== 0;
-          console.log(`[Decoder] Decoding keyframe ${frameNumber}, YUV: ${isYuvChunk}, Compressed: ${isCompressed}...`);
+          // console.log(`[Decoder] Decoding keyframe ${frameNumber}, YUV: ${isYuvChunk}, Compressed: ${isCompressed}...`);
 
           // Determine the effective chunk size (excluding uncompressed_size if compressed)
           let effectiveChunkSize = chunkHeader.chunkSize;
@@ -1071,10 +1252,14 @@ export class QovDecoder {
           break;
         }
 
+
+
         case QOV_CHUNK_PFRAME: {
           const isYuvChunk = (chunkHeader.chunkFlags & 0x01) !== 0;
           const isCompressed = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_COMPRESSED) !== 0;
-          console.log(`[Decoder] Decoding P-frame ${frameNumber}, YUV: ${isYuvChunk}, Compressed: ${isCompressed}...`);
+          const isDctBlocks = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_DCT_BLOCKS) !== 0;
+
+          // console.log(`[Decoder] Decoding P-frame ${frameNumber}, YUV: ${isYuvChunk}, Compressed: ${isCompressed}, DCT: ${isDctBlocks}...`);
 
           // Determine the effective chunk size (excluding uncompressed_size if compressed)
           let effectiveChunkSize = chunkHeader.chunkSize;
@@ -1090,7 +1275,11 @@ export class QovDecoder {
             this.setActiveData(decompressedData);
 
             if (isYuvChunk || this.isYuvMode) {
-              this.decodeYuvPFrameDataFromBuffer(chunkHeader.uncompressedSize!);
+              if (isDctBlocks) {
+                this.decodeYuvPFrameDataDctFromBuffer(chunkHeader.uncompressedSize!);
+              } else {
+                this.decodeYuvPFrameDataFromBuffer(chunkHeader.uncompressedSize!);
+              }
             } else {
               this.decodePFrameDataFromBuffer(chunkHeader.uncompressedSize!, (chunkHeader.chunkFlags & 0x02) !== 0);
             }
@@ -1098,7 +1287,11 @@ export class QovDecoder {
             this.setActiveData(null);
           } else {
             if (isYuvChunk || this.isYuvMode) {
-              this.decodeYuvPFrameData(chunkHeader.chunkSize);
+              if (isDctBlocks) {
+                this.decodeYuvPFrameDataDct(chunkHeader.chunkSize);
+              } else {
+                this.decodeYuvPFrameData(chunkHeader.chunkSize);
+              }
             } else {
               this.decodePFrameData(chunkHeader.chunkSize, (chunkHeader.chunkFlags & 0x02) !== 0);
             }
@@ -1118,10 +1311,21 @@ export class QovDecoder {
           this.pos += chunkHeader.chunkSize;
           break;
 
-        case QOV_CHUNK_AUDIO:
-          // Audio not implemented yet, skip
+        case QOV_CHUNK_AUDIO: {
+          const audioData = this.data.subarray(this.pos, this.pos + chunkHeader.chunkSize);
+          const result = this.qoaDecoder.decodeFrame(audioData);
           this.pos += chunkHeader.chunkSize;
+
+          if (result) {
+            yield {
+              samples: result.samples,
+              channels: result.header.channels,
+              sampleRate: result.header.samplerate,
+              timestamp: chunkHeader.timestamp
+            } as QovAudioFrame;
+          }
           break;
+        }
 
         case QOV_CHUNK_INDEX:
           // Skip index table
@@ -1191,7 +1395,7 @@ export class QovDecoder {
         keyframeIndices.push(frameIndex);
         frameIndex++;
       } else if (chunkHeader.chunkType === QOV_CHUNK_PFRAME ||
-                 chunkHeader.chunkType === QOV_CHUNK_BFRAME) {
+        chunkHeader.chunkType === QOV_CHUNK_BFRAME) {
         frameIndex++;
       }
 

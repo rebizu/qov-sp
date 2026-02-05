@@ -2,7 +2,7 @@
 
   <PropertyGroup Label="Example">
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <RootNamespace>Example</RootNamespace>
   </PropertyGroup>
 

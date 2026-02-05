@@ -8,6 +8,8 @@ import {
 import { QovDecoder } from './qov-decoder';
 import {
   QovFrame,
+  QovAudioFrame,
+
   QovFileStats,
   QovHeader,
   QOV_FLAG_HAS_ALPHA,
@@ -79,6 +81,9 @@ let decodeStartTime = 0;
 let framesDecoded = 0;
 let totalFrames = 0;
 let allFramesDecoded: QovFrame[] = []; // For regular decoder
+let audioContext: AudioContext | null = null;
+let audioBuffer: AudioBuffer | null = null;
+let audioSourceNode: AudioBufferSourceNode | null = null;
 
 // Frame cache for smooth playback
 const frameCache = new Map<number, QovFrame>();
@@ -470,13 +475,50 @@ async function loadFromSource(source: FileDataSource | UrlDataSource): Promise<v
     regularDecoder = new QovDecoder(data);
     regularDecoder.decodeHeader(); // Re-initialize
 
+    let audioSamples: Float32Array[] = [];
+    let audioChannels = 0;
+    let audioSampleRate = 0;
+
     let frameIndex = 0;
     for (const frame of regularDecoder.decodeFrames()) {
-      allFramesDecoded.push(frame);
+      if ('samples' in frame) {
+        // Audio frame
+        const audioFrame = frame as QovAudioFrame;
+        audioSamples.push(audioFrame.samples);
+        audioChannels = audioFrame.channels;
+        audioSampleRate = audioFrame.sampleRate;
+        continue;
+      }
+
+      allFramesDecoded.push(frame as QovFrame);
       if (frameIndex % 10 === 0) {
         loadingText.textContent = `Decoded ${frameIndex} frames...`;
       }
       frameIndex++;
+    }
+
+    // Create AudioBuffer if we have audio
+    if (audioSamples.length > 0 && audioChannels > 0 && audioSampleRate > 0) {
+      if (!audioContext) audioContext = new AudioContext();
+
+      const totalSamples = audioSamples.reduce((acc, val) => acc + val.length / audioChannels, 0);
+      audioBuffer = audioContext.createBuffer(audioChannels, totalSamples, audioSampleRate);
+
+      let offset = 0;
+      for (const sampleChunk of audioSamples) {
+        // samples are interleaved, need to de-interleave for AudioBuffer
+        // Or if QoaDecoder returns interleaved, we split them here.
+        // QoaDecoder.decodeFrame returns interleaved samples in Float32Array
+
+        for (let c = 0; c < audioChannels; c++) {
+          const channelData = audioBuffer.getChannelData(c);
+          for (let i = 0; i < sampleChunk.length / audioChannels; i++) {
+            channelData[offset + i] = sampleChunk[i * audioChannels + c];
+          }
+        }
+        offset += sampleChunk.length / audioChannels;
+      }
+      console.log(`Audio buffer created: ${audioBuffer.duration.toFixed(2)}s, ${audioChannels}ch, ${audioSampleRate}Hz`);
     }
 
     totalFrames = allFramesDecoded.length;
@@ -559,6 +601,36 @@ async function loadFromSource(source: FileDataSource | UrlDataSource): Promise<v
     console.error(`No frames found!`);
     alert(`No frames could be found in this file.`);
   }
+
+  // Load Audio for Streaming Mode
+  if (streamingDecoder) {
+    showLoading('Loading audio...');
+    try {
+      const audioData = await streamingDecoder.getAudioTracks();
+      if (audioData) {
+        if (!audioContext) audioContext = new AudioContext();
+        const { samples, channels, rate } = audioData;
+
+        const totalSamples = samples.reduce((acc, val) => acc + val.length / channels, 0);
+        audioBuffer = audioContext.createBuffer(channels, totalSamples, rate);
+
+        let offset = 0;
+        for (const sampleChunk of samples) {
+          for (let c = 0; c < channels; c++) {
+            const channelData = audioBuffer.getChannelData(c);
+            for (let i = 0; i < sampleChunk.length / channels; i++) {
+              channelData[offset + i] = sampleChunk[i * channels + c];
+            }
+          }
+          offset += sampleChunk.length / channels;
+        }
+        console.log(`[Streaming] Audio loaded: ${audioBuffer.duration.toFixed(2)}s`);
+      }
+    } catch (e) {
+      console.error("Failed to load audio tracks:", e);
+    }
+    hideLoading();
+  }
 }
 
 // Playback loop
@@ -592,6 +664,32 @@ function startPlayback(): void {
   isPlaying = true;
   playBtn.innerHTML = '&#10074;&#10074; Pause';
   lastPlaybackTime = performance.now();
+
+  // Start audio if available
+  if (audioBuffer && audioContext) {
+    if (audioContext.state === 'suspended') {
+      audioContext.resume();
+    }
+
+    // Create new source node (nodes are one-time use)
+    audioSourceNode = audioContext.createBufferSource();
+    audioSourceNode.buffer = audioBuffer;
+    audioSourceNode.connect(audioContext.destination);
+
+    // Calculate start position based on current frame timestamp
+
+    // Current frame timestamp in seconds
+    const startOffset = (frameCache.get(currentFrameIndex)?.timestamp || 0) / 1000000;
+
+    // Ensure we don't start past the end
+    if (startOffset < audioBuffer.duration) {
+      audioSourceNode.start(0, startOffset);
+    } else {
+      console.log("Audio offset past duration, not starting audio");
+    }
+
+  }
+
   playbackLoop();
 }
 
@@ -602,6 +700,14 @@ function stopPlayback(): void {
   if (animationFrameId) {
     cancelAnimationFrame(animationFrameId);
     animationFrameId = null;
+  }
+
+  if (audioSourceNode) {
+    try {
+      audioSourceNode.stop();
+    } catch (e) { /* ignore */ }
+    audioSourceNode.disconnect();
+    audioSourceNode = null;
   }
 }
 

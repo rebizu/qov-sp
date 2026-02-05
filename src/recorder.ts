@@ -46,6 +46,9 @@ let frameCount = 0;
 let keyframeCount = 0;
 let lastFrameTime = 0;
 let encodedData: Uint8Array | null = null;
+let audioContext: AudioContext | null = null;
+let audioSource: MediaStreamAudioSourceNode | null = null;
+let audioProcessor: ScriptProcessorNode | null = null;
 
 // Log to console and optionally show alert
 function log(message: string, isError = false): void {
@@ -118,7 +121,7 @@ async function startPreview(): Promise<void> {
       height: { ideal: height },
       frameRate: { ideal: frameRate },
     },
-    audio: false,
+    audio: true,
   };
 
   // Only add deviceId constraint if we have a specific one
@@ -168,7 +171,7 @@ async function startPreview(): Promise<void> {
             height: { ideal: height },
             frameRate: { ideal: frameRate },
           },
-          audio: false,
+          audio: true,
         });
 
         preview.srcObject = mediaStream;
@@ -268,7 +271,7 @@ function captureFrame(): void {
 }
 
 // Start recording
-function startRecording(): void {
+async function startRecording(): Promise<void> {
   if (!mediaStream) {
     alert('No camera stream available');
     return;
@@ -296,12 +299,58 @@ function startRecording(): void {
       dctQp: parseInt(customDctQpSlider.value),
     };
     log(`Starting recording: ${width}x${height} @ ${frameRate}fps, colorspace: 0x${colorspace.toString(16)}, mode: custom lossy (yQ=${customParams.yQuant}, uvQ=${customParams.uvQuant}, tThresh=${customParams.temporalThresh}, dctQp=${customParams.dctQp})`);
-  } else {
     log(`Starting recording: ${width}x${height} @ ${frameRate}fps, colorspace: 0x${colorspace.toString(16)}, mode: lossless`);
   }
 
+  // Set up audio
+  let audioChannels = 0;
+  let audioRate = 0;
+
+  if (!audioContext) {
+    audioContext = new AudioContext();
+  }
+
+  if (audioContext.state === 'suspended') {
+    await audioContext.resume();
+  }
+
+  // Create audio processing graph
+  if (mediaStream.getAudioTracks().length > 0) {
+    audioSource = audioContext.createMediaStreamSource(mediaStream);
+    audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    audioChannels = 1; // Mono for now
+    audioRate = audioContext.sampleRate;
+
+    audioProcessor.onaudioprocess = (e) => {
+      if (!isRecording || !encoder) return;
+
+      const inputData = e.inputBuffer.getChannelData(0);
+      // Calculate timestamp in microseconds
+      // We use performance.now() for roughly sync with video? 
+      // Or utilize the sample count?
+      // Video uses (performance.now() - startTime) * 1000
+      const now = performance.now();
+      const timestamp = Math.floor((now - recordingStartTime) * 1000);
+
+      encoder.encodeAudio(inputData, timestamp);
+    };
+
+    audioSource.connect(audioProcessor);
+    // Connect to a GainNode with 0 gain to prevent feedback while keeping the graph active
+    const zeroGain = audioContext.createGain();
+    zeroGain.gain.value = 0;
+    audioProcessor.connect(zeroGain);
+    zeroGain.connect(audioContext.destination);
+
+    // audioProcessor.connect(audioContext.destination); // Caused feedback loop!
+  }
+
   // Initialize encoder with selected colorspace and encoding mode
-  encoder = new QovEncoder(width, height, frameRate, 1, QOV_FLAG_HAS_INDEX, colorspace, true, quality, customParams);
+  encoder = new QovEncoder(
+    width, height, frameRate, 1, QOV_FLAG_HAS_INDEX, colorspace, true, quality, customParams,
+    audioChannels, audioRate
+  );
   encoder.writeHeader();
 
   // Reset state
@@ -342,6 +391,17 @@ function stopRecording(): void {
     encodedData = encoder.finish();
     statSize.textContent = formatSize(encodedData.length);
     log(`Encoded file size: ${formatSize(encodedData.length)}`);
+  }
+
+  // Cleanup audio
+  if (audioSource) {
+    audioSource.disconnect();
+    audioSource = null;
+  }
+  if (audioProcessor) {
+    audioProcessor.disconnect();
+    audioProcessor.onaudioprocess = null;
+    audioProcessor = null;
   }
 
   // Update UI
@@ -459,7 +519,7 @@ async function init(): Promise<void> {
     log('Requesting camera permission...');
     const initialStream = await navigator.mediaDevices.getUserMedia({
       video: true,
-      audio: false
+      audio: true
     });
     log('Permission granted');
 

@@ -57,10 +57,17 @@ export const QOV_CHUNK_END = 0xFF;
 export const QOV_CHUNK_FLAG_YUV = 0x01;         // bit 0: YUV mode
 export const QOV_CHUNK_FLAG_MOTION = 0x02;      // bit 1: motion vectors
 export const QOV_CHUNK_FLAG_COMPRESSED = 0x10;  // bit 4: LZ4 compressed
+export const QOV_CHUNK_FLAG_DCT_BLOCKS = 0x20;  // bit 5: DCT blocks
 
 // Compression types (bits 4-5 of chunk flags)
 export const QOV_COMPRESSION_NONE = 0x00;
 export const QOV_COMPRESSION_LZ4 = 0x10;
+
+// DCT Opcodes (Version 0x03)
+export const QOV_OP_DCT_Y = 0x50;
+export const QOV_OP_DCT_UV = 0x51;
+export const QOV_OP_DCT_SKIP = 0x52;
+export const QOV_OP_DCT_ZERO = 0x53;
 
 // Chunk header
 export interface QovChunkHeader {
@@ -92,6 +99,13 @@ export interface QovFrame {
   timestamp: number;          // microseconds
   isKeyframe: boolean;
   frameNumber: number;
+}
+
+export interface QovAudioFrame {
+  samples: Float32Array;
+  channels: number;
+  sampleRate: number;
+  timestamp: number;
 }
 
 // File statistics for player UI
