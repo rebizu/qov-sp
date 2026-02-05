@@ -33,12 +33,14 @@ public class QovEncoder
             flags |= QovTypes.FlagDctEnabled; // Enable DCT by default for lossy
         }
         
+
+        byte version = (flags & QovTypes.FlagLossyMode) != 0 ? QovTypes.Version3 : QovTypes.Version2;
         LossyParams lp = LossyParams.Derive(quality);
 
         _writer = new BinaryWriter(output, System.Text.Encoding.ASCII, leaveOpen: true);
         _header = new QovHeader(flags, width, height, frameRateNum, frameRateDen, colorspace,
             (byte)audioChannels, (uint)audioRate, 0, 
-            (byte)quality, lp.YQuant, lp.UvQuant, lp.TemporalThresh, lp.DctQp);
+            (byte)quality, lp.YQuant, lp.UvQuant, lp.TemporalThresh, lp.DctQp, version);
             
         if (audioChannels > 0 && audioRate > 0)
         {
@@ -66,7 +68,7 @@ public class QovEncoder
         _writer.Write((byte)0x66); // 'f'
 
         // Version
-        _writer.Write(QovTypes.Version2);
+        _writer.Write(_header.Version);
 
         // Flags
         _writer.Write(_header.Flags);

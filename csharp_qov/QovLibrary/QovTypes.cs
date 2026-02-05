@@ -86,10 +86,10 @@ public readonly struct QovHeader
 
     public QovHeader(byte flags, ushort width, ushort height, ushort frameRateNum = 30, ushort frameRateDen = 1,
         byte colorspace = QovTypes.ColorspaceSrgb, byte audioChannels = 0, uint audioRate = 0, uint totalFrames = 0,
-        byte quality = 0, byte yQuantBase = 0, byte uvQuantBase = 0, byte temporalThresh = 0, byte dctQpBase = 0)
+        byte quality = 0, byte yQuantBase = 0, byte uvQuantBase = 0, byte temporalThresh = 0, byte dctQpBase = 0, byte version = QovTypes.Version2)
     {
         Magic = QovTypes.Magic;
-        Version = QovTypes.Version3;
+        Version = version;
         Flags = flags;
         Width = width;
         Height = height;
