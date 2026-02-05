@@ -2,7 +2,7 @@
 // Test YUV P-frame black pixel fix
 
 import { readFileSync } from 'fs';
-import { QovDecoder } from './src/qov-decoder.js';
+import { QovDecoder } from '../../src/qov-decoder.js';
 
 const filePath = '/mnt/c/Users/RenéBrokholm/Downloads/recording-1770105145026.qov';
 

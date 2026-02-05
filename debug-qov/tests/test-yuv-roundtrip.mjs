@@ -1,5 +1,5 @@
 // Test YUV round-trip conversion accuracy
-import { rgbToYuv, yuvToRgb } from './dist/color-utils.js';
+import { rgbToYuv, yuvToRgb } from '../../dist/color-utils.js';
 
 console.log('Testing YUV Round-Trip Conversion\n');
 
@@ -42,7 +42,7 @@ for (const test of testCases) {
   console.log(`${name.padEnd(15)} RGB(${r.toString().padStart(3)},${g.toString().padStart(3)},${b.toString().padStart(3)}) -> YUV(${yuv.y.toString().padStart(3)},${yuv.u.toString().padStart(3)},${yuv.v.toString().padStart(3)}) -> RGB(${rgb2.r.toString().padStart(3)},${rgb2.g.toString().padStart(3)},${rgb2.b.toString().padStart(3)}) | Error: ${error} (avg: ${avgError.toFixed(1)})`);
 
   if (error > 2) {
-    problemCases.push({ name, original: {r, g, b}, yuv, decoded: rgb2, error });
+    problemCases.push({ name, original: { r, g, b }, yuv, decoded: rgb2, error });
   }
 }
 

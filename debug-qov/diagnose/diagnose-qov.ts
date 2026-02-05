@@ -2,14 +2,14 @@
 // Diagnostic tool to analyze QOV files for black dot artifacts
 
 import * as fs from 'fs';
-import { QovDecoder } from './src/qov-decoder';
-import { QovFrame } from './src/qov-types';
+import { QovDecoder } from '../../src/qov-decoder';
+import { QovFrame } from '../../src/qov-types';
 
 function analyzePixels(pixels: Uint8ClampedArray, width: number, height: number, frameNum: number) {
   let blackPixels = 0;
   let darkPixels = 0;
   let normalPixels = 0;
-  const blackLocations: Array<{x: number, y: number, r: number, g: number, b: number, a: number}> = [];
+  const blackLocations: Array<{ x: number, y: number, r: number, g: number, b: number, a: number }> = [];
 
   let minY = 255, maxY = 0;
   let avgY = 0;
@@ -34,12 +34,12 @@ function analyzePixels(pixels: Uint8ClampedArray, width: number, height: number,
       if (r === 0 && g === 0 && b === 0) {
         blackPixels++;
         if (blackLocations.length < 20) {
-          blackLocations.push({x, y, r, g, b, a});
+          blackLocations.push({ x, y, r, g, b, a });
         }
       } else if (r < 20 && g < 20 && b < 20) {
         darkPixels++;
         if (blackLocations.length < 20) {
-          blackLocations.push({x, y, r, g, b, a});
+          blackLocations.push({ x, y, r, g, b, a });
         }
       } else {
         normalPixels++;
@@ -50,9 +50,9 @@ function analyzePixels(pixels: Uint8ClampedArray, width: number, height: number,
   avgY /= (width * height);
 
   console.log(`\n=== Frame ${frameNum} Pixel Analysis ===`);
-  console.log(`Black pixels (R=G=B=0): ${blackPixels} (${(blackPixels/(width*height)*100).toFixed(2)}%)`);
-  console.log(`Dark pixels (R,G,B < 20): ${darkPixels} (${(darkPixels/(width*height)*100).toFixed(2)}%)`);
-  console.log(`Normal pixels: ${normalPixels} (${(normalPixels/(width*height)*100).toFixed(2)}%)`);
+  console.log(`Black pixels (R=G=B=0): ${blackPixels} (${(blackPixels / (width * height) * 100).toFixed(2)}%)`);
+  console.log(`Dark pixels (R,G,B < 20): ${darkPixels} (${(darkPixels / (width * height) * 100).toFixed(2)}%)`);
+  console.log(`Normal pixels: ${normalPixels} (${(normalPixels / (width * height) * 100).toFixed(2)}%)`);
   console.log(`Luminance: min=${minY}, max=${maxY}, avg=${avgY.toFixed(1)}`);
 
   // Show Y histogram for very dark values
@@ -98,7 +98,7 @@ function analyzeYuvPlanes(decoder: any, frameNum: number) {
     if (y === 0) yZeroCount++;
   }
 
-  console.log(`Y plane: min=${yMin}, max=${yMax}, avg=${(ySum/yPlane.length).toFixed(1)}, zero count=${yZeroCount}`);
+  console.log(`Y plane: min=${yMin}, max=${yMax}, avg=${(ySum / yPlane.length).toFixed(1)}, zero count=${yZeroCount}`);
 
   // Analyze U plane
   let uMin = 255, uMax = 0, uSum = 0;
@@ -109,7 +109,7 @@ function analyzeYuvPlanes(decoder: any, frameNum: number) {
     uMax = Math.max(uMax, u);
   }
 
-  console.log(`U plane: min=${uMin}, max=${uMax}, avg=${(uSum/uPlane.length).toFixed(1)}`);
+  console.log(`U plane: min=${uMin}, max=${uMax}, avg=${(uSum / uPlane.length).toFixed(1)}`);
 
   // Analyze V plane
   let vMin = 255, vMax = 0, vSum = 0;
@@ -120,7 +120,7 @@ function analyzeYuvPlanes(decoder: any, frameNum: number) {
     vMax = Math.max(vMax, v);
   }
 
-  console.log(`V plane: min=${vMin}, max=${vMax}, avg=${(vSum/vPlane.length).toFixed(1)}`);
+  console.log(`V plane: min=${vMin}, max=${vMax}, avg=${(vSum / vPlane.length).toFixed(1)}`);
 
   // Show Y histogram for very dark values
   console.log(`\nY plane histogram (0-20):`);
@@ -176,7 +176,7 @@ async function main() {
   console.log(`Magic: ${header.magic}`);
   console.log(`Version: 0x${header.version.toString(16)}`);
   console.log(`Dimensions: ${header.width}x${header.height}`);
-  console.log(`Frame rate: ${header.frameRateNum}/${header.frameRateDen} = ${(header.frameRateNum/header.frameRateDen).toFixed(2)} fps`);
+  console.log(`Frame rate: ${header.frameRateNum}/${header.frameRateDen} = ${(header.frameRateNum / header.frameRateDen).toFixed(2)} fps`);
   console.log(`Total frames: ${header.totalFrames}`);
   console.log(`Flags: 0x${header.flags.toString(16).padStart(2, '0')}`);
   console.log(`  Has alpha: ${(header.flags & 0x01) !== 0}`);
@@ -184,7 +184,7 @@ async function main() {
   console.log(`  Has index: ${(header.flags & 0x04) !== 0}`);
   console.log(`Colorspace: 0x${header.colorspace.toString(16)}`);
 
-  const colorspaceNames: {[key: number]: string} = {
+  const colorspaceNames: { [key: number]: string } = {
     0x00: 'sRGB',
     0x01: 'sRGBA',
     0x10: 'YUV420',
