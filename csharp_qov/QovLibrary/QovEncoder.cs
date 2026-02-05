@@ -20,17 +20,30 @@ public class QovEncoder
         ushort frameRateNum = 30, ushort frameRateDen = 1,
         byte flags = QovTypes.FlagHasIndex,
         byte colorspace = QovTypes.ColorspaceSrgb,
-        bool useCompression = true)
+        bool useCompression = true,
+        int quality = 0)
     {
+        // Lossy logic
+        if (quality > 0 && quality < 100)
+        {
+            flags |= QovTypes.FlagLossyMode;
+            flags |= QovTypes.FlagDctEnabled; // Enable DCT by default for lossy
+        }
+        
+        LossyParams lp = LossyParams.Derive(quality);
+
         _writer = new BinaryWriter(output, System.Text.Encoding.ASCII, leaveOpen: true);
-        _header = new QovHeader(flags, width, height, frameRateNum, frameRateDen, colorspace);
+        _header = new QovHeader(flags, width, height, frameRateNum, frameRateDen, colorspace,
+            0, 0, 0, // Audio defaults
+            (byte)quality, lp.YQuant, lp.UvQuant, lp.TemporalThresh, lp.DctQp);
+            
         _prevFrame = new byte[width * height * 4];
         _colorIndex = new QovPixel[64];
         _colorCache = new QovPixel[64];
         _prevPixel = new QovPixel(0, 0, 0, 255);
         _keyframes = new List<QovIndexEntry>();
         _useCompression = useCompression;
-
+ 
         _isYuvMode = colorspace >= QovTypes.ColorspaceYuv420;
 
         WriteHeader();
@@ -82,13 +95,13 @@ public class QovEncoder
         {
             EncodeRgbKeyframe(pixels, timestamp);
         }
-        
-        // Update previous frame buffer
-        pixels.CopyTo(_prevFrame);
     }
 
     private void EncodeRgbKeyframe(ReadOnlySpan<byte> pixels, uint timestamp)
     {
+        // Update previous frame buffer (lossless)
+        pixels.CopyTo(_prevFrame);
+
         int frameNumber = _frameCount++;
         int pixelCount = _header.Width * _header.Height;
 
@@ -210,6 +223,14 @@ public class QovEncoder
 
     private void EncodeYuvKeyframe(ReadOnlySpan<byte> pixels, uint timestamp)
     {
+        // Update previous frame buffer (lossless/YUV approximation ignored for now? No, need copy)
+        // If YUV is lossless, we can copy data.
+        // QOV YUV usually implies some loss due to conversion, but we store RGB in _prevFrame.
+        // So copying pixels is "correct" for reference if we assume lossless encoding.
+        // But if we want to simulate YUV loss, we should convert back.
+        // For Keyframe, we just store original.
+        pixels.CopyTo(_prevFrame);
+
         int frameNumber = _frameCount++;
         int pixelCount = _header.Width * _header.Height;
 
@@ -261,13 +282,11 @@ public class QovEncoder
         {
             EncodeRgbPFrame(pixels, timestamp);
         }
-        
-        // Update previous frame buffer
-        pixels.CopyTo(_prevFrame);
     }
 
     private void EncodeRgbPFrame(ReadOnlySpan<byte> pixels, uint timestamp)
     {
+        pixels.CopyTo(_prevFrame);
         _frameCount++;
         int pixelCount = _header.Width * _header.Height;
 
@@ -381,22 +400,63 @@ public class QovEncoder
     private void EncodeYuvPFrame(ReadOnlySpan<byte> pixels, uint timestamp)
     {
         _frameCount++;
+        int width = _header.Width;
+        int height = _header.Height;
+        bool useDct = (_header.Flags & QovTypes.FlagDctEnabled) != 0;
 
-        ColorConversion.RgbaToYuv420(pixels, _header.Width, _header.Height,
+        ColorConversion.RgbaToYuv420(pixels, width, height,
             out byte[] yPlane, out byte[] uPlane, out byte[] vPlane);
 
-        ColorConversion.RgbaToYuv420(_prevFrame, _header.Width, _header.Height,
+        ColorConversion.RgbaToYuv420(_prevFrame, width, height,
             out byte[] prevY, out byte[] prevU, out byte[] prevV);
 
         using var tempStream = new MemoryStream();
         using var tempWriter = new BinaryWriter(tempStream);
 
-        EncodeYuvPlaneTemporal(yPlane, prevY, tempWriter);
-        EncodeYuvPlaneTemporal(uPlane, prevU, tempWriter);
-        EncodeYuvPlaneTemporal(vPlane, prevV, tempWriter);
+        if (useDct)
+        {
+            float[] blockBuf = new float[64];
+            byte[] nextY = new byte[yPlane.Length];
+            byte[] nextU = new byte[uPlane.Length];
+            byte[] nextV = new byte[vPlane.Length];
 
-        byte[] frameData = tempStream.ToArray();
-        WriteChunk(QovTypes.ChunkTypePframe, QovTypes.ChunkFlagYuv, timestamp, frameData, false);
+            EncodePlaneDct(yPlane, prevY, nextY, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter);
+            
+            // Chroma subsampling dims
+            int uvW = (width + 1) / 2;
+            int uvH = (height + 1) / 2;
+            
+            EncodePlaneDct(uPlane, prevU, nextU, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter);
+            EncodePlaneDct(vPlane, prevV, nextV, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter);
+
+            // Reconstruct _prevFrame from nextY/U/V to avoid drift
+            // We need a way to convert YUV planes back to RGBA into _prevFrame
+            ColorConversion.Yuv420ToRgba(nextY, nextU, nextV, width, height, _prevFrame);
+
+            byte[] frameData = tempStream.ToArray();
+            WriteChunk(QovTypes.ChunkTypePframe, (byte)(QovTypes.ChunkFlagYuv | QovTypes.ChunkFlagDctBlocks), timestamp, frameData, false);
+        }
+        else
+        {
+            EncodeYuvPlaneTemporal(yPlane, prevY, tempWriter);
+            EncodeYuvPlaneTemporal(uPlane, prevU, tempWriter);
+            EncodeYuvPlaneTemporal(vPlane, prevV, tempWriter);
+
+            // In legacy DPCM mode, we assume drift is negligible or handled by I-frames?
+            // Actually, we should probably update _prevFrame using the decoded result too,
+            // but DPCM is lossless (except for conversion).
+            // But we already removed the global copy. So we MUST update _prevFrame here.
+            // Since DPCM is technically lossless (modulo quantization if implemented), 
+            // and we rely on ColorConversion which is lossy (rounding), 
+            // it's safest to overwrite _prevFrame with the Input pixels for DPCM 
+            // OR use the YUV decoded.
+            // For now, to match previous behavior, I will copy Input pixels.
+            // Note: This reintroduced the "copy" behavior I removed, but only for DPCM path.
+            pixels.CopyTo(_prevFrame);
+
+            byte[] frameData = tempStream.ToArray();
+            WriteChunk(QovTypes.ChunkTypePframe, QovTypes.ChunkFlagYuv, timestamp, frameData, false);
+        }
     }
 
 private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
@@ -605,6 +665,169 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
         if (run > 0)
         {
             writer.Write((byte)(0xC0 | (run - 1)));
+        }
+    }
+
+
+    private void EncodePlaneDct(ReadOnlySpan<byte> curr, ReadOnlySpan<byte> prev, Span<byte> next, int width, int height, int[] quant, byte opType, float[] blockBuf, BinaryWriter writer)
+    {
+        int qpBase = _header.DctQpBase;
+        int blocksX = (width + 7) / 8;
+        int blocksY = (height + 7) / 8;
+        int skipCount = 0;
+
+        for (int by = 0; by < blocksY; by++)
+        {
+            for (int bx = 0; bx < blocksX; bx++)
+            {
+                // 1. Extract Block & Calculate Residual
+                bool hasContent = false;
+                float diffSum = 0;
+                
+                for (int y = 0; y < 8; y++)
+                {
+                    int py = by * 8 + y;
+                    if (py >= height) continue;
+                    for (int x = 0; x < 8; x++)
+                    {
+                        int px = bx * 8 + x;
+                        if (px >= width) continue;
+                        
+                        int idx = py * width + px;
+                        float res = curr[idx] - prev[idx];
+                        blockBuf[y * 8 + x] = res;
+                        diffSum += Math.Abs(res);
+                    }
+                }
+
+                // 2. Threshold check
+                if (diffSum < 64) hasContent = false;
+                else hasContent = true;
+
+                if (!hasContent)
+                {
+                    skipCount++;
+                    // Reconstruct: just copy previous
+                    for (int y = 0; y < 8; y++)
+                    {
+                        int py = by * 8 + y;
+                        if (py >= height) continue;
+                        for (int x = 0; x < 8; x++)
+                        {
+                            int px = bx * 8 + x;
+                            if (px >= width) continue;
+                            int idx = py * width + px;
+                            next[idx] = prev[idx];
+                        }
+                    }
+                    continue;
+                }
+
+                // Flush skips
+                while (skipCount > 0)
+                {
+                    writer.Write(QovTypes.OpDctSkip);
+                    byte count = (byte)Math.Min(skipCount, 255);
+                    writer.Write(count);
+                    skipCount -= count;
+                }
+
+                // 3. DCT Transform
+                float[] coeffs = new float[64];
+                Dct.ForwardDct(blockBuf, coeffs);
+
+                // 4. Quantize
+                float scale = 1.0f / (0.1f + (qpBase * 0.1f));
+                
+                writer.Write(opType);
+                writer.Write((byte)0x40); // Delta 0
+
+                // DC
+                short dcVal = (short)Math.Round(coeffs[0] * scale / quant[0]);
+                writer.Write(dcVal);
+                
+                // AC
+                int zeroRun = 0;
+                for (int k = 1; k < 64; k++)
+                {
+                    int zigzagIdx = Dct.ZigZag[k];
+                    float coeff = coeffs[zigzagIdx];
+                    int qVal = (int)Math.Round(coeff * scale / quant[zigzagIdx]);
+                    
+                    if (qVal == 0)
+                    {
+                        zeroRun++;
+                    }
+                    else
+                    {
+                        // Write run/level
+                        while (zeroRun >= 16)
+                        {
+                            writer.Write((byte)0xF0);
+                            zeroRun -= 16;
+                        }
+                        
+                        int size = 0;
+                        if (qVal >= -128 && qVal <= 127) size = 1;
+                        else if (qVal >= -32768 && qVal <= 32767) size = 2;
+                        else if (qVal >= -8388608 && qVal <= 8388607) size = 3;
+                        else size = 4;
+                        
+                        writer.Write((byte)((zeroRun << 4) | size));
+                        
+                        if (size == 1) writer.Write((byte)qVal);
+                        else if (size == 2) writer.Write((short)qVal);
+                        else if (size == 3) {
+                             writer.Write((byte)((qVal >> 16) & 0xff));
+                             writer.Write((byte)((qVal >> 8) & 0xff));
+                             writer.Write((byte)(qVal & 0xff));
+                        }
+                        else writer.Write(qVal);
+                        
+                        zeroRun = 0;
+                    }
+                }
+                writer.Write((byte)0x00); // EOB
+
+                // 5. Reconstruct
+                float[] recCoeffs = new float[64];
+                recCoeffs[0] = (float)Math.Round(coeffs[0] * scale / quant[0]) * quant[0] / scale;
+                for (int k = 1; k < 64; k++)
+                {
+                     int z = Dct.ZigZag[k];
+                     float qVal = (float)Math.Round(coeffs[z] * scale / quant[z]);
+                     recCoeffs[z] = qVal * quant[z] / scale;
+                }
+                
+                // IDCT
+                Dct.InverseDctRaw(recCoeffs, blockBuf); 
+                
+                // Add to prev and store in next
+                for (int y = 0; y < 8; y++)
+                {
+                    int py = by * 8 + y;
+                    if (py >= height) continue;
+                    for (int x = 0; x < 8; x++)
+                    {
+                        int px = bx * 8 + x;
+                        if (px >= width) continue;
+                        
+                        int idx = py * width + px;
+                        float res = blockBuf[y * 8 + x];
+                        int val = (int)(prev[idx] + res);
+                        next[idx] = (byte)Math.Max(0, Math.Min(255, val));
+                    }
+                }
+            }
+        }
+        
+        // Flush final skips
+        while (skipCount > 0)
+        {
+            writer.Write(QovTypes.OpDctSkip);
+            byte count = (byte)Math.Min(skipCount, 255);
+            writer.Write(count);
+            skipCount -= count;
         }
     }
 

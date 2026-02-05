@@ -9,16 +9,16 @@ public static partial class QovTypes
     public const string Magic = "qovf";
     public const byte Version1 = 0x01;
     public const byte Version2 = 0x02;
+    public const byte Version3 = 0x03; // Lossy support
 
     public const byte FlagHasAlpha = 0x01;
     public const byte FlagHasMotion = 0x02;
     public const byte FlagHasIndex = 0x04;
     public const byte FlagHasBFrames = 0x08;
     public const byte FlagEnhancedComp = 0x10;
+    public const byte FlagLossyMode = 0x20;
+    public const byte FlagDctEnabled = 0x40;
 
-    public const byte ChunkFlagYuv = 0x01;
-    public const byte ChunkFlagMotion = 0x02;
-    public const byte ChunkFlagCompressed = 0x10;
 
     public const byte ChunkTypeSync = 0x00;
     public const byte ChunkTypeKeyframe = 0x01;
@@ -27,6 +27,12 @@ public static partial class QovTypes
     public const byte ChunkTypeAudio = 0x10;
     public const byte ChunkTypeIndex = 0xF0;
     public const byte ChunkTypeEnd = 0xFF;
+
+    public const byte ChunkFlagYuv = 0x01;
+    public const byte ChunkFlagMotion = 0x02;
+    public const byte ChunkFlagCompressed = 0x10;
+    public const byte ChunkFlagDctBlocks = 0x20;
+    public const byte ChunkFlagAdaptiveQ = 0x40;
 
     public const byte ColorspaceSrgb = 0x00;
     public const byte ColorspaceSrgba = 0x01;
@@ -51,6 +57,12 @@ public static partial class QovTypes
         ChunkTypeEnd => "END",
         _ => $"UNKNOWN(0x{chunkType:X2})"
     };
+
+    // DCT Opcodes (Version 3)
+    public const byte OpDctY = 0x50;
+    public const byte OpDctUv = 0x51;
+    public const byte OpDctSkip = 0x52;
+    public const byte OpDctZero = 0x53;
 }
 
 public readonly struct QovHeader
@@ -66,12 +78,18 @@ public readonly struct QovHeader
     public byte AudioChannels { get; init; }
     public uint AudioRate { get; init; }
     public byte Colorspace { get; init; }
+    public byte Quality { get; init; }
+    public byte YQuantBase { get; init; }
+    public byte UvQuantBase { get; init; }
+    public byte TemporalThresh { get; init; }
+    public byte DctQpBase { get; init; }
 
     public QovHeader(byte flags, ushort width, ushort height, ushort frameRateNum = 30, ushort frameRateDen = 1,
-        byte colorspace = QovTypes.ColorspaceSrgb, byte audioChannels = 0, uint audioRate = 0,uint totalFrames=0)
+        byte colorspace = QovTypes.ColorspaceSrgb, byte audioChannels = 0, uint audioRate = 0, uint totalFrames = 0,
+        byte quality = 0, byte yQuantBase = 0, byte uvQuantBase = 0, byte temporalThresh = 0, byte dctQpBase = 0)
     {
         Magic = QovTypes.Magic;
-        Version = QovTypes.Version2;
+        Version = QovTypes.Version3;
         Flags = flags;
         Width = width;
         Height = height;
@@ -81,6 +99,11 @@ public readonly struct QovHeader
         AudioChannels = audioChannels;
         AudioRate = audioRate;
         Colorspace = colorspace;
+        Quality = quality;
+        YQuantBase = yQuantBase;
+        UvQuantBase = uvQuantBase;
+        TemporalThresh = temporalThresh;
+        DctQpBase = dctQpBase;
     }
 }
 
@@ -143,4 +166,30 @@ public class QovException : Exception
 {
     public QovException(string message) : base(message) { }
     public QovException(string message, Exception inner) : base(message, inner) { }
+}
+
+public struct LossyParams
+{
+    public byte YQuant;
+    public byte UvQuant;
+    public byte TemporalThresh;
+    public byte DctQp;
+
+    public static LossyParams Derive(int quality)
+    {
+        quality = Math.Clamp(quality, 0, 100);
+        
+        byte yQuant = (byte)Math.Clamp(1 + (100 - quality) / 8, 1, 64);
+        byte uvQuant = (byte)Math.Clamp(2 + (100 - quality) / 4, 1, 64);
+        byte temporalThresh = (byte)Math.Clamp((100 - quality) / 12, 0, 32);
+        byte dctQp = (byte)Math.Clamp(51 - (quality * 51 / 100), 0, 51);
+
+        return new LossyParams
+        {
+            YQuant = yQuant,
+            UvQuant = uvQuant,
+            TemporalThresh = temporalThresh,
+            DctQp = dctQp
+        };
+    }
 }

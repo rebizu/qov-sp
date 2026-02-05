@@ -1,0 +1,154 @@
+
+  private encodePlaneDct(curr: Uint8Array, prev: Uint8Array, next: Uint8Array, w: number, h: number, quant: number[], opType: number, blockBuf: Float32Array): void {
+    const qpBase = this.lossyParams?.dctQp ?? 20;
+    const blocksX = Math.ceil(w / 8);
+    const blocksY = Math.ceil(h / 8);
+    let skipCount = 0;
+
+    for (let by = 0; by < blocksY; by++) {
+      for (let bx = 0; bx < blocksX; bx++) {
+        // 1. Extract Block & Calculate Residual
+        let hasContent = false;
+        let diffSum = 0;
+        
+        for (let y = 0; y < 8; y++) {
+          const py = by * 8 + y;
+          if (py >= h) continue;
+          for (let x = 0; x < 8; x++) {
+            const px = bx * 8 + x;
+            if (px >= w) continue;
+            
+            const idx = py * w + px;
+            const res = curr[idx] - prev[idx];
+            blockBuf[y * 8 + x] = res;
+            diffSum += Math.abs(res);
+          }
+        }
+
+        // 2. Threshold check (simulated 'Zero' block if residuals are small)
+        if (diffSum < 64) {
+             hasContent = false;
+        } else {
+             hasContent = true;
+        }
+
+        if (!hasContent) {
+          skipCount++;
+          // Reconstruct: just copy previous
+          for (let y = 0; y < 8; y++) {
+            const py = by * 8 + y;
+            if (py >= h) continue;
+            for (let x = 0; x < 8; x++) {
+              const px = bx * 8 + x;
+              if (px >= w) continue;
+              const idx = py * w + px;
+              next[idx] = prev[idx];
+            }
+          }
+          continue;
+        }
+
+        // Flush skips
+        while (skipCount > 0) {
+          this.writeU8(QOV_OP_DCT_SKIP);
+          const count = Math.min(skipCount, 255);
+          this.writeU8(count);
+          skipCount -= count;
+        }
+
+        // 3. DCT Transform (using imported forwardDCT)
+        const coeffs = new Float32Array(64);
+        forwardDCT(blockBuf, coeffs);
+
+        // 4. Quantize
+        const qp = qpBase; 
+        const scale = 1.0 / (0.1 + (qp * 0.1));
+        
+        this.writeU8(opType);
+        this.writeU8(0x40); // Delta 0
+
+        // DC
+        const dcVal = Math.round(coeffs[0] * scale / quant[0]);
+        this.writeU16(dcVal & 0xffff);
+        
+        // AC
+        let zeroRun = 0;
+        for (let k = 1; k < 64; k++) {
+          const zigzagIdx = ZIGZAG[k];
+          const coeff = coeffs[zigzagIdx];
+          const qVal = Math.round(coeff * scale / quant[zigzagIdx]);
+          
+          if (qVal === 0) {
+            zeroRun++;
+          } else {
+            // Write run/level
+            while (zeroRun >= 16) {
+              this.writeU8(0xF0);
+              zeroRun -= 16;
+            }
+            
+            let size = 0;
+            const absVal = Math.abs(qVal);
+            // Size based on bits? Spec says "size" 1..4.
+            // Check logic again. Encoder needs to emit size bits?
+            // "The 4 high bits contain the run-length... The 4 low bits contain the size in bytes..."
+            // "Followed by 'size' bytes containing the level."
+            // Signed level.
+            if (qVal >= -128 && qVal <= 127) size = 1;
+            else if (qVal >= -32768 && qVal <= 32767) size = 2;
+            else if (qVal >= -8388608 && qVal <= 8388607) size = 3;
+            else size = 4;
+            
+            this.writeU8((zeroRun << 4) | size);
+            
+            if (size === 1) this.writeU8(qVal);
+            else if (size === 2) this.writeU16(qVal);
+            else if (size === 3) {
+                 this.writeU8((qVal >> 16) & 0xff);
+                 this.writeU8((qVal >> 8) & 0xff);
+                 this.writeU8(qVal & 0xff);
+            }
+            else this.writeU32(qVal);
+            
+            zeroRun = 0;
+          }
+        }
+        this.writeU8(0x00); // EOB
+
+        // 5. Reconstruct
+        const recCoeffs = new Float32Array(64);
+        recCoeffs[0] = Math.round(coeffs[0] * scale / quant[0]) * quant[0] / scale;
+        for (let k = 1; k < 64; k++) {
+             const z = ZIGZAG[k];
+             const qVal = Math.round(coeffs[z] * scale / quant[z]);
+             recCoeffs[z] = qVal * quant[z] / scale;
+        }
+        
+        // IDCT (using imported inverseDCTRaw)
+        inverseDCTRaw(recCoeffs, blockBuf); 
+        
+        // Add to prev and store in next
+        for (let y = 0; y < 8; y++) {
+          const py = by * 8 + y;
+          if (py >= h) continue;
+          for (let x = 0; x < 8; x++) {
+            const px = bx * 8 + x;
+            if (px >= w) continue;
+            
+            const idx = py * w + px;
+            const res = blockBuf[y * 8 + x];
+            next[idx] = Math.max(0, Math.min(255, prev[idx] + res));
+          }
+        }
+      }
+    }
+    
+    // Flush final skips
+    while (skipCount > 0) {
+      this.writeU8(QOV_OP_DCT_SKIP);
+      const count = Math.min(skipCount, 255);
+      this.writeU8(count);
+      skipCount -= count;
+    }
+  }
+

@@ -49,7 +49,7 @@ public class QovDecoder
             throw new QovException($"Invalid QOV magic: {magicStr}");
 
         byte version = ReadByte();
-        if (version != QovTypes.Version1 && version != QovTypes.Version2)
+        if (version != QovTypes.Version1 && version != QovTypes.Version2 && version != QovTypes.Version3)
             throw new QovException($"Unsupported QOV version: 0x{version:X2}");
 
         _use32BitChunkSize = version >= QovTypes.Version2;
@@ -63,9 +63,22 @@ public class QovDecoder
         byte audioChannels = ReadByte();
         uint audioRate = ReadBigEndianU24();
         byte colorspace = ReadByte();
-        ReadByte();
+        byte quality = ReadByte(); // Byte 23 (was reserved in V2)
 
-        _header = new QovHeader(flags, width, height, frameRateNum, frameRateDen, colorspace, audioChannels, audioRate, totalFrames);        
+        byte yQuant = 0, uvQuant = 0, tempThresh = 0, dctQp = 0;
+
+        if (version == QovTypes.Version3)
+        {
+            // Read extended header (bytes 24-31)
+            yQuant = ReadByte();
+            uvQuant = ReadByte();
+            tempThresh = ReadByte();
+            dctQp = ReadByte();
+            ReadBigEndianU32(); // Reserved 4 bytes
+        }
+
+        _header = new QovHeader(flags, width, height, frameRateNum, frameRateDen, colorspace, audioChannels, audioRate, totalFrames,
+            quality, yQuant, uvQuant, tempThresh, dctQp);        
         _prevFrame = new byte[width * height * 4];
         _currFrame = new byte[width * height * 4];
 
@@ -212,9 +225,28 @@ public class QovDecoder
 
             // Decode temporal YUV planes directly from frameData (which contains encoded opcodes)
             int pos = 0;
-            pos = DecodeYuvPlaneTemporal(frameData, pos, yPlane, prevY);
-            pos = DecodeYuvPlaneTemporal(frameData, pos, uPlane, prevU);
-            pos = DecodeYuvPlaneTemporal(frameData, pos, vPlane, prevV);
+            
+            if ((chunkFlags & QovTypes.ChunkFlagDctBlocks) != 0)
+            {
+                // Init with previous frame for P-frame prediction
+                Array.Copy(prevY, yPlane, prevY.Length);
+                Array.Copy(prevU, uPlane, prevU.Length);
+                Array.Copy(prevV, vPlane, prevV.Length);
+
+                float[] blockBuf = new float[64];
+                int uvW = (int)Math.Ceiling(_header.Width / 2.0);
+                int uvH = (int)Math.Ceiling(_header.Height / 2.0);
+
+                pos = DecodePlaneDct(frameData, pos, yPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf);
+                pos = DecodePlaneDct(frameData, pos, uPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf);
+                pos = DecodePlaneDct(frameData, pos, vPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf);
+            }
+            else
+            {
+                pos = DecodeYuvPlaneTemporal(frameData, pos, yPlane, prevY);
+                pos = DecodeYuvPlaneTemporal(frameData, pos, uPlane, prevU);
+                pos = DecodeYuvPlaneTemporal(frameData, pos, vPlane, prevV);
+            }
 
             // Convert decoded YUV back to RGBA
             ColorConversion.Yuv420ToRgba(yPlane, uPlane, vPlane, _header.Width, _header.Height, _currFrame);
@@ -589,6 +621,104 @@ public class QovDecoder
         Array.Copy(data, pos, result, 0, count);
         pos += count;
         return result;
+    }
+
+    private int DecodeDctBlock(ReadOnlySpan<byte> data, ref int pos, int[] quantTable, byte qpBase, float[] output)
+    {
+        byte qpByte = data[pos++];
+        int qpDelta = (qpByte & 0x7F) - 64;
+        int finalQp = Math.Clamp(qpBase + qpDelta, 0, 100);
+        float scale = 0.1f + (finalQp * 0.1f);
+
+        ushort dcRaw = (ushort)((data[pos] << 8) | data[pos + 1]);
+        pos += 2;
+        int dc = (dcRaw & 0x8000) != 0 ? dcRaw - 65536 : dcRaw;
+
+        float[] coeffs = new float[64];
+        coeffs[0] = dc * quantTable[0] * scale;
+
+        int k = 1;
+        while (k < 64)
+        {
+            byte b1 = data[pos++];
+            if (b1 == 0x00) break; // EOB
+            if (b1 == 0xF0) { k += 16; continue; } // ZRL
+
+            int run = (b1 >> 4) & 0x0F;
+            int size = b1 & 0x0F;
+
+            k += run;
+            if (k >= 64) break;
+
+            int level = 0;
+            if (size > 0)
+            {
+                uint rawLevel = 0;
+                for (int i = 0; i < size; i++) rawLevel = (rawLevel << 8) | data[pos++];
+
+                if (size == 1) level = (rawLevel & 0x80) != 0 ? (int)rawLevel - 256 : (int)rawLevel;
+                else if (size == 2) level = (rawLevel & 0x8000) != 0 ? (int)rawLevel - 65536 : (int)rawLevel;
+                else level = (int)rawLevel;
+            }
+
+            coeffs[Dct.ZigZag[k]] = level * quantTable[Dct.ZigZag[k]] * scale;
+            k++;
+        }
+
+        Dct.InverseDctRaw(coeffs, output);
+        return k; // Return value not strictly needed but matches structure
+    }
+
+    private int DecodePlaneDct(ReadOnlySpan<byte> data, int startPos, byte[] plane, int w, int h, int[] quantTable, byte opType, float[] blockBuf)
+    {
+        byte qpBase = _header.DctQpBase != 0 ? _header.DctQpBase : (byte)20;
+        int blocksX = (int)Math.Ceiling(w / 8.0);
+        int blocksY = (int)Math.Ceiling(h / 8.0);
+        int totalBlocks = blocksX * blocksY;
+        int blockIdx = 0;
+        int pos = startPos;
+
+        while (blockIdx < totalBlocks)
+        {
+            byte b1 = data[pos++];
+            if (b1 == QovTypes.OpDctSkip)
+            {
+                byte count = data[pos++];
+                blockIdx += count;
+            }
+            else if (b1 == QovTypes.OpDctZero)
+            {
+                byte count = data[pos++];
+                blockIdx += count;
+            }
+            else if (b1 == opType)
+            {
+                DecodeDctBlock(data, ref pos, quantTable, qpBase, blockBuf);
+                
+                int bx = (blockIdx % blocksX) * 8;
+                int by = (blockIdx / blocksX) * 8;
+
+                for (int y = 0; y < 8; y++)
+                {
+                    if (by + y >= h) break;
+                    for (int x = 0; x < 8; x++)
+                    {
+                        if (bx + x >= w) break;
+                        int idx = (by + y) * w + (bx + x);
+                        int val = plane[idx] + (int)blockBuf[y * 8 + x];
+                        plane[idx] = (byte)Math.Clamp(val, 0, 255);
+                    }
+                }
+                blockIdx++;
+            }
+            else
+            {
+                 // Handle unexpected opcode or sync error
+                 Console.WriteLine($"[Decoder] Unexpected opcode 0x{b1:X2} in DCT stream at block {blockIdx}");
+                 blockIdx++;
+            }
+        }
+        return pos;
     }
 }
 
