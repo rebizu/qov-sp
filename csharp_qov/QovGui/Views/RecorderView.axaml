@@ -7,24 +7,128 @@
              x:Class="QovGui.Views.RecorderView"
              x:DataType="vm:RecorderViewModel">
   
-  <Grid RowDefinitions="Auto,*,Auto" Margin="20">
-      <StackPanel Grid.Row="0" Spacing="10">
-          <TextBlock Text="Video Source"/>
-          <ComboBox ItemsSource="{Binding VideoDevices}" SelectedItem="{Binding SelectedVideoDevice}" HorizontalAlignment="Stretch"/>
-          
-          <TextBlock Text="Audio Source"/>
-          <ComboBox ItemsSource="{Binding AudioDevices}" SelectedItem="{Binding SelectedAudioDevice}" HorizontalAlignment="Stretch"/>
-      </StackPanel>
-      
-      <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center">
-          <TextBlock Text="{Binding StatusText}" FontSize="20" FontWeight="Bold" Margin="0,20"/>
-      </StackPanel>
+    <UserControl.Styles>
+        <Style Selector="TextBlock.label">
+            <Setter Property="Foreground" Value="#64748b"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="0,0,0,2"/>
+        </Style>
+        <Style Selector="TextBlock.value">
+            <Setter Property="Foreground" Value="#e2e8f0"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Background" Value="#1e1e2d"/>
+            <Setter Property="BorderBrush" Value="#334155"/>
+            <Setter Property="Margin" Value="0,0,0,15"/>
+        </Style>
+    </UserControl.Styles>
 
-      <Button Grid.Row="2" Command="{Binding ToggleRecordingCommand}" HorizontalAlignment="Center" Padding="20,10">
-          <Panel>
-              <TextBlock Text="Start Recording" IsVisible="{Binding !IsRecording}"/>
-              <TextBlock Text="Stop Recording" IsVisible="{Binding IsRecording}" Foreground="Red"/>
-          </Panel>
-      </Button>
-  </Grid>
+    <Grid ColumnDefinitions="*,350" Background="#0f0f1a">
+        
+      <!-- Left Column: Video Preview and Controls -->
+      <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto" Margin="20">
+          
+          <!-- Header -->
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+               <TextBlock Text="QOV Recorder" FontSize="20" Foreground="White" FontWeight="Bold"/>
+               
+               <!-- Recording Indicator -->
+               <StackPanel Grid.Column="1" Orientation="Horizontal" IsVisible="{Binding IsRecording}" Spacing="8" VerticalAlignment="Center">
+                   <Ellipse Width="12" Height="12" Fill="#ef4444"/>
+                   <TextBlock Text="Recording" Foreground="#ef4444" FontWeight="Bold"/>
+               </StackPanel>
+          </Grid>
+
+          <!-- Video Preview area -->
+          <Border Grid.Row="1" Background="#0a0a12" CornerRadius="8" ClipToBounds="True">
+               <Panel>
+                   <!-- Real Preview -->
+                   <Image Source="{Binding PreviewImage}" Stretch="Uniform" />
+                   
+                   <!-- Placeholder / Status Overlay -->
+                   <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10" 
+                               IsVisible="{Binding PreviewImage, Converter={x:Static ObjectConverters.IsNull}}">
+                       <TextBlock Text="{Binding StatusText}" FontSize="18" Foreground="#64748b" HorizontalAlignment="Center"/>
+                       <TextBlock Text="Webcam/Screen Preview" FontSize="14" Foreground="#334155" HorizontalAlignment="Center"/>
+                   </StackPanel>
+               </Panel>
+          </Border>
+          
+          <!-- Controls -->
+          <StackPanel Grid.Row="2" Margin="0,20,0,0" HorizontalAlignment="Center" Orientation="Horizontal" Spacing="15">
+              <Button Command="{Binding ToggleRecordingCommand}" 
+                      Background="{Binding IsRecording, Converter={StaticResource PlayPauseColorConverter}}"
+                      Foreground="White" Padding="30,12" IsEnabled="True">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                      <TextBlock Text="Start Recording" IsVisible="{Binding !IsRecording}"/>
+                      <TextBlock Text="Stop Recording" IsVisible="{Binding IsRecording}"/>
+                  </StackPanel>
+              </Button>
+          </StackPanel>
+      </Grid>
+
+      <!-- Right Column: Sidebar -->
+      <Border Grid.Column="1" BorderBrush="#1e1e2d" BorderThickness="1,0,0,0" Padding="25">
+          <ScrollViewer>
+              <StackPanel>
+                  <!-- Settings -->
+                  <TextBlock Text="SETTINGS" FontSize="12" FontWeight="Bold" Foreground="#64748b" Margin="0,0,0,20" LetterSpacing="1"/>
+                  
+                  <TextBlock Classes="label" Text="CAMERA / SCREEN"/>
+                  <ComboBox ItemsSource="{Binding VideoDevices}" SelectedItem="{Binding SelectedVideoDevice}" HorizontalAlignment="Stretch"/>
+                  
+                  <TextBlock Classes="label" Text="MICROPHONE"/>
+                  <ComboBox ItemsSource="{Binding AudioDevices}" SelectedItem="{Binding SelectedAudioDevice}" HorizontalAlignment="Stretch"/>
+
+                  <TextBlock Classes="label" Text="RESOLUTION"/>
+                  <ComboBox ItemsSource="{Binding Resolutions}" SelectedItem="{Binding SelectedResolution}" HorizontalAlignment="Stretch"/>
+
+                  <TextBlock Classes="label" Text="FRAME RATE"/>
+                  <ComboBox ItemsSource="{Binding FrameRates}" SelectedItem="{Binding SelectedFps}" HorizontalAlignment="Stretch"/>
+
+                  <TextBlock Classes="label" Text="KEYFRAME INTERVAL"/>
+                  <ComboBox ItemsSource="{Binding KeyframeIntervals}" SelectedItem="{Binding SelectedKeyframeInterval}" HorizontalAlignment="Stretch"/>
+
+                  <TextBlock Classes="label" Text="COLORSPACE"/>
+                  <ComboBox ItemsSource="{Binding Colorspaces}" SelectedItem="{Binding SelectedColorspace}" HorizontalAlignment="Stretch"/>
+
+                  <TextBlock Classes="label" Text="ENCODING MODE"/>
+                  <ComboBox ItemsSource="{Binding EncodingModes}" SelectedItem="{Binding SelectedEncodingMode}" HorizontalAlignment="Stretch"/>
+
+                  <StackPanel IsVisible="{Binding SelectedEncodingMode, Converter={StaticResource EqualsToBoolConverter}, ConverterParameter='Lossy'}">
+                      <TextBlock Classes="label" Text="{Binding Quality, StringFormat='QUALITY: {0}'}"/>
+                      <Slider Minimum="1" Maximum="100" Value="{Binding Quality}" SmallChange="1" LargeChange="10"/>
+                  </StackPanel>
+
+                  <!-- Divider -->
+                  <Border Height="1" Background="#1e1e2d" Margin="0,10,0,25"/>
+
+                  <!-- Stats -->
+                  <TextBlock Text="RECORDING STATS" FontSize="12" FontWeight="Bold" Foreground="#64748b" Margin="0,0,0,20" LetterSpacing="1"/>
+                  
+                  <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto">
+                      <StackPanel Grid.Row="0" Grid.Column="0">
+                          <TextBlock Classes="label" Text="DURATION"/>
+                          <TextBlock Classes="value" Text="{Binding RecordingDuration}"/>
+                      </StackPanel>
+                      <StackPanel Grid.Row="0" Grid.Column="1">
+                          <TextBlock Classes="label" Text="EST. SIZE"/>
+                          <TextBlock Classes="value" Text="{Binding EstimatedSize}"/>
+                      </StackPanel>
+                      <StackPanel Grid.Row="1" Grid.Column="0">
+                          <TextBlock Classes="label" Text="FRAMES"/>
+                          <TextBlock Classes="value" Text="{Binding FrameCount}"/>
+                      </StackPanel>
+                      <StackPanel Grid.Row="1" Grid.Column="1">
+                          <TextBlock Classes="label" Text="ACTUAL FPS"/>
+                          <TextBlock Classes="value" Text="{Binding ActualFps}"/>
+                      </StackPanel>
+                  </Grid>
+              </StackPanel>
+          </ScrollViewer>
+      </Border>
+    </Grid>
 </UserControl>

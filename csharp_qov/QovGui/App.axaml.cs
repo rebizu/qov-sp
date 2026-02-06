@@ -21,6 +21,14 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // Configure FFmpeg - Try to find it in common locations or use PATH
+        string ffmpegDirPath = @"C:\Users\RenéBrokholm\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0.1-full_build\bin";
+        if (System.IO.Directory.Exists(ffmpegDirPath))
+        {
+            FFMpegCore.GlobalFFOptions.Configure(options => options.BinaryFolder = ffmpegDirPath);
+        }
+        // Else FFMpegCore will search in PATH by default.
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             // Dependency Injection Setup

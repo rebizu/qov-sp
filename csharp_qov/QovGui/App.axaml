@@ -2,8 +2,21 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="QovGui.App"
              xmlns:local="using:QovGui"
+             xmlns:converters="using:QovGui.Converters"
              RequestedThemeVariant="Default">
              <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- Add merged dictionaries here -->
+            </ResourceDictionary.MergedDictionaries>
+            
+            <converters:BoolToColorConverter x:Key="BoolToColorConverter" TrueBrush="#3b82f6" FalseBrush="#3b82f6"/> 
+            <converters:BoolToColorConverter x:Key="PlayPauseColorConverter" TrueBrush="#ef4444" FalseBrush="#3b82f6"/>
+            <converters:EqualsToBoolConverter x:Key="EqualsToBoolConverter"/>
+        </ResourceDictionary>
+    </Application.Resources>
 
     <Application.DataTemplates>
         <local:ViewLocator/>

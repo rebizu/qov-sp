@@ -8,14 +8,20 @@ public class QovEncoder
     private readonly BinaryWriter _writer;
     private readonly QovHeader _header;
     private readonly byte[] _prevFrame;
+    private byte[]? _prevYPlane;
+    private byte[]? _prevUPlane;
+    private byte[]? _prevVPlane;
+    private byte[]? _prevAPlane;
     private readonly QovPixel[] _colorIndex;
     private readonly QovPixel[] _colorCache;
     private QovPixel _prevPixel;
     private readonly List<QovIndexEntry> _keyframes;
     private int _frameCount;
+    private bool _hasPrevFrame;
     private readonly bool _isYuvMode;
     private readonly bool _useCompression;
     private readonly QoaEncoder? _qoaEncoder;
+    private bool _isFinished;
 
     public QovEncoder(Stream output, ushort width, ushort height,
         ushort frameRateNum = 30, ushort frameRateDen = 1,
@@ -53,8 +59,25 @@ public class QovEncoder
         _prevPixel = new QovPixel(0, 0, 0, 255);
         _keyframes = new List<QovIndexEntry>();
         _useCompression = useCompression;
+        _isFinished = false;
+        _hasPrevFrame = false;
  
         _isYuvMode = colorspace >= QovTypes.ColorspaceYuv420;
+
+        if (_isYuvMode)
+        {
+            int pixelCount = width * height;
+            int uvWidth = (width + 1) / 2;
+            int uvHeight = (height + 1) / 2;
+            int uvSize = uvWidth * uvHeight;
+            _prevYPlane = new byte[pixelCount];
+            _prevUPlane = new byte[uvSize];
+            _prevVPlane = new byte[uvSize];
+            if (colorspace == QovTypes.ColorspaceYuva420)
+            {
+                _prevAPlane = new byte[pixelCount];
+            }
+        }
 
         WriteHeader();
     }
@@ -88,13 +111,28 @@ public class QovEncoder
         _writer.Write(_header.AudioChannels);
         WriteBigEndian24(_header.AudioRate);
 
-        // Colorspace and reserved
+        // Colorspace and quality
         _writer.Write(_header.Colorspace);
-        _writer.Write((byte)0); // reserved
+        _writer.Write(_header.Quality);
+
+        // Extended Header (Version 0x03 only)
+        if (_header.Version == QovTypes.Version3)
+        {
+            _writer.Write(_header.YQuantBase);
+            _writer.Write(_header.UvQuantBase);
+            _writer.Write(_header.TemporalThresh);
+            _writer.Write(_header.DctQpBase);
+            _writer.Write(0u); // 4 bytes reserved (BinaryWriter.Write(uint) is little-endian, but it is reserved)
+            // Wait, spec says reserved 0x00000000. 
+            // Better write 4 bytes of 0 explicitly to be safe about endianness of reserved bytes
+            // though 0 is 0.
+        }
     }
 
     public void EncodeKeyframe(ReadOnlySpan<byte> pixels, uint timestamp)
     {
+        if (_isFinished) return;
+        _hasPrevFrame = true;
         if (_isYuvMode)
         {
             EncodeYuvKeyframe(pixels, timestamp);
@@ -107,7 +145,7 @@ public class QovEncoder
 
     public void EncodeAudio(ReadOnlySpan<float> samples, uint timestamp)
     {
-        if (_qoaEncoder == null) return;
+        if (_isFinished || _qoaEncoder == null) return;
         
         byte[] encodedData = _qoaEncoder.EncodeFrame(samples);
         
@@ -127,8 +165,9 @@ public class QovEncoder
 
     private void EncodeRgbKeyframe(ReadOnlySpan<byte> pixels, uint timestamp)
     {
+        if (_isFinished) return;
         // Update previous frame buffer (lossless)
-        pixels.CopyTo(_prevFrame);
+        pixels.CopyTo(_prevFrame.AsSpan());
 
         int frameNumber = _frameCount++;
         int pixelCount = _header.Width * _header.Height;
@@ -245,22 +284,20 @@ public class QovEncoder
         for (int i = 0; i < 7; i++) tempWriter.Write((byte)0);
         tempWriter.Write((byte)1);
 
+        tempWriter.Flush();
         byte[] frameData = tempStream.ToArray();
         WriteChunk(QovTypes.ChunkTypeKeyframe, 0, timestamp, frameData, true);
     }
 
     private void EncodeYuvKeyframe(ReadOnlySpan<byte> pixels, uint timestamp)
     {
-        // Update previous frame buffer (lossless/YUV approximation ignored for now? No, need copy)
-        // If YUV is lossless, we can copy data.
-        // QOV YUV usually implies some loss due to conversion, but we store RGB in _prevFrame.
-        // So copying pixels is "correct" for reference if we assume lossless encoding.
-        // But if we want to simulate YUV loss, we should convert back.
         // For Keyframe, we just store original.
-        pixels.CopyTo(_prevFrame);
+        pixels.CopyTo(_prevFrame.AsSpan());
 
         int frameNumber = _frameCount++;
-        int pixelCount = _header.Width * _header.Height;
+        int width = _header.Width;
+        int height = _header.Height;
+        int pixelCount = width * height;
 
         if ((_header.Flags & QovTypes.FlagHasIndex) != 0)
         {
@@ -274,8 +311,19 @@ public class QovEncoder
 
         WriteSync(frameNumber, timestamp);
 
-        ColorConversion.RgbaToYuv420(pixels, _header.Width, _header.Height,
+        ColorConversion.RgbaToYuv420(pixels, width, height,
             out byte[] yPlane, out byte[] uPlane, out byte[] vPlane);
+
+        // Store planes for P-frame reference
+        yPlane.AsSpan().CopyTo(_prevYPlane.AsSpan()!);
+        uPlane.AsSpan().CopyTo(_prevUPlane.AsSpan()!);
+        vPlane.AsSpan().CopyTo(_prevVPlane.AsSpan()!);
+        
+        if (_prevAPlane != null)
+        {
+            // Extract alpha
+            for (int i = 0; i < pixelCount; i++) _prevAPlane[i] = pixels[i * 4 + 3];
+        }
 
         using var tempStream = new MemoryStream();
         using var tempWriter = new BinaryWriter(tempStream);
@@ -283,22 +331,27 @@ public class QovEncoder
         EncodeYuvPlane(yPlane, tempWriter);
         EncodeYuvPlane(uPlane, tempWriter);
         EncodeYuvPlane(vPlane, tempWriter);
+        
+        if (_prevAPlane != null)
+        {
+            EncodeYuvPlane(_prevAPlane, tempWriter);
+        }
 
         // Write end marker
         for (int i = 0; i < 7; i++) tempWriter.Write((byte)0);
         tempWriter.Write((byte)1);
 
+        tempWriter.Flush();
         byte[] frameData = tempStream.ToArray();
         WriteChunk(QovTypes.ChunkTypeKeyframe, QovTypes.ChunkFlagYuv, timestamp, frameData, true);
     }
 
     public void EncodePFrame(ReadOnlySpan<byte> pixels, uint timestamp)
     {
-        if (_prevFrame.All(b => b == 0))
+        if (_isFinished) return;
+        if (!_hasPrevFrame)
         {
             EncodeKeyframe(pixels, timestamp);
-            // Update previous frame buffer after encoding keyframe
-            pixels.CopyTo(_prevFrame);
             return;
         }
 
@@ -314,8 +367,7 @@ public class QovEncoder
 
     private void EncodeRgbPFrame(ReadOnlySpan<byte> pixels, uint timestamp)
     {
-        pixels.CopyTo(_prevFrame);
-        _frameCount++;
+        int frameNumber = _frameCount++;
         int pixelCount = _header.Width * _header.Height;
 
         using var tempStream = new MemoryStream();
@@ -417,17 +469,22 @@ public class QovEncoder
             }
         }
 
+        // Update previous frame buffer after encoding loop
+        pixels.CopyTo(_prevFrame.AsSpan());
+
+
         // Write end marker
         for (int i = 0; i < 7; i++) tempWriter.Write((byte)0);
         tempWriter.Write((byte)1);
 
+        tempWriter.Flush();
         byte[] frameData = tempStream.ToArray();
         WriteChunk(QovTypes.ChunkTypePframe, 0, timestamp, frameData, false);
     }
 
     private void EncodeYuvPFrame(ReadOnlySpan<byte> pixels, uint timestamp)
     {
-        _frameCount++;
+        int frameNumber = _frameCount++;
         int width = _header.Width;
         int height = _header.Height;
         bool useDct = (_header.Flags & QovTypes.FlagDctEnabled) != 0;
@@ -435,8 +492,12 @@ public class QovEncoder
         ColorConversion.RgbaToYuv420(pixels, width, height,
             out byte[] yPlane, out byte[] uPlane, out byte[] vPlane);
 
-        ColorConversion.RgbaToYuv420(_prevFrame, width, height,
-            out byte[] prevY, out byte[] prevU, out byte[] prevV);
+        byte[]? aPlane = null;
+        if (_prevAPlane != null)
+        {
+            aPlane = new byte[width * height];
+            for (int i = 0; i < aPlane.Length; i++) aPlane[i] = pixels[i * 4 + 3];
+        }
 
         using var tempStream = new MemoryStream();
         using var tempWriter = new BinaryWriter(tempStream);
@@ -448,40 +509,65 @@ public class QovEncoder
             byte[] nextU = new byte[uPlane.Length];
             byte[] nextV = new byte[vPlane.Length];
 
-            EncodePlaneDct(yPlane, prevY, nextY, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter);
+            EncodePlaneDct(yPlane, _prevYPlane!, nextY, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter);
             
             // Chroma subsampling dims
             int uvW = (width + 1) / 2;
             int uvH = (height + 1) / 2;
             
-            EncodePlaneDct(uPlane, prevU, nextU, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter);
-            EncodePlaneDct(vPlane, prevV, nextV, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter);
+            EncodePlaneDct(uPlane, _prevUPlane!, nextU, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter);
+            EncodePlaneDct(vPlane, _prevVPlane!, nextV, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter);
 
-            // Reconstruct _prevFrame from nextY/U/V to avoid drift
-            // We need a way to convert YUV planes back to RGBA into _prevFrame
+            if (aPlane != null && _prevAPlane != null)
+            {
+                // DCT for alpha? Specification usually treats alpha as a Y plane.
+                // For simplicity, we just use Keyframe encoding for alpha in P-frames if not implemented yet,
+                // or we skip for now. Lossless DPCM for alpha is safer.
+                byte[] nextA = new byte[aPlane.Length];
+                EncodePlaneDct(aPlane, _prevAPlane, nextA, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter);
+                nextA.AsSpan().CopyTo(_prevAPlane.AsSpan());
+            }
+
+            // Update persistent planes
+            nextY.AsSpan().CopyTo(_prevYPlane.AsSpan()!);
+            nextU.AsSpan().CopyTo(_prevUPlane.AsSpan()!);
+            nextV.AsSpan().CopyTo(_prevVPlane.AsSpan()!);
+
+            // Reconstruct _prevFrame from nextY/U/V to avoid drift (for UI preview if needed)
             ColorConversion.Yuv420ToRgba(nextY, nextU, nextV, width, height, _prevFrame);
 
+            // Write end marker
+            for (int i = 0; i < 7; i++) tempWriter.Write((byte)0);
+            tempWriter.Write((byte)1);
+
+            tempWriter.Flush();
             byte[] frameData = tempStream.ToArray();
             WriteChunk(QovTypes.ChunkTypePframe, (byte)(QovTypes.ChunkFlagYuv | QovTypes.ChunkFlagDctBlocks), timestamp, frameData, false);
         }
         else
         {
-            EncodeYuvPlaneTemporal(yPlane, prevY, tempWriter);
-            EncodeYuvPlaneTemporal(uPlane, prevU, tempWriter);
-            EncodeYuvPlaneTemporal(vPlane, prevV, tempWriter);
+            EncodeYuvPlaneTemporal(yPlane, _prevYPlane!, tempWriter);
+            EncodeYuvPlaneTemporal(uPlane, _prevUPlane!, tempWriter);
+            EncodeYuvPlaneTemporal(vPlane, _prevVPlane!, tempWriter);
 
-            // In legacy DPCM mode, we assume drift is negligible or handled by I-frames?
-            // Actually, we should probably update _prevFrame using the decoded result too,
-            // but DPCM is lossless (except for conversion).
-            // But we already removed the global copy. So we MUST update _prevFrame here.
-            // Since DPCM is technically lossless (modulo quantization if implemented), 
-            // and we rely on ColorConversion which is lossy (rounding), 
-            // it's safest to overwrite _prevFrame with the Input pixels for DPCM 
-            // OR use the YUV decoded.
-            // For now, to match previous behavior, I will copy Input pixels.
-            // Note: This reintroduced the "copy" behavior I removed, but only for DPCM path.
-            pixels.CopyTo(_prevFrame);
+            if (aPlane != null && _prevAPlane != null)
+            {
+                EncodeYuvPlaneTemporal(aPlane, _prevAPlane, tempWriter);
+                aPlane.AsSpan().CopyTo(_prevAPlane.AsSpan());
+            }
 
+            // Update persistent planes
+            yPlane.AsSpan().CopyTo(_prevYPlane.AsSpan()!);
+            uPlane.AsSpan().CopyTo(_prevUPlane.AsSpan()!);
+            vPlane.AsSpan().CopyTo(_prevVPlane.AsSpan()!);
+
+            pixels.CopyTo(_prevFrame.AsSpan());
+
+            // Write end marker
+            for (int i = 0; i < 7; i++) tempWriter.Write((byte)0);
+            tempWriter.Write((byte)1);
+
+            tempWriter.Flush();
             byte[] frameData = tempStream.ToArray();
             WriteChunk(QovTypes.ChunkTypePframe, QovTypes.ChunkFlagYuv, timestamp, frameData, false);
         }
@@ -910,7 +996,8 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
             else
             {
                 int idx = (val * 3) % 64;
-                if (index[idx] == val)
+                // Avoid INDEX 0 opcode (0x00) because it conflicts with SKIP_LONG in P-frames
+                if (idx > 0 && index[idx] == val)
                 {
                     writer.Write((byte)idx);
                 }
@@ -956,6 +1043,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
 
     private void WriteChunk(byte chunkType, byte chunkFlags, uint timestamp, byte[] data, bool isKeyframe)
     {
+        _writer.Flush();
         long startPos = _writer.BaseStream.Position;
 
         // Write chunk header (10 bytes for version 0x02)
@@ -977,8 +1065,10 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
 
                 // Update chunk flags to indicate compression
                 long currentPos = _writer.BaseStream.Position;
+                _writer.Flush();
                 _writer.BaseStream.Seek(startPos + 1, SeekOrigin.Begin);
                 _writer.Write((byte)(chunkFlags | QovTypes.ChunkFlagCompressed));
+                _writer.Flush();
                 _writer.BaseStream.Seek(currentPos, SeekOrigin.Begin);
             }
             else
@@ -996,8 +1086,10 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
         long endPos = _writer.BaseStream.Position;
         long chunkSize = endPos - dataStartPos;
 
+        _writer.Flush();
         _writer.BaseStream.Seek(startPos + 2, SeekOrigin.Begin);
         WriteBigEndian((uint)chunkSize);
+        _writer.Flush();
         _writer.BaseStream.Seek(endPos, SeekOrigin.Begin);
     }
 
@@ -1038,6 +1130,9 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
 
     public void Finish()
     {
+        if (_isFinished) return;
+        _isFinished = true;
+
         // Write index and end marker first (at current position = end of file)
         WriteIndex();
         WriteEnd();
@@ -1050,6 +1145,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
     {
         if (_keyframes.Count == 0) return;
 
+        _writer.Flush();
         long startPos = _writer.BaseStream.Position;
 
         // Write chunk header (10 bytes for version 0x02)
@@ -1076,8 +1172,10 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
         long endPos = _writer.BaseStream.Position;
         long chunkSize = endPos - dataStartPos;
 
+        _writer.Flush();
         _writer.BaseStream.Seek(startPos + 2, SeekOrigin.Begin);
         WriteBigEndian((uint)chunkSize);
+        _writer.Flush();
         _writer.BaseStream.Seek(endPos, SeekOrigin.Begin);
     }
 
@@ -1097,8 +1195,10 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
 
     private void UpdateFrameCount()
     {
+        _writer.Flush();
         _writer.BaseStream.Seek(14, SeekOrigin.Begin);
         WriteBigEndian((uint)_frameCount);
+        _writer.Flush();
     }
 
     public int FrameCount => _frameCount;
