@@ -1,0 +1,16 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  QovLibrary -> C:\_mycode\qiv\csharp_qov\QovLibrary\bin\Debug\net9.0\QovLibrary.dll
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(74,23): warning CS1998: This async method lacks 'await' operators and will run synchronously. Consider using the 'await' operator to await non-blocking API calls, or 'await Task.Run(...)' to do CPU-bound work on a background thread. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(94,41): error CS7036: There is no argument given that corresponds to the required parameter 'defaultName' of 'IDialogService.ShowSaveFileDialogAsync(string, string, string)' [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(124,34): warning CS8629: Nullable value type may be null. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+
+Build FAILED.
+
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(74,23): warning CS1998: This async method lacks 'await' operators and will run synchronously. Consider using the 'await' operator to await non-blocking API calls, or 'await Task.Run(...)' to do CPU-bound work on a background thread. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(124,34): warning CS8629: Nullable value type may be null. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(94,41): error CS7036: There is no argument given that corresponds to the required parameter 'defaultName' of 'IDialogService.ShowSaveFileDialogAsync(string, string, string)' [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+    2 Warning(s)
+    1 Error(s)
+
+Time Elapsed 00:00:01.08

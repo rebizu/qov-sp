@@ -1,0 +1,233 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:QovGui.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="600"
+             x:Class="QovGui.Views.PlayerView"
+             xmlns:conv="using:QovGui.Converters"
+             x:DataType="vm:PlayerViewModel">
+  
+  <UserControl.Resources>
+      <conv:BoolToColorConverter x:Key="BoolToColorConverter" TrueBrush="#3b82f6" FalseBrush="#3b82f6"/> 
+      <conv:BoolToColorConverter x:Key="PlayPauseColorConverter" TrueBrush="#ef4444" FalseBrush="#3b82f6"/>
+  </UserControl.Resources>
+  
+  <UserControl.Styles>
+      <Style Selector="TextBlock.label">
+          <Setter Property="Foreground" Value="#64748b"/>
+          <Setter Property="FontSize" Value="11"/>
+          <Setter Property="Margin" Value="0,0,0,2"/>
+      </Style>
+      <Style Selector="TextBlock.value">
+          <Setter Property="Foreground" Value="#e2e8f0"/>
+          <Setter Property="FontFamily" Value="Consolas"/>
+          <Setter Property="FontSize" Value="13"/>
+          <Setter Property="Margin" Value="0,0,0,12"/>
+      </Style>
+  </UserControl.Styles>
+  
+  <Grid ColumnDefinitions="*,350" Background="#0f0f1a">
+      
+    <!-- Left Column: Video Player and Controls -->
+    <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto" Margin="20">
+        
+        <!-- Header -->
+        <Border Grid.Row="0" Margin="0,0,0,10">
+             <TextBlock Text="QOV Player" FontSize="20" Foreground="White" FontWeight="Bold"/>
+        </Border>
+
+        <!-- Video Canvas -->
+        <Border Grid.Row="1" Background="Black" CornerRadius="8" ClipToBounds="True">
+             <Viewbox Stretch="Uniform" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                <Image Source="{Binding VideoFrame}" 
+                       RenderOptions.BitmapInterpolationMode="HighQuality"/>
+             </Viewbox>
+        </Border>
+        
+        <!-- Controls -->
+        <StackPanel Grid.Row="2" Margin="0,15,0,0" Spacing="10">
+              <!-- Timeline -->
+              <Grid Height="20">
+                  <Image Source="{Binding ChunkTimelineBitmap}" Stretch="Fill" Height="20" VerticalAlignment="Bottom" Opacity="1.0" RenderOptions.BitmapInterpolationMode="LowQuality"/>
+                  <ProgressBar Minimum="0" Maximum="1" Value="{Binding Progress}" 
+                               Background="Transparent" Foreground="#ffffff" Height="2" VerticalAlignment="Bottom" Opacity="0.8"/>
+              </Grid>
+             
+             <!-- Buttons Strip -->
+             <Grid ColumnDefinitions="Auto,*,Auto">
+                 <StackPanel Orientation="Horizontal" Spacing="10" Grid.Column="0">
+                     <Button Command="{Binding RestartPlaybackCommand}" Content="⏮" 
+                             ToolTip.Tip="Restart"
+                             Background="#1e1e2d" Foreground="White" CornerRadius="6" Padding="10,6"/>
+
+                     <!-- Prev Frame / Keyframe (Disabled as decoder is forward-only for now) -->
+                     <Button Content="&lt;" IsEnabled="False"
+                             Background="#1e1e2d" Foreground="Gray" CornerRadius="6" Padding="10,6"/>
+
+                     <Button Command="{Binding TogglePlayPauseCommand}" 
+                             Background="{Binding IsPlaying, Converter={StaticResource PlayPauseColorConverter}}" 
+                             Foreground="White" CornerRadius="6" Padding="15,6">
+                         <Panel>
+                             <TextBlock Text="▶ Play" IsVisible="{Binding !IsPlaying}"/>
+                             <TextBlock Text="⏸ Pause" IsVisible="{Binding IsPlaying}"/>
+                         </Panel>
+                     </Button>
+
+                     <Button Command="{Binding NextFrameCommand}" Content="&gt;" 
+                             ToolTip.Tip="Next Frame"
+                             Background="#1e1e2d" Foreground="White" CornerRadius="6" Padding="10,6"/>
+
+                     <Button Command="{Binding NextKeyframeCommand}" Content="⏭ Key" 
+                             ToolTip.Tip="Next Keyframe"
+                             Background="#1e1e2d" Foreground="White" CornerRadius="6" Padding="10,6"/>
+
+                     <TextBlock Text="{Binding CurrentTimeText}" Foreground="#94a3b8" VerticalAlignment="Center" FontFamily="Consolas"/>
+                     <TextBlock Text="/" Foreground="#64748b" VerticalAlignment="Center"/>
+                     <TextBlock Text="{Binding DurationText}" Foreground="#94a3b8" VerticalAlignment="Center" FontFamily="Consolas"/>
+                 </StackPanel>
+                 
+                 <StackPanel Orientation="Horizontal" Spacing="10" Grid.Column="2" VerticalAlignment="Center">
+                     <TextBlock Text="Speed:" Foreground="#94a3b8" VerticalAlignment="Center"/>
+                     <ComboBox SelectedIndex="2" Width="80" 
+                               Background="#1e1e2d" Foreground="White" BorderBrush="#333">
+                         <ComboBoxItem Content="0.25x"/>
+                         <ComboBoxItem Content="0.5x"/>
+                         <ComboBoxItem Content="1x"/>
+                         <ComboBoxItem Content="2x"/>
+                     </ComboBox>
+                     <Button Command="{Binding OpenFileCommand}" Content="📂 Open" 
+                             Background="#1e1e2d" Foreground="White" CornerRadius="6"/>
+                 </StackPanel>
+             </Grid>
+        </StackPanel>
+    </Grid>
+      
+    <!-- Right Column: Sidebar Info -->
+    <Border Grid.Column="1" Background="#0f0f1a" BorderBrush="#1e1e2d" BorderThickness="1,0,0,0">
+        <ScrollViewer>
+            <StackPanel Margin="20" Spacing="25">
+                
+                <!-- File Header Section -->
+                <StackPanel Spacing="10">
+                    <TextBlock Text="FILE HEADER" Foreground="#94a3b8" FontSize="12" FontWeight="Bold"/>
+                    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*,*" Margin="0,5,0,0">
+                        <!-- Codec -->
+                        <StackPanel Grid.Row="0" Grid.Column="0">
+                            <TextBlock Classes="label" Text="CODEC"/>
+                            <TextBlock Classes="value" Text="{Binding CodecInfo}"/>
+                        </StackPanel>
+                        
+                        <!-- File Size -->
+                        <StackPanel Grid.Row="0" Grid.Column="1">
+                            <TextBlock Classes="label" Text="SIZE"/>
+                            <TextBlock Classes="value" Text="{Binding FileSize}"/>
+                        </StackPanel>
+
+                        <!-- Resolution -->
+                        <StackPanel Grid.Row="1" Grid.Column="0">
+                            <TextBlock Classes="label" Text="RESOLUTION"/>
+                            <TextBlock Classes="value" Text="{Binding Resolution}"/>
+                        </StackPanel>
+
+                        <!-- Frame Rate -->
+                        <StackPanel Grid.Row="1" Grid.Column="1">
+                            <TextBlock Classes="label" Text="FRAME RATE"/>
+                            <TextBlock Classes="value" Text="{Binding FrameRate}"/>
+                        </StackPanel>
+
+                        <!-- Total Frames -->
+                        <StackPanel Grid.Row="2" Grid.Column="0">
+                            <TextBlock Classes="label" Text="TOTAL FRAMES"/>
+                            <TextBlock Classes="value" Text="{Binding TotalFrames}"/>
+                        </StackPanel>
+
+                        <!-- Colorspace -->
+                        <StackPanel Grid.Row="2" Grid.Column="1">
+                            <TextBlock Classes="label" Text="COLORSPACE"/>
+                            <TextBlock Classes="value" Text="{Binding ColorspaceInfo}"/>
+                        </StackPanel>
+
+                          <!-- Duration -->
+                        <StackPanel Grid.Row="3" Grid.Column="0">
+                            <TextBlock Classes="label" Text="DURATION"/>
+                            <TextBlock Classes="value" Text="{Binding DurationText}"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+                
+                <!-- Playback Info Section -->
+                <StackPanel Spacing="10">
+                    <TextBlock Text="PLAYBACK INFO" Foreground="#94a3b8" FontSize="12" FontWeight="Bold"/>
+                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*" Margin="0,5,0,0">
+                         <!-- Current Frame -->
+                        <StackPanel Grid.Row="0" Grid.Column="0">
+                            <TextBlock Classes="label" Text="CURRENT FRAME"/>
+                            <TextBlock Classes="value" Text="{Binding CurrentFrameIndex}"/>
+                        </StackPanel>
+                        
+                        <!-- Timestamp -->
+                        <StackPanel Grid.Row="0" Grid.Column="1">
+                            <TextBlock Classes="label" Text="TIMESTAMP"/>
+                            <TextBlock Classes="value" Text="{Binding CurrentTimestamp}"/>
+                        </StackPanel>
+                        
+                         <!-- Frame Type -->
+                        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2">
+                            <TextBlock Classes="label" Text="FRAME TYPE"/>
+                            <TextBlock Classes="value" Text="{Binding CurrentFrameType}"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+                
+                <!-- Chunk Timeline List -->
+                <StackPanel Spacing="10">
+                     <TextBlock Text="CHUNK TIMELINE" Foreground="#94a3b8" FontSize="12" FontWeight="Bold"/>
+                     
+                     <!-- Legend -->
+                     <WrapPanel Orientation="Horizontal">
+                        <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,10,5">
+                            <Border Width="12" Height="12" Background="#fbbf24" CornerRadius="2"/>
+                            <TextBlock Text="Keyframe" FontSize="11" Foreground="#94a3b8"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,10,5">
+                            <Border Width="12" Height="12" Background="#3b82f6" CornerRadius="2"/>
+                            <TextBlock Text="P-Frame" FontSize="11" Foreground="#94a3b8"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,10,5">
+                            <Border Width="12" Height="12" Background="#22c55e" CornerRadius="2"/>
+                            <TextBlock Text="B-Frame" FontSize="11" Foreground="#94a3b8"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,10,5">
+                            <Border Width="12" Height="12" Background="#a855f7" CornerRadius="2"/>
+                            <TextBlock Text="Audio" FontSize="11" Foreground="#94a3b8"/>
+                        </StackPanel>
+                     </WrapPanel>
+
+                     <Border Background="#1e1e2d" CornerRadius="4" Height="300" BorderBrush="#333" BorderThickness="1">
+                         <ScrollViewer>
+                             <ItemsControl ItemsSource="{Binding Chunks}">
+                                 <ItemsControl.ItemTemplate>
+                                     <DataTemplate x:DataType="vm:ChunkInfo">
+                                         <Border Background="{Binding BackgroundColor}" BorderBrush="{Binding Color}" BorderThickness="3,0,0,0" Margin="0,0,0,2" Padding="8,4">
+                                            <Grid ColumnDefinitions="Auto,90,*">
+                                                <StackPanel Grid.Column="0" Width="90" Spacing="4">
+                                                    <TextBlock Text="{Binding TypeName}" Foreground="#94a3b8" FontSize="12" FontFamily="Consolas"/>
+                                                    <TextBlock Text="[LZ4]" Foreground="#22c55e" FontSize="10" FontFamily="Consolas" IsVisible="{Binding IsCompressed}"/>
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" Text="{Binding Offset, StringFormat='@\{0:X\}'}" Foreground="#64748b" FontSize="12" FontFamily="Consolas"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding Size}" Foreground="#64748b" FontSize="12" FontFamily="Consolas" TextAlignment="Right"/>
+                                            </Grid>
+                                         </Border>
+                                     </DataTemplate>
+                                 </ItemsControl.ItemTemplate>
+                             </ItemsControl>
+                         </ScrollViewer>
+                     </Border>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Border>
+      
+  </Grid>
+</UserControl>

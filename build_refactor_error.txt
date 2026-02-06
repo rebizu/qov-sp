@@ -1,0 +1,44 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  QovLibrary -> C:\_mycode\qiv\csharp_qov\QovLibrary\bin\Debug\net9.0\QovLibrary.dll
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(101,25): error CS0029: Cannot implicitly convert type 'FFMpegCore.FFMpegArguments' to 'FFMpegCore.FFMpegArgumentProcessor' [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(120,21): error CS0029: Cannot implicitly convert type 'FFMpegCore.FFMpegArguments' to 'FFMpegCore.FFMpegArgumentProcessor' [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(130,59): error CS1593: Delegate 'Func<Stream, CancellationToken, Task>' does not take 1 arguments [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(130,14): error CS1061: 'FFMpegArgumentProcessor' does not contain a definition for 'OutputToPipe' and no accessible extension method 'OutputToPipe' accepting a first argument of type 'FFMpegArgumentProcessor' could be found (are you missing a using directive or an assembly reference?) [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(130,59): warning CS1998: This async method lacks 'await' operators and will run synchronously. Consider using the 'await' operator to await non-blocking API calls, or 'await Task.Run(...)' to do CPU-bound work on a background thread. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(85,16): warning CS0219: The variable 'inputArg' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(86,16): warning CS0219: The variable 'format' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(118,38): error CS1501: No overload for method 'StartRecordingAsync' takes 7 arguments [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(110,13): warning CS0219: The variable 'width' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(111,13): warning CS0219: The variable 'height' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(124,34): warning CS8629: Nullable value type may be null. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(298,59): error CS1593: Delegate 'Func<Stream, CancellationToken, Task>' does not take 1 arguments [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(309,18): error CS1061: 'FFMpegArgumentOptions' does not contain a definition for 'WithPixelFormat' and no accessible extension method 'WithPixelFormat' accepting a first argument of type 'FFMpegArgumentOptions' could be found (are you missing a using directive or an assembly reference?) [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(286,22): warning CS8602: Dereference of a possibly null reference. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(343,59): error CS1593: Delegate 'Func<Stream, CancellationToken, Task>' does not take 1 arguments [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(354,18): error CS1061: 'FFMpegArgumentOptions' does not contain a definition for 'WithPixelFormat' and no accessible extension method 'WithPixelFormat' accepting a first argument of type 'FFMpegArgumentOptions' could be found (are you missing a using directive or an assembly reference?) [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(331,22): warning CS8602: Dereference of a possibly null reference. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+
+Build FAILED.
+
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(130,59): warning CS1998: This async method lacks 'await' operators and will run synchronously. Consider using the 'await' operator to await non-blocking API calls, or 'await Task.Run(...)' to do CPU-bound work on a background thread. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(85,16): warning CS0219: The variable 'inputArg' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(86,16): warning CS0219: The variable 'format' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(110,13): warning CS0219: The variable 'width' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(111,13): warning CS0219: The variable 'height' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(124,34): warning CS8629: Nullable value type may be null. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(286,22): warning CS8602: Dereference of a possibly null reference. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(331,22): warning CS8602: Dereference of a possibly null reference. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(101,25): error CS0029: Cannot implicitly convert type 'FFMpegCore.FFMpegArguments' to 'FFMpegCore.FFMpegArgumentProcessor' [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(120,21): error CS0029: Cannot implicitly convert type 'FFMpegCore.FFMpegArguments' to 'FFMpegCore.FFMpegArgumentProcessor' [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(130,59): error CS1593: Delegate 'Func<Stream, CancellationToken, Task>' does not take 1 arguments [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(130,14): error CS1061: 'FFMpegArgumentProcessor' does not contain a definition for 'OutputToPipe' and no accessible extension method 'OutputToPipe' accepting a first argument of type 'FFMpegArgumentProcessor' could be found (are you missing a using directive or an assembly reference?) [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(118,38): error CS1501: No overload for method 'StartRecordingAsync' takes 7 arguments [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(298,59): error CS1593: Delegate 'Func<Stream, CancellationToken, Task>' does not take 1 arguments [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(309,18): error CS1061: 'FFMpegArgumentOptions' does not contain a definition for 'WithPixelFormat' and no accessible extension method 'WithPixelFormat' accepting a first argument of type 'FFMpegArgumentOptions' could be found (are you missing a using directive or an assembly reference?) [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(343,59): error CS1593: Delegate 'Func<Stream, CancellationToken, Task>' does not take 1 arguments [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\Services\FFmpegService.cs(354,18): error CS1061: 'FFMpegArgumentOptions' does not contain a definition for 'WithPixelFormat' and no accessible extension method 'WithPixelFormat' accepting a first argument of type 'FFMpegArgumentOptions' could be found (are you missing a using directive or an assembly reference?) [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+    8 Warning(s)
+    9 Error(s)
+
+Time Elapsed 00:00:01.10

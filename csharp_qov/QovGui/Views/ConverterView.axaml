@@ -1,0 +1,21 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:QovGui.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="QovGui.Views.ConverterView"
+             x:DataType="vm:ConverterViewModel">
+  
+  <Grid RowDefinitions="Auto,*,Auto" Margin="20">
+      <StackPanel Grid.Row="0" Spacing="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+          <Button Command="{Binding ConvertVideoCommand}" Content="Convert Video File (MP4/AVI) to QOV" Padding="20" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+          <Button Command="{Binding ConvertImagesCommand}" Content="Convert Image Sequence to QOV" Padding="20" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+      </StackPanel>
+      
+      <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center">
+           <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" Width="200" Margin="0,20"/>
+           <TextBlock Text="{Binding StatusText}" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center"/>
+      </StackPanel>
+  </Grid>
+</UserControl>

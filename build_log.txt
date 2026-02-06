@@ -1,0 +1,32 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  QovLibrary -> C:\_mycode\qiv\csharp_qov\QovLibrary\bin\Debug\net9.0\QovLibrary.dll
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(81,13): error CS0103: The name 'StopPlayback' does not exist in the current context [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(87,17): error CS0103: The name 'StartPlayback' does not exist in the current context [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(118,58): warning CS8604: Possible null reference argument for parameter 'videoDevice' in 'Task IFFmpegService.StartRecordingAsync(string videoDevice, string audioDevice, QovEncoder encoder, int width, int height, CancellationToken cancellationToken)'. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(118,68): warning CS8604: Possible null reference argument for parameter 'audioDevice' in 'Task IFFmpegService.StartRecordingAsync(string videoDevice, string audioDevice, QovEncoder encoder, int width, int height, CancellationToken cancellationToken)'. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(214,9): error CS0103: The name 'StopPlayback' does not exist in the current context [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(305,26): warning CS0219: The variable 'colorKeyframe' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(306,26): warning CS0219: The variable 'colorPFrame' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(311,26): warning CS0219: The variable 'cKey' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(312,26): warning CS0219: The variable 'cP' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(468,9): error CS0103: The name 'StopPlayback' does not exist in the current context [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(44,38): warning CS0649: Field 'PlayerViewModel._playbackCts' is never assigned to, and will always have its default value null [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+
+Build FAILED.
+
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(118,58): warning CS8604: Possible null reference argument for parameter 'videoDevice' in 'Task IFFmpegService.StartRecordingAsync(string videoDevice, string audioDevice, QovEncoder encoder, int width, int height, CancellationToken cancellationToken)'. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(118,68): warning CS8604: Possible null reference argument for parameter 'audioDevice' in 'Task IFFmpegService.StartRecordingAsync(string videoDevice, string audioDevice, QovEncoder encoder, int width, int height, CancellationToken cancellationToken)'. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(305,26): warning CS0219: The variable 'colorKeyframe' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(306,26): warning CS0219: The variable 'colorPFrame' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(311,26): warning CS0219: The variable 'cKey' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(312,26): warning CS0219: The variable 'cP' is assigned but its value is never used [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(44,38): warning CS0649: Field 'PlayerViewModel._playbackCts' is never assigned to, and will always have its default value null [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(81,13): error CS0103: The name 'StopPlayback' does not exist in the current context [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(87,17): error CS0103: The name 'StartPlayback' does not exist in the current context [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(214,9): error CS0103: The name 'StopPlayback' does not exist in the current context [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(468,9): error CS0103: The name 'StopPlayback' does not exist in the current context [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+    7 Warning(s)
+    4 Error(s)
+
+Time Elapsed 00:00:01.41

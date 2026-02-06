@@ -1,0 +1,16 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  QovLibrary -> C:\_mycode\qiv\csharp_qov\QovLibrary\bin\Debug\net9.0\QovLibrary.dll
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(102,36): error CS1061: 'Stream' does not contain a definition for 'Name' and no accessible extension method 'Name' accepting a first argument of type 'Stream' could be found (are you missing a using directive or an assembly reference?) [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(118,58): warning CS8604: Possible null reference argument for parameter 'videoDevice' in 'Task IFFmpegService.StartRecordingAsync(string videoDevice, string audioDevice, QovEncoder encoder, int width, int height, CancellationToken cancellationToken)'. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(118,68): warning CS8604: Possible null reference argument for parameter 'audioDevice' in 'Task IFFmpegService.StartRecordingAsync(string videoDevice, string audioDevice, QovEncoder encoder, int width, int height, CancellationToken cancellationToken)'. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+
+Build FAILED.
+
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(118,58): warning CS8604: Possible null reference argument for parameter 'videoDevice' in 'Task IFFmpegService.StartRecordingAsync(string videoDevice, string audioDevice, QovEncoder encoder, int width, int height, CancellationToken cancellationToken)'. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\RecorderViewModel.cs(118,68): warning CS8604: Possible null reference argument for parameter 'audioDevice' in 'Task IFFmpegService.StartRecordingAsync(string videoDevice, string audioDevice, QovEncoder encoder, int width, int height, CancellationToken cancellationToken)'. [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+C:\_mycode\qiv\csharp_qov\QovGui\ViewModels\PlayerViewModel.cs(102,36): error CS1061: 'Stream' does not contain a definition for 'Name' and no accessible extension method 'Name' accepting a first argument of type 'Stream' could be found (are you missing a using directive or an assembly reference?) [C:\_mycode\qiv\csharp_qov\QovGui\QovGui.csproj]
+    2 Warning(s)
+    1 Error(s)
+
+Time Elapsed 00:00:01.29

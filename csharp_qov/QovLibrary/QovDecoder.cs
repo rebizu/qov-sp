@@ -17,6 +17,10 @@ public class QovDecoder
     private int _frameCount;
     private QoaDecoder? _qoaDecoder;
 
+    private byte[] _prevYPlane, _currYPlane;
+    private byte[] _prevUPlane, _currUPlane;
+    private byte[] _prevVPlane, _currVPlane;
+
     public QovDecoder(Stream input) : base()
     {
         _reader = new BinaryReader(input, System.Text.Encoding.ASCII, leaveOpen: true);
@@ -27,6 +31,9 @@ public class QovDecoder
         _prevPixel = new QovPixel(0, 0, 0, 255);
         _use32BitChunkSize = false;
         _frameCount = 0;
+        _prevYPlane = _currYPlane = Array.Empty<byte>();
+        _prevUPlane = _currUPlane = Array.Empty<byte>();
+        _prevVPlane = _currVPlane = Array.Empty<byte>();
     }
 
     public QovDecoder(byte[] data) : base()
@@ -39,6 +46,9 @@ public class QovDecoder
         _prevPixel = new QovPixel(0, 0, 0, 255);
         _use32BitChunkSize = false;
         _frameCount = 0;
+        _prevYPlane = _currYPlane = Array.Empty<byte>();
+        _prevUPlane = _currUPlane = Array.Empty<byte>();
+        _prevVPlane = _currVPlane = Array.Empty<byte>();
     }
 
     public QovHeader DecodeHeader()
@@ -64,24 +74,38 @@ public class QovDecoder
         byte audioChannels = ReadByte();
         uint audioRate = ReadBigEndianU24();
         byte colorspace = ReadByte();
-        byte quality = ReadByte(); // Byte 23 (was reserved in V2)
+        byte quality = ReadByte();
 
         byte yQuant = 0, uvQuant = 0, tempThresh = 0, dctQp = 0;
 
         if (version == QovTypes.Version3)
         {
-            // Read extended header (bytes 24-31)
             yQuant = ReadByte();
             uvQuant = ReadByte();
             tempThresh = ReadByte();
             dctQp = ReadByte();
-            ReadBigEndianU32(); // Reserved 4 bytes
+            ReadBigEndianU32(); // Reserved
         }
 
         _header = new QovHeader(flags, width, height, frameRateNum, frameRateDen, colorspace, audioChannels, audioRate, totalFrames,
             quality, yQuant, uvQuant, tempThresh, dctQp);        
         _prevFrame = new byte[width * height * 4];
         _currFrame = new byte[width * height * 4];
+
+        // Allocate YUV buffers if needed
+        bool isYuv = colorspace >= QovTypes.ColorspaceYuv420 && colorspace <= QovTypes.ColorspaceYuva420;
+        if (isYuv)
+        {
+            int ySize = width * height;
+            int uvW = (colorspace == QovTypes.ColorspaceYuv444) ? width : (width + 1) / 2;
+            int uvH = (colorspace == QovTypes.ColorspaceYuv444) ? height : 
+                      (colorspace == QovTypes.ColorspaceYuv422) ? height : (height + 1) / 2;
+            int uvSize = uvW * uvH;
+
+            _prevYPlane = new byte[ySize]; _currYPlane = new byte[ySize];
+            _prevUPlane = new byte[uvSize]; _currUPlane = new byte[uvSize];
+            _prevVPlane = new byte[uvSize]; _currVPlane = new byte[uvSize];
+        }
         
         if (audioChannels > 0)
         {
@@ -195,18 +219,12 @@ public class QovDecoder
 
         if (isYuvChunk)
         {
-            int pixelCount = _header.Width * _header.Height;
-            int uvSize = ((pixelCount + 3) / 4);
+            int yEnd = DecodeYuvPlane(frameData, 0, _currYPlane);
+            int uEnd = DecodeYuvPlane(frameData, yEnd, _currUPlane);
+            DecodeYuvPlane(frameData, uEnd, _currVPlane);
 
-            byte[] yPlane = new byte[pixelCount];
-            byte[] uPlane = new byte[uvSize];
-            byte[] vPlane = new byte[uvSize];
-
-            int yEnd = DecodeYuvPlane(frameData, 0, yPlane);
-            int uEnd = DecodeYuvPlane(frameData, yEnd, uPlane);
-            DecodeYuvPlane(frameData, uEnd, vPlane);
-
-            ColorConversion.Yuv420ToRgba(yPlane, uPlane, vPlane, _header.Width, _header.Height, _currFrame);
+            ColorConversion.Yuv420ToRgba(_currYPlane, _currUPlane, _currVPlane, _header.Width, _header.Height, _currFrame);
+            SwapYuvPlanes();
         }
         else
         {
@@ -243,49 +261,38 @@ public class QovDecoder
 
         if (isYuvChunk)
         {
-            int pixelCount = _header.Width * _header.Height;
-            int uvSize = ((pixelCount + 3) / 4);
-
-            // Convert previous RGBA frame to YUV420 to get reference planes
-            ColorConversion.RgbaToYuv420(_currFrame, _header.Width, _header.Height,
-                out byte[] prevY, out byte[] prevU, out byte[] prevV);
-
-            // Allocate output planes (start as copy of previous)
-            byte[] yPlane = new byte[pixelCount];
-            byte[] uPlane = new byte[uvSize];
-            byte[] vPlane = new byte[uvSize];
-
-            // Decode temporal YUV planes directly from frameData (which contains encoded opcodes)
+            // Decode temporal YUV planes using persistent previous buffer as reference
             int pos = 0;
             
             if ((chunkFlags & QovTypes.ChunkFlagDctBlocks) != 0)
             {
-                // Init with previous frame for P-frame prediction
-                Array.Copy(prevY, yPlane, prevY.Length);
-                Array.Copy(prevU, uPlane, prevU.Length);
-                Array.Copy(prevV, vPlane, prevV.Length);
+                // Init input planes from previous reference for DCT
+                Array.Copy(_prevYPlane, _currYPlane, _prevYPlane.Length);
+                Array.Copy(_prevUPlane, _currUPlane, _prevUPlane.Length);
+                Array.Copy(_prevVPlane, _currVPlane, _prevVPlane.Length);
 
                 float[] blockBuf = new float[64];
-                int uvW = (int)Math.Ceiling(_header.Width / 2.0);
-                int uvH = (int)Math.Ceiling(_header.Height / 2.0);
+                int uvW = (_header.Width + 1) / 2;
+                int uvH = (_header.Height + 1) / 2;
 
-                pos = DecodePlaneDct(frameData, pos, yPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf);
-                pos = DecodePlaneDct(frameData, pos, uPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf);
-                pos = DecodePlaneDct(frameData, pos, vPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf);
+                pos = DecodePlaneDct(frameData, pos, _currYPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf);
+                pos = DecodePlaneDct(frameData, pos, _currUPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf);
+                pos = DecodePlaneDct(frameData, pos, _currVPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf);
             }
             else
             {
-                pos = DecodeYuvPlaneTemporal(frameData, pos, yPlane, prevY);
-                pos = DecodeYuvPlaneTemporal(frameData, pos, uPlane, prevU);
-                pos = DecodeYuvPlaneTemporal(frameData, pos, vPlane, prevV);
+                pos = DecodeYuvPlaneTemporal(frameData, pos, _currYPlane, _prevYPlane);
+                pos = DecodeYuvPlaneTemporal(frameData, pos, _currUPlane, _prevUPlane);
+                pos = DecodeYuvPlaneTemporal(frameData, pos, _currVPlane, _prevVPlane);
             }
 
             // Convert decoded YUV back to RGBA
-            ColorConversion.Yuv420ToRgba(yPlane, uPlane, vPlane, _header.Width, _header.Height, _currFrame);
+            ColorConversion.Yuv420ToRgba(_currYPlane, _currUPlane, _currVPlane, _header.Width, _header.Height, _currFrame);
+            SwapYuvPlanes();
         }
         else
         {
-            DecodeRgbPFrame(frameData);
+            DecodeRgbPFrame(frameData, (chunkFlags & QovTypes.ChunkFlagMotion) != 0);
         }
 
         SwapFrames();
@@ -381,13 +388,19 @@ public class QovDecoder
         }
     }
 
-    private void DecodeRgbPFrame(byte[] data)
+    private void DecodeRgbPFrame(byte[] data, bool hasMotion)
     {
         int pixelCount = _header.Width * _header.Height;
         int px = 0;
         int pos = 0;
 
-        Array.Copy(_currFrame, _prevFrame, _currFrame.Length);
+        // Correct Logic matching TS:
+        // If !hasMotion, we copy Reference -> Target (making Target a clone of Reference).
+        // If hasMotion, we assume Target (which was 2 frames ago) serves as the base for new diffs.
+        if (!hasMotion)
+        {
+            Array.Copy(_prevFrame, _currFrame, _prevFrame.Length);
+        }
 
         while (px < pixelCount && pos < data.Length - 8)
         {
@@ -412,15 +425,15 @@ public class QovDecoder
                 int dg = ((b1 >> 2) & 0x03) - 2;
                 int db = (b1 & 0x03) - 2;
 
-                _prevFrame[offset] = (byte)((_prevFrame[offset] + dr) & 0xFF);
-                _prevFrame[offset + 1] = (byte)((_prevFrame[offset + 1] + dg) & 0xFF);
-                _prevFrame[offset + 2] = (byte)((_prevFrame[offset + 2] + db) & 0xFF);
-                _prevFrame[offset + 3] = _prevFrame[offset + 3];
+                _currFrame[offset] = (byte)((_currFrame[offset] + dr) & 0xFF);
+                _currFrame[offset + 1] = (byte)((_currFrame[offset + 1] + dg) & 0xFF);
+                _currFrame[offset + 2] = (byte)((_currFrame[offset + 2] + db) & 0xFF);
+                _currFrame[offset + 3] = _currFrame[offset + 3];
 
-                int hash = (_prevFrame[offset] * 3 + _prevFrame[offset + 1] * 5 +
-                    _prevFrame[offset + 2] * 7 + _prevFrame[offset + 3] * 11) % 64;
-                _colorIndex[hash] = new QovPixel(_prevFrame[offset], _prevFrame[offset + 1],
-                    _prevFrame[offset + 2], _prevFrame[offset + 3]);
+                int hash = (_currFrame[offset] * 3 + _currFrame[offset + 1] * 5 +
+                    _currFrame[offset + 2] * 7 + _currFrame[offset + 3] * 11) % 64;
+                _colorIndex[hash] = new QovPixel(_currFrame[offset], _currFrame[offset + 1],
+                    _currFrame[offset + 2], _currFrame[offset + 3]);
 
                 px++;
             }
@@ -432,14 +445,14 @@ public class QovDecoder
                 int drDg = ((b2 >> 4) & 0x0F) - 8;
                 int dbDg = (b2 & 0x0F) - 8;
 
-                _prevFrame[offset] = (byte)((_prevFrame[offset] + dg + drDg) & 0xFF);
-                _prevFrame[offset + 1] = (byte)((_prevFrame[offset + 1] + dg) & 0xFF);
-                _prevFrame[offset + 2] = (byte)((_prevFrame[offset + 2] + dg + dbDg) & 0xFF);
+                _currFrame[offset] = (byte)((_currFrame[offset] + dg + drDg) & 0xFF);
+                _currFrame[offset + 1] = (byte)((_currFrame[offset + 1] + dg) & 0xFF);
+                _currFrame[offset + 2] = (byte)((_currFrame[offset + 2] + dg + dbDg) & 0xFF);
 
-                int hash = (_prevFrame[offset] * 3 + _prevFrame[offset + 1] * 5 +
-                    _prevFrame[offset + 2] * 7 + _prevFrame[offset + 3] * 11) % 64;
-                _colorIndex[hash] = new QovPixel(_prevFrame[offset], _prevFrame[offset + 1],
-                    _prevFrame[offset + 2], _prevFrame[offset + 3]);
+                int hash = (_currFrame[offset] * 3 + _currFrame[offset + 1] * 5 +
+                    _currFrame[offset + 2] * 7 + _currFrame[offset + 3] * 11) % 64;
+                _colorIndex[hash] = new QovPixel(_currFrame[offset], _currFrame[offset + 1],
+                    _currFrame[offset + 2], _currFrame[offset + 3]);
 
                 px++;
             }
@@ -447,32 +460,43 @@ public class QovDecoder
             {
                 int idx = b1 & 0x3F;
                 int offset = px * 4;
-                _prevFrame[offset] = _colorIndex[idx].R;
-                _prevFrame[offset + 1] = _colorIndex[idx].G;
-                _prevFrame[offset + 2] = _colorIndex[idx].B;
-                _prevFrame[offset + 3] = _colorIndex[idx].A;
+                _currFrame[offset] = _colorIndex[idx].R;
+                _currFrame[offset + 1] = _colorIndex[idx].G;
+                _currFrame[offset + 2] = _colorIndex[idx].B;
+                _currFrame[offset + 3] = _colorIndex[idx].A;
                 px++;
             }
             else if (b1 == 0xFE)
             {
                 int offset = px * 4;
-                _prevFrame[offset] = data[pos++];
-                _prevFrame[offset + 1] = data[pos++];
-                _prevFrame[offset + 2] = data[pos++];
+                _currFrame[offset] = data[pos++];
+                _currFrame[offset + 1] = data[pos++];
+                _currFrame[offset + 2] = data[pos++];
+                
+                int hash = (_currFrame[offset] * 3 + _currFrame[offset + 1] * 5 +
+                    _currFrame[offset + 2] * 7 + _currFrame[offset + 3] * 11) % 64;
+                _colorIndex[hash] = new QovPixel(_currFrame[offset], _currFrame[offset + 1],
+                    _currFrame[offset + 2], _currFrame[offset + 3]);
+                    
                 px++;
             }
             else if (b1 == 0xFF)
             {
                 int offset = px * 4;
-                _prevFrame[offset] = data[pos++];
-                _prevFrame[offset + 1] = data[pos++];
-                _prevFrame[offset + 2] = data[pos++];
-                _prevFrame[offset + 3] = data[pos++];
+                _currFrame[offset] = data[pos++];
+                _currFrame[offset + 1] = data[pos++];
+                _currFrame[offset + 2] = data[pos++];
+                _currFrame[offset + 3] = data[pos++];
+                
+                int hash = (_currFrame[offset] * 3 + _currFrame[offset + 1] * 5 +
+                    _currFrame[offset + 2] * 7 + _currFrame[offset + 3] * 11) % 64;
+                _colorIndex[hash] = new QovPixel(_currFrame[offset], _currFrame[offset + 1],
+                    _currFrame[offset + 2], _currFrame[offset + 3]);
+                    
                 px++;
             }
         }
-
-        _prevFrame.CopyTo(_currFrame, 0);
+        // SwapFrames() called by caller will make _currFrame the new _prevFrame (valid).
     }
 
     private int DecodeYuvPlane(byte[] data, int startPos, Span<byte> output)
@@ -590,10 +614,17 @@ public class QovDecoder
         return pos;
     }
 
+    private void SwapYuvPlanes()
+    {
+        byte[] tempY = _prevYPlane; _prevYPlane = _currYPlane; _currYPlane = tempY;
+        byte[] tempU = _prevUPlane; _prevUPlane = _currUPlane; _currUPlane = tempU;
+        byte[] tempV = _prevVPlane; _prevVPlane = _currVPlane; _currVPlane = tempV;
+    }
+
     private void SwapFrames()
     {
         byte[] temp = _prevFrame;
-        Array.Copy(_currFrame, _prevFrame, _currFrame.Length);
+        _prevFrame = _currFrame;
         _currFrame = temp;
     }
 
