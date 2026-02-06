@@ -68,42 +68,49 @@ public partial class RecorderViewModel : ViewModelBase
         LoadDevicesAsync();
     }
     
+    private DateTime _lastPreviewUpdate = DateTime.MinValue;
+
     private void HandleFrameCaptured(byte[] rgbaData)
     {
-        Dispatcher.UIThread.Post(() => 
+        // Throttle preview to ~25 FPS to save UI resources
+        if ((DateTime.Now - _lastPreviewUpdate).TotalMilliseconds < 40) return;
+        _lastPreviewUpdate = DateTime.Now;
+
+        int width = 0;
+        int height = 0;
+        if (SelectedResolution.Contains("640x480")) { width = 640; height = 480; }
+        else if (SelectedResolution.Contains("1280x720")) { width = 1280; height = 720; }
+        else if (SelectedResolution.Contains("1920x1080")) { width = 1920; height = 1080; }
+        
+        if (width == 0 || height == 0) return;
+
+        // Ensure bitmap exists and matches size
+        // We handle creation on UI thread if needed, but the copy can happen on background
+        if (_previewBitmap == null || _previewBitmap.PixelSize.Width != width || _previewBitmap.PixelSize.Height != height)
         {
-            try 
+            Dispatcher.UIThread.Post(() => 
             {
-                int width = 0;
-                int height = 0;
-                if (SelectedResolution.Contains("640x480")) { width = 640; height = 480; }
-                else if (SelectedResolution.Contains("1280x720")) { width = 1280; height = 720; }
-                else if (SelectedResolution.Contains("1920x1080")) { width = 1920; height = 1080; }
-                
-                if (width == 0 || height == 0) return;
+                _previewBitmap = new WriteableBitmap(new Avalonia.PixelSize(width, height), new Avalonia.Vector(96, 96), PixelFormat.Rgba8888, AlphaFormat.Premul);
+                PreviewImage = _previewBitmap;
+            });
+            return; // Wait for next frame once bitmap is ready
+        }
 
-                if (_previewBitmap == null || _previewBitmap.PixelSize.Width != width || _previewBitmap.PixelSize.Height != height)
-                {
-                    _previewBitmap = new WriteableBitmap(new Avalonia.PixelSize(width, height), new Avalonia.Vector(96, 96), PixelFormat.Rgba8888, AlphaFormat.Premul);
-                    PreviewImage = _previewBitmap;
-                }
-
-                using (var locked = _previewBitmap.Lock())
-                {
-                    Marshal.Copy(rgbaData, 0, locked.Address, rgbaData.Length);
-                }
-                
-                // Notify UI of change (though pointing to same object, we might need a refresh)
-                // In Avalonia, WriteableBitmap usually needs a manual refresh if not using interop
-                // Actually, just setting PreviewImage = _previewBitmap might not trigger redraw if it's the same ref.
-                // But we can call OnPropertyChanged(nameof(PreviewImage))
-                OnPropertyChanged(nameof(PreviewImage));
-            }
-            catch (Exception ex)
+        try 
+        {
+            // Copy pixels synchronously on the capture thread
+            using (var locked = _previewBitmap.Lock())
             {
-                Console.WriteLine($"Preview Error: {ex.Message}");
+                Marshal.Copy(rgbaData, 0, locked.Address, Math.Min(rgbaData.Length, width * height * 4));
             }
-        });
+            
+            // Notify UI to redraw
+            Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(PreviewImage)));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Preview Copy Error: {ex.Message}");
+        }
     }
     
     public RecorderViewModel()

@@ -333,10 +333,16 @@ public class FFmpegService : IFFmpegService
         }
     }
 
+    private byte[]? _rgbaBuffer;
+
     private byte[] ConvertToRgba(byte[] data, int width, int height, PixelFormats format, bool flipVertical)
     {
         int pixelCount = width * height;
-        byte[] rgba = new byte[pixelCount * 4];
+        if (_rgbaBuffer == null || _rgbaBuffer.Length != pixelCount * 4)
+        {
+            _rgbaBuffer = new byte[pixelCount * 4];
+        }
+        byte[] rgba = _rgbaBuffer;
 
         if (format == PixelFormats.RGB24)
         {
