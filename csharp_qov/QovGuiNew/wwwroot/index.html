@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QOV - Quite OK Video</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>QOV</h1>
+    <p class="subtitle">Quite OK Video Format (GUI)</p>
+
+    <div class="cards">
+      <a href="recorder.html" class="card">
+        <div class="card-icon">&#128249;</div>
+        <h2>Recorder</h2>
+        <p>Capture screen or camera using Browser APIs and encode to QOV.</p>
+      </a>
+
+      <a href="player.html" class="card">
+        <div class="card-icon">&#9654;</div>
+        <h2>Player</h2>
+        <p>Play QOV files with high performance streaming.</p>
+      </a>
+
+      <a href="converter.html" class="card">
+        <div class="card-icon">&#128260;</div>
+        <h2>Converter</h2>
+        <p>Convert any video supported by your browser to QOV.</p>
+      </a>
+    </div>
+
+    <div style="margin-top: 2rem;">
+        <button onclick="window.external.sendMessage('devtools')">Open DevTools</button>
+    </div>
+
+    <p class="footer">
+      Powered by Photino.NET & QovLibrary
+    </p>
+  </div>
+</body>
+</html>

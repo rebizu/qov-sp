@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QOV Converter</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>Converter</h1>
+        <p class="subtitle">Convert Video to QOV</p>
+
+        <input type="file" id="fileInput" accept="video/*">
+
+        <div class="controls">
+            <button id="btnConvert" disabled>Convert to QOV</button>
+        </div>
+
+        <div id="status" style="margin-top: 1rem;">Select a file to start</div>
+        <progress id="progressBar" value="0" max="100" style="width: 100%; margin-top: 1rem; display: none;"></progress>
+
+        <!-- Hidden video for decoding -->
+        <video id="videoSource" style="display: none;" muted playsinline></video>
+
+        <div style="margin-top: 2rem;">
+            <a href="index.html" style="color: #64748b; text-decoration: none;">&larr; Back to Home</a>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const btnConvert = document.getElementById('btnConvert');
+        const video = document.getElementById('videoSource');
+        const status = document.getElementById('status');
+        const progressBar = document.getElementById('progressBar');
+
+        let socket = null;
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                video.src = url;
+                btnConvert.disabled = false;
+                status.textContent = `Selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+
+                // Load metadata to get duration/dimensions
+                video.onloadedmetadata = () => {
+                    status.textContent += ` - ${video.videoWidth}x${video.videoHeight}, ${video.duration.toFixed(1)}s`;
+                };
+            }
+        });
+
+        btnConvert.addEventListener('click', async () => {
+            btnConvert.disabled = true;
+            fileInput.disabled = true;
+            progressBar.style.display = 'block';
+            status.textContent = "Connecting...";
+
+            socket = new WebSocket('ws://localhost:8000/convert');
+            socket.binaryType = 'arraybuffer';
+
+            socket.onopen = async () => {
+                status.textContent = "Converting...";
+
+                // Send Header
+                const header = JSON.stringify({
+                    filename: fileInput.files[0].name.replace(/\.[^/.]+$/, "") + ".qov",
+                    width: video.videoWidth,
+                    height: video.videoHeight,
+                    fps: 30, // Estimate or assume
+                    duration: video.duration
+                });
+                socket.send(header);
+
+                // Start Processing
+                await processVideo();
+
+                socket.close();
+                status.textContent = "Done!";
+                progressBar.value = 100;
+                btnConvert.disabled = false;
+                fileInput.disabled = false;
+            };
+
+            socket.onerror = (e) => {
+                console.error(e);
+                status.textContent = "Error during conversion";
+                btnConvert.disabled = false;
+            };
+        });
+
+        async function processVideo() {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+            const duration = video.duration;
+            const fps = 30; // Target FPS
+            const totalFrames = Math.floor(duration * fps);
+
+            for (let i = 0; i < totalFrames; i++) {
+                const time = i / fps;
+                video.currentTime = time;
+
+                // Wait for seek
+                await new Promise(r => {
+                    const onSeek = () => {
+                        video.removeEventListener('seeked', onSeek);
+                        r();
+                    };
+                    video.addEventListener('seeked', onSeek);
+                });
+
+                // Draw and extract
+                ctx.drawImage(video, 0, 0);
+                const frameData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+                // Send Raw RGBA
+                if (socket.readyState === WebSocket.OPEN) {
+                    socket.send(frameData.data.buffer);
+                } else {
+                    break;
+                }
+
+                // Update UI
+                const progress = (i / totalFrames) * 100;
+                progressBar.value = progress;
+                status.textContent = `Converting... ${Math.round(progress)}%`;
+
+                // Yield to UI
+                await new Promise(r => setTimeout(r, 0));
+            }
+        }
+
+    </script>
+</body>
+
+</html>
