@@ -38,17 +38,22 @@ public class RecorderService
                     // Expect JSON header
                     string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
                     try {
-                        var meta = JsonSerializer.Deserialize<VideoMeta>(json);
-                        if (meta != null)
+                        var cmd = JsonSerializer.Deserialize<RecorderCommand>(json);
+                        if (cmd != null && cmd.type == "start")
                         {
-                            width = meta.width;
-                            height = meta.height;
-                            fps = meta.fps;
+                            width = cmd.width;
+                            height = cmd.height;
+                            fps = cmd.fps;
+                            
+                            // Use provided path or fallback to temp
+                            if (!string.IsNullOrEmpty(cmd.path))
+                            {
+                                filename = cmd.path;
+                            }
                             
                             fs = new FileStream(filename, FileMode.Create);
                             
                             // Initialize QovEncoder
-                            // (Stream output, ushort width, ushort height, ushort frameRateNum = 30, ...)
                             encoder = new QovEncoder(fs, (ushort)width, (ushort)height, (ushort)fps);
                             
                             Console.WriteLine($"Recording started: {width}x{height} @ {fps}fps -> {filename}");
@@ -123,5 +128,12 @@ public class RecorderService
         }
     }
 
-    class VideoMeta { public int width { get; set; } public int height { get; set; } public int fps { get; set; } }
+    class RecorderCommand 
+    { 
+        public string type { get; set; } = "start";
+        public string? path { get; set; }
+        public int width { get; set; } 
+        public int height { get; set; } 
+        public int fps { get; set; } 
+    }
 }

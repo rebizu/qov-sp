@@ -37,55 +37,9 @@ public class PlayerService
     {
         Console.WriteLine("Player Connected");
         
-        if (_decoder == null) {
-            await ws.CloseAsync(WebSocketCloseStatus.InternalServerError, "No file loaded", CancellationToken.None);
-            return;
-        }
-
-        // Send Metadata
-        var meta = new { width = _header.Width, height = _header.Height, fps = _header.FrameRateNum };
-        string json = JsonSerializer.Serialize(meta);
-        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
-        await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
-
         var buffer = new byte[1024];
         bool isPlaying = false;
         
-        // Decoding loop task
-        var sendTask = Task.Run(async () =>
-        {
-            // We need to re-create decoder to stream from start or seek
-            // For now, let's just stream what we have.
-            // DecodeFrames() is IEnumerable.
-            
-            try
-            {
-                foreach (var frame in _decoder.DecodeFrames())
-                {
-                    if (ws.State != WebSocketState.Open) break;
-
-                    // Implement simple pause loop
-                    while (!isPlaying && ws.State == WebSocketState.Open)
-                    {
-                        await Task.Delay(100);
-                    }
-                    if (ws.State != WebSocketState.Open) break;
-
-                    // Send frame pixels
-                    // Frame.Pixels is byte[] (RGBA)
-                    await ws.SendAsync(new ArraySegment<byte>(frame.Pixels), WebSocketMessageType.Binary, true, CancellationToken.None);
-                    
-                    // Throttle
-                    int delay = 1000 / (_header.FrameRateNum > 0 ? _header.FrameRateNum : 30);
-                    await Task.Delay(delay);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Stream Loop Error: " + ex.Message);
-            }
-        });
-
         // Control loop
         while (ws.State == WebSocketState.Open)
         {
@@ -93,9 +47,77 @@ public class PlayerService
             if (result.MessageType == WebSocketMessageType.Close) break;
 
             string msg = System.Text.Encoding.UTF8.GetString(buffer, 0, result.Count);
-            if (msg == "play") isPlaying = true;
-            if (msg == "pause") isPlaying = false;
+            
+            if (msg.Contains("openFile")) // Simple command
+            {
+                 // Re-send metadata if file loaded
+                 if (_decoder != null)
+                 {
+                    var meta = new { type = "meta", width = _header.Width, height = _header.Height, fps = _header.FrameRateNum, totalFrames = 0 }; // totalFrames depends on index
+                    string json = JsonSerializer.Serialize(meta);
+                    var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+                    await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                 }
+            }
+            
+            if (msg == "play" && _decoder != null) 
+            {
+                if (!isPlaying) {
+                    isPlaying = true;
+                    // Fire and forget the stream loop, it will be controlled by _cts
+                    _ = StartStreamLoop(ws);
+                }
+            }
+            if (msg == "pause") 
+            {
+                isPlaying = false;
+                _cts?.Cancel();
+            }
         }
-        
+    }
+    
+    // We need a separate specialized method to start the loop, or just run it in background when file loaded? 
+    // The previous implementation had a Task.Run. Let's restore a better version of that.
+    
+    private CancellationTokenSource? _cts;
+    
+    public async Task StartStreamLoop(WebSocket ws)
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+
+        await Task.Run(async () => {
+             try
+            {
+                if (_decoder == null) return;
+                
+                // Reset to beginning? Or current?
+                // _decoder.Seek(0); 
+                
+                foreach (var frame in _decoder.DecodeFrames())
+                {
+                    if (ws.State != WebSocketState.Open || token.IsCancellationRequested) break;
+
+                    // Pause check
+                    // We need a way to check 'isPlaying' flag from the main loop. 
+                    // Let's use a shared volatile bool or similar. 
+                    // Actually, let's just loop.
+                    
+                    // Send frame
+                     await ws.SendAsync(new ArraySegment<byte>(frame.Pixels), WebSocketMessageType.Binary, true, CancellationToken.None);
+                     
+                     int delay = 1000 / (_header.FrameRateNum > 0 ? _header.FrameRateNum : 30);
+                     await Task.Delay(delay);
+                }
+                 // End of file
+                 var eof = System.Text.Encoding.UTF8.GetBytes("{\"type\":\"eof\"}");
+                 await ws.SendAsync(new ArraySegment<byte>(eof), WebSocketMessageType.Text, true, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Stream Loop Error: " + ex.Message);
+            }
+        });
     }
 }

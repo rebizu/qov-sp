@@ -1,192 +1,315 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QOV Recorder</title>
-    <link rel="stylesheet" href="css/style.css">
-    <style>
-        .controls {
-            margin: 1rem 0;
-            display: flex;
-            gap: 1rem;
-            justify-content: center;
-        }
-
-        #status {
-            margin-top: 1rem;
-            font-weight: bold;
-            color: #00d4ff;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>QOV Recorder</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f1a;
+      min-height: 100vh;
+      color: #fff;
+    }
+    .header {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .header a {
+      color: #00d4ff;
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    .header h1 {
+      font-size: 1.5rem;
+      flex: 1;
+    }
+    .main {
+      display: flex;
+      height: calc(100vh - 60px);
+    }
+    .video-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      background: #0a0a12;
+    }
+    #preview {
+      max-width: 100%;
+      max-height: 70vh;
+      border-radius: 8px;
+      background: #000;
+    }
+    .hidden-canvas {
+      display: none;
+    }
+    .controls {
+      margin-top: 1.5rem;
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+    button {
+      padding: 0.75rem 1.5rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-weight: 500;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #startBtn {
+      background: #ef4444;
+      color: white;
+    }
+    #startBtn:hover:not(:disabled) {
+      background: #dc2626;
+    }
+    #startBtn.recording {
+      background: #22c55e;
+    }
+    #downloadBtn {
+      background: #3b82f6;
+      color: white;
+    }
+    #downloadBtn:hover:not(:disabled) {
+      background: #2563eb;
+    }
+    .sidebar {
+      width: 320px;
+      background: rgba(255, 255, 255, 0.02);
+      border-left: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 1.5rem;
+      overflow-y: auto;
+    }
+    .sidebar h2 {
+      font-size: 1rem;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 1rem;
+    }
+    .setting {
+      margin-bottom: 1.5rem;
+    }
+    .setting label {
+      display: block;
+      font-size: 0.9rem;
+      color: #e2e8f0;
+      margin-bottom: 0.5rem;
+    }
+    .setting select,
+    .setting input {
+      width: 100%;
+      padding: 0.5rem;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.05);
+      color: #fff;
+      font-size: 0.9rem;
+    }
+    .setting select option {
+      background: #0f0f1a;
+      color: #fff;
+    }
+    .setting select:focus,
+    .setting input:focus {
+      outline: none;
+      border-color: #00d4ff;
+    }
+    .stats {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .stat-row:last-child {
+      border-bottom: none;
+    }
+    .stat-label {
+      color: #94a3b8;
+      font-size: 0.85rem;
+    }
+    .stat-value {
+      color: #fff;
+      font-size: 0.85rem;
+      font-family: monospace;
+    }
+    .recording-indicator {
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+      color: #ef4444;
+      font-weight: 500;
+    }
+    .recording-indicator.active {
+      display: flex;
+    }
+    .recording-dot {
+      width: 12px;
+      height: 12px;
+      background: #ef4444;
+      border-radius: 50%;
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+  </style>
 </head>
-
 <body>
-    <div class="container">
-        <h1>Recorder</h1>
-        <p class="subtitle">Capture & Encode to QOV</p>
+  <div class="header">
+    <a href="index.html">&larr; Back</a>
+    <h1>QOV Recorder</h1>
+    <div class="recording-indicator" id="recordingIndicator">
+      <div class="recording-dot"></div>
+      <span>Recording</span>
+    </div>
+  </div>
 
-        <div class="preview-container">
-            <video id="preview" autoplay muted playsinline></video>
-        </div>
+  <div class="main">
+    <div class="video-container">
+      <video id="preview" autoplay muted playsinline></video>
+      <canvas id="captureCanvas" class="hidden-canvas"></canvas>
 
-        <div id="status">Ready</div>
-
-        <div class="controls">
-            <button id="btnScreen">Record Screen</button>
-            <button id="btnCamera">Record Camera</button>
-            <button id="btnStop" disabled style="background: #ef4444;">Stop</button> <!-- Red for stop -->
-        </div>
-
-        <div style="margin-top: 1rem;">
-            <a href="index.html" style="color: #64748b; text-decoration: none;">&larr; Back to Home</a>
-        </div>
+      <div class="controls">
+        <button id="startBtn" disabled>Start Recording</button>
+        <button id="downloadBtn" disabled>Download QOV</button>
+      </div>
     </div>
 
-    <script>
-        const preview = document.getElementById('preview');
-        const status = document.getElementById('status');
-        const btnScreen = document.getElementById('btnScreen');
-        const btnCamera = document.getElementById('btnCamera');
-        const btnStop = document.getElementById('btnStop');
+    <div class="sidebar">
+      <h2>Settings</h2>
 
-        let mediaStream = null;
-        let mediaRecorder = null;
-        let socket = null;
-        let isRecording = false;
+      <div class="setting">
+        <label for="cameraSelect">Camera</label>
+        <select id="cameraSelect">
+          <option value="">Loading cameras...</option>
+        </select>
+      </div>
 
-        async function startRecording(type) {
-            try {
-                if (type === 'screen') {
-                    mediaStream = await navigator.mediaDevices.getDisplayMedia({
-                        video: { cursor: "always" },
-                        audio: false
-                    });
-                } else {
-                    mediaStream = await navigator.mediaDevices.getUserMedia({
-                        video: true,
-                        audio: false
-                    });
-                }
+      <div class="setting">
+        <label for="resolutionSelect">Resolution</label>
+        <select id="resolutionSelect">
+          <option value="640x480">640 x 480</option>
+          <option value="1280x720" selected>1280 x 720 (HD)</option>
+          <option value="1920x1080">1920 x 1080 (Full HD)</option>
+        </select>
+      </div>
 
-                preview.srcObject = mediaStream;
+      <div class="setting">
+        <label for="fpsSelect">Frame Rate</label>
+        <select id="fpsSelect">
+          <option value="15">15 fps</option>
+          <option value="24">24 fps</option>
+          <option value="30" selected>30 fps</option>
+        </select>
+      </div>
 
-                // Connect WebSocket
-                socket = new WebSocket('ws://localhost:8000/record');
-                socket.binaryType = 'blob';
+      <div class="setting">
+        <label for="keyframeInterval">Keyframe Interval</label>
+        <select id="keyframeInterval">
+          <option value="15">Every 15 frames</option>
+          <option value="30" selected>Every 30 frames</option>
+          <option value="60">Every 60 frames</option>
+        </select>
+      </div>
 
-                socket.onopen = () => {
-                    status.textContent = "Connected. Recording...";
-                    isRecording = true;
-                    updateButtons();
+      <div class="setting">
+        <label for="colorspaceSelect">Colorspace</label>
+        <select id="colorspaceSelect">
+          <option value="0x00">sRGB (Best quality, larger files)</option>
+          <option value="0x10" selected>YUV420 (Smaller files, best compression)</option>
+          <option value="0x11">YUV422 (Balanced)</option>
+          <option value="0x12">YUV444 (High quality YUV)</option>
+        </select>
+      </div>
 
-                    // Start MediaRecorder to get chunks
-                    // We request DataAvailable every 16ms (approx 60fps) or 33ms (30fps)
-                    // But MediaRecorder might not be precise. 
-                    // Better verify latency. For QOV we want raw frames.
-                    // MediaRecorder gives encoded chunks (WebM/VP9). 
-                    // To get RAW frames for QOV encoding in C#, we have two options:
-                    // 1. Send the WebM chunks and decode in C# (complex).
-                    // 2. Draw to Canvas and send raw blobs (heavy JS, but "raw").
-                    // The plan said "MediaRecorder API captures chunks... Sends Blob data directly".
-                    // IF we send WebM chunks, QovEncoder needs to decode WebM? QovEncoder takes raw pixels.
-                    // The PLAN update said: "Draw frames to an offscreen canvas, extracts Blob... and streams".
-                    // Wait, the WebSocket update said: "MediaRecorder API captures chunks... Sends Blob data directly".
-                    // Use ImageCapture or Canvas for raw frames is safer for QovEncoder.
+      <div class="setting">
+        <label for="encodingMode">Encoding Mode</label>
+        <select id="encodingMode">
+          <option value="lossless" selected>Lossless</option>
+          <option value="lossy">Lossy</option>
+          <option value="custom">Custom Lossy</option>
+        </select>
+      </div>
 
-                    // Let's use Canvas drawing loop for raw frames + WebSocket.
-                    startFrameLoop();
-                };
+      <div class="setting" id="qualitySetting" style="display: none;">
+        <label for="qualitySlider">Quality: <span id="qualityValue">75</span> (<span id="qualityName">Medium-High</span>)</label>
+        <input type="range" id="qualitySlider" min="0" max="100" value="75" style="accent-color: #00d4ff;">
+      </div>
 
-                socket.onerror = (e) => {
-                    console.error(e);
-                    status.textContent = "WebSocket Error";
-                };
+      <div id="customLossySettings" style="display: none;">
+        <div class="setting">
+          <label for="customYQuant">Y Quantization (luminance): <span id="customYQuantValue">4</span></label>
+          <input type="range" id="customYQuant" min="1" max="64" value="4" style="accent-color: #00d4ff;">
+        </div>
+        <div class="setting">
+          <label for="customUvQuant">UV Quantization (chroma): <span id="customUvQuantValue">8</span></label>
+          <input type="range" id="customUvQuant" min="1" max="64" value="8" style="accent-color: #00d4ff;">
+        </div>
+        <div class="setting">
+          <label for="customTemporalThresh">Temporal Threshold: <span id="customTemporalThreshValue">3</span></label>
+          <input type="range" id="customTemporalThresh" min="0" max="32" value="3" style="accent-color: #00d4ff;">
+        </div>
+        <div class="setting">
+          <label for="customDctQp">DCT QP: <span id="customDctQpValue">26</span></label>
+          <input type="range" id="customDctQp" min="0" max="51" value="26" style="accent-color: #00d4ff;">
+        </div>
+      </div>
 
-                socket.onclose = () => {
-                    status.textContent = "Connection Closed";
-                    stopRecordingInternal();
-                };
+      <h2>Recording Stats</h2>
+      <div class="stats">
+        <div class="stat-row">
+          <span class="stat-label">Duration</span>
+          <span class="stat-value" id="statDuration">0:00</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Frames</span>
+          <span class="stat-value" id="statFrames">0</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Keyframes</span>
+          <span class="stat-value" id="statKeyframes">0</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Est. File Size</span>
+          <span class="stat-value" id="statSize">0 KB</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Actual FPS</span>
+          <span class="stat-value" id="statActualFps">-</span>
+        </div>
+      </div>
+    </div>
+  </div>
 
-            } catch (err) {
-                console.error("Error: " + err);
-                status.textContent = "Error: " + err.message;
-            }
-        }
-
-        function startFrameLoop() {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-            // Set canvas size to video size
-            const track = mediaStream.getVideoTracks()[0];
-            const settings = track.getSettings();
-            canvas.width = settings.width || preview.videoWidth;
-            canvas.height = settings.height || preview.videoHeight;
-
-            // Send header/metadata first? 
-            // C# expects a stream. Let's send a JSON header first, then binary blobs.
-            const header = JSON.stringify({
-                width: canvas.width,
-                height: canvas.height,
-                fps: 30 // Target
-            });
-            socket.send(header);
-
-            const interval = 1000 / 30; // 30 FPS target
-
-            const loop = setInterval(() => {
-                if (!isRecording || socket.readyState !== WebSocket.OPEN) {
-                    clearInterval(loop);
-                    return;
-                }
-
-                ctx.drawImage(preview, 0, 0, canvas.width, canvas.height);
-
-                // Get raw pixels? Or Blob (JPEG/PNG)?
-                // QovEncoder is fast. Receiving PNG/JPEG adds decode overhead in C#.
-                // Raw RGBA is huge (1920x1080x4 = 8MB per frame! @ 30fps = 240MB/s). 
-                // That might choke WebSocket/Loopback.
-                // JPEG Blob is better. QOV can handle it if we decode in C# (Bitmap).
-                // Let's send JPEG blobs. Fast to encode in Browser, fast to decode in .NET (System.Drawing/Skia).
-
-                canvas.toBlob((blob) => {
-                    if (socket.readyState === WebSocket.OPEN) {
-                        socket.send(blob);
-                    }
-                }, 'image/jpeg', 0.85); // 85% Quality JPEG
-
-            }, interval);
-        }
-
-        function stopRecording() {
-            if (mediaStream) {
-                mediaStream.getTracks().forEach(track => track.stop());
-            }
-            if (socket) {
-                socket.close(); // Close initiates finalize in C#
-            }
-            stopRecordingInternal();
-        }
-
-        function stopRecordingInternal() {
-            isRecording = false;
-            updateButtons();
-            status.textContent = "Stopped. Saved.";
-        }
-
-        function updateButtons() {
-            btnScreen.disabled = isRecording;
-            btnCamera.disabled = isRecording;
-            btnStop.disabled = !isRecording;
-        }
-
-        btnScreen.onclick = () => startRecording('screen');
-        btnCamera.onclick = () => startRecording('camera');
-        btnStop.onclick = stopRecording;
-
-    </script>
+  <script src="js/recorder_bridge.js"></script>
 </body>
-
 </html>
