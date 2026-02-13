@@ -50,8 +50,8 @@ class Program
                     var path = OpenFileDialog("QOV Files (*.qov)|*.qov");
                     if (!string.IsNullOrEmpty(path))
                     {
-                        window.SendWebMessage($"opened:{path.Replace("\\", "\\\\")}");
                         server.PlayerService.LoadFile(path);
+                        window.SendWebMessage($"opened:{path.Replace("\\", "\\\\")}");
                     }
                 }
                 else if (message == "saveFile")

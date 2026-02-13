@@ -2,8 +2,6 @@ using System.Net.WebSockets;
 using System.Text; // For Encoding
 using System.Text.Json; // For JSON
 using QovLibrary;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
 namespace QovGuiNew;
@@ -15,8 +13,16 @@ public class RecorderService
         QovEncoder? encoder = null;
         FileStream? fs = null;
         int width = 0, height = 0, fps = 30;
+        int keyframePeriod = 30;
+        int currentFrameIndex = 0;
         
-        var buffer = new byte[1024 * 1024 * 4]; // 4MB buffer
+        // Buffer for incoming chunks
+        var receiveBuffer = new byte[1024 * 64]; 
+        // Buffer to accumulate a full frame
+        // We'll initialize it when we know the dimensions.
+        byte[]? frameBuffer = null;
+        int frameBufferOffset = 0;
+        
         bool headerReceived = false;
         long startTime = 0;
 
@@ -29,14 +35,15 @@ public class RecorderService
         {
             while (ws.State == WebSocketState.Open)
             {
-                var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                // Receive a chunk
+                var result = await ws.ReceiveAsync(new ArraySegment<byte>(receiveBuffer), CancellationToken.None);
 
                 if (result.MessageType == WebSocketMessageType.Close) break;
 
                 if (!headerReceived)
                 {
                     // Expect JSON header
-                    string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    string json = Encoding.UTF8.GetString(receiveBuffer, 0, result.Count);
                     try {
                         var cmd = JsonSerializer.Deserialize<RecorderCommand>(json);
                         if (cmd != null && cmd.type == "start")
@@ -44,8 +51,8 @@ public class RecorderService
                             width = cmd.width;
                             height = cmd.height;
                             fps = cmd.fps;
+                            keyframePeriod = cmd.keyframePeriod > 0 ? cmd.keyframePeriod : 30;
                             
-                            // Use provided path or fallback to temp
                             if (!string.IsNullOrEmpty(cmd.path))
                             {
                                 filename = cmd.path;
@@ -53,12 +60,24 @@ public class RecorderService
                             
                             fs = new FileStream(filename, FileMode.Create);
                             
-                            // Initialize QovEncoder
-                            encoder = new QovEncoder(fs, (ushort)width, (ushort)height, (ushort)fps);
+                            // Map generic colorspace int to byte
+                            byte cs = (byte)cmd.colorspace;
+                            int qual = cmd.quality;
+                            byte flags = QovTypes.FlagHasIndex; // Default flags
                             
-                            Console.WriteLine($"Recording started: {width}x{height} @ {fps}fps -> {filename}");
+                            // Initialize QovEncoder
+                            encoder = new QovEncoder(fs, (ushort)width, (ushort)height, (ushort)fps, 
+                                flags: flags, colorspace: cs, quality: qual);
+                            
+                            Console.WriteLine($"Recording started: {width}x{height} @ {fps}fps, GOP={keyframePeriod}, CS={cs}, Q={qual} -> {filename}");
                             headerReceived = true;
                             startTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                            
+                            // Initialize frame buffer
+                            int frameSize = width * height * 4;
+                            frameBuffer = new byte[frameSize];
+                            frameBufferOffset = 0;
+                            currentFrameIndex = 0;
                         }
                     } catch (Exception e) {
                         Console.WriteLine("Header Error: " + e.Message);
@@ -66,45 +85,53 @@ public class RecorderService
                 }
                 else
                 {
-                    // Expect JPEG/Blob data
-                    // Decode JPEG to Bitmap
-                     if (result.Count > 0 && encoder != null)
-                     {
-                        using (var ms = new MemoryStream(buffer, 0, result.Count))
-                        try 
+                    // Binary Data (Raw RGBA)
+                    if (encoder != null && frameBuffer != null)
+                    {
+                        // Copy received chunk to frame buffer
+                        if (frameBufferOffset + result.Count <= frameBuffer.Length)
                         {
-                            using (var bitmap = new Bitmap(ms))
-                            {
-                                // Encode frame
-                                BitmapData? bmpData = null;
+                            Array.Copy(receiveBuffer, 0, frameBuffer, frameBufferOffset, result.Count);
+                            frameBufferOffset += result.Count;
+                        }
+                        else
+                        {
+                             // Buffer overflow or sync error
+                             frameBufferOffset = 0;
+                        }
+
+                        if (result.EndOfMessage)
+                        {
+                             // Process full frame
+                             if (frameBufferOffset == frameBuffer.Length)
+                             {
                                 try
                                 {
-                                    bmpData = bitmap.LockBits(
-                                        new Rectangle(0, 0, bitmap.Width, bitmap.Height), 
-                                        ImageLockMode.ReadOnly, 
-                                        PixelFormat.Format32bppArgb);
-
-                                    int numBytes = bitmap.Width * bitmap.Height * 4;
-                                    byte[] pixels = new byte[numBytes];
-                                    Marshal.Copy(bmpData.Scan0, pixels, 0, numBytes);
-
                                     // Calculate timestamp (ms)
                                     uint timestamp = (uint)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - startTime);
                                     
-                                    // Use P-frame by default, encoder handles first frame logic usually or we can force keyframe if needed.
-                                    encoder.EncodePFrame(pixels.AsSpan(), timestamp);
+                                    // Encode
+                                    if (currentFrameIndex % keyframePeriod == 0)
+                                    {
+                                        encoder.EncodeKeyframe(frameBuffer.AsSpan(), timestamp);
+                                        Console.Write("K"); // debug indicator
+                                    }
+                                    else
+                                    {
+                                        encoder.EncodePFrame(frameBuffer.AsSpan(), timestamp);
+                                    }
+                                    currentFrameIndex++;
                                 }
-                                finally
+                                catch (Exception ex)
                                 {
-                                    if (bmpData != null) bitmap.UnlockBits(bmpData);
+                                     Console.WriteLine($"Frame encode error: {ex.Message}");
                                 }
-                            }
+                             }
+                             
+                             // Reset for next frame
+                             frameBufferOffset = 0;
                         }
-                        catch (Exception ex)
-                        {
-                             Console.WriteLine($"Frame decode error: {ex.Message}");
-                        }
-                     }
+                    }
                 }
             }
         }
@@ -116,12 +143,11 @@ public class RecorderService
         {
             if (encoder != null)
             {
-                // QovEncoder doesn't implement IDisposable but has Finish
-                // Reflection or check source... Source calls Finish.
-                // But wait, I added Finish() in Step 230 snippet? 
-                // Line 1131 QovEncoder.Finish.
-                // It is public? Yes.
-                encoder.Finish();
+                try {
+                    encoder.Finish();
+                } catch(Exception ex) {
+                    Console.WriteLine("Error finishing encoder: " + ex.Message);
+                }
             }
             fs?.Close();
             Console.WriteLine("Recording Saved: " + filename);
@@ -135,5 +161,9 @@ public class RecorderService
         public int width { get; set; } 
         public int height { get; set; } 
         public int fps { get; set; } 
+        public int keyframePeriod { get; set; }
+        public int colorspace { get; set; }
+        public string encodingMode { get; set; } = "lossless";
+        public int quality { get; set; }
     }
 }

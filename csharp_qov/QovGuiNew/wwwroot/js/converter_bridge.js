@@ -30,47 +30,39 @@ async function init() {
 
     connectWebSocket();
 
+    window.external.receiveMessage(message => {
+        if (message.startsWith("inputSelected:")) {
+            const path = message.substring(14);
+            inputPath = path;
+            loadVideo(path);
+        } else if (message.startsWith("outputSelected:")) {
+            const path = message.substring(15);
+            outputPath = path;
+            startConversion();
+        }
+    });
+
     // Event Listeners
     dropZone.addEventListener('click', () => {
-        // Trigger Open File Dialog via C#
-        ws.send(JSON.stringify({ type: "selectInput" }));
+        window.external.sendMessage("selectInput");
     });
 
     convertBtn.addEventListener('click', () => {
-        // Trigger Save File Dialog via C# -> Then start
-        ws.send(JSON.stringify({ type: "selectOutput" }));
+        window.external.sendMessage("selectOutput");
     });
 }
 
 function connectWebSocket() {
-    ws = new WebSocket('ws://localhost:8000/converter');
+    ws = new WebSocket('ws://localhost:8000/convert');
     ws.binaryType = 'arraybuffer';
 
     ws.onmessage = async (event) => {
         const msg = JSON.parse(event.data);
 
-        if (msg.type === 'inputSelected') {
-            inputPath = msg.path;
-            loadVideo(inputPath); // Only works if browser can access file path directly?
-            // Browser cannot access local file by path due to security!
-            // Wait. "Hybrid" app. Photino uses WebView2/Chromium.
-            // Local file access might be allowed if we use file:// protocol. 
-            // The C# server loads index.html from disk.
-            // Let's try setting video.src = "file:///" + path;
-            // If that fails, we might need C# to stream the video file to us via an http endpoint.
-
-            // For now, let's assume direct file access works in Photino for local files?
-            // Photino docs say "WebView2 can access local files if...".
-            // If not, we need a local webserver to serve the file.
-            // Our WebSocketServer is at localhost:8000. We might need to add a file handler there.
-
-            // Temporary fix attempt:
-            video.src = "file:///" + inputPath.replace(/\\/g, '/');
-            dropZone.querySelector('.drop-zone-text').textContent = inputPath;
-
-        } else if (msg.type === 'outputSelected') {
-            outputPath = msg.path;
-            startConversion();
+        // We received paths via Photino, so we don't expect them via WS anymore
+        // But we might receive progress/finish
+        if (msg.type === 'finish') {
+            finishConversion();
         } else if (msg.type === 'progress') {
             // update UI
         }

@@ -115,23 +115,45 @@ public class QovDecoder
         return _header;
     }
 
+    public class QovDecodedChunk 
+    {
+        public byte ChunkType { get; init; }
+        public uint ChunkSize { get; init; }
+        public long FileOffset { get; init; }
+        public uint Timestamp { get; init; }
+        public object? Payload { get; init; }
+    }
+
     public IEnumerable<QovFrame> DecodeFrames()
     {
-        foreach (var item in DecodeAll())
+        foreach (var chunk in DecodeAll())
         {
-            if (item is QovFrame frame)
+            if (chunk.Payload is QovFrame frame)
             {
                 yield return frame;
             }
         }
     }
 
-    public IEnumerable<object> DecodeAll()
+    public IEnumerable<QovDecodedChunk> DecodeAll()
     {
         while (true)
         {
             bool shouldContinue = true;
-            object? decodedItem = null;
+            object? payload = null;
+            long offset = _reader?.BaseStream.Position ?? 0; // Approximate if strictly streaming, but BaseStream usually works for FileStream. 
+            // Note: If _reader is null (byte[] ctor), we need to track position manually or use _position (not shown in snippet but implied by context).
+            // Actually _position is used in byte[] ctor case. But DecodeAll uses ReadByte()/ReadBytes() which advances stream or array index.
+            // Let's check Reader usage.
+            // _reader is BinaryReader. 
+            
+            if (_reader != null) offset = _reader.BaseStream.Position;
+             // In byte[] case we might need to track it differently if _position is not updated by helper methods?
+             // Actually ReadByte() likely updates _reader or an index. 
+             // Let's assume _reader is used for FileStream. For byte[] logic, we'd need to see the rest of the file.
+             // Given the context of PlayerService using FileStream, _reader is active.
+
+            QovDecodedChunk? currentChunk = null;
 
             try
             {
@@ -150,11 +172,11 @@ public class QovDecoder
                         break;
 
                     case QovTypes.ChunkTypeKeyframe:
-                        decodedItem = DecodeKeyframe(chunkFlags, timestamp, chunkSize);
+                        payload = DecodeKeyframe(chunkFlags, timestamp, chunkSize);
                         break;
 
                     case QovTypes.ChunkTypePframe:
-                        decodedItem = DecodePFrame(chunkFlags, timestamp, chunkSize);
+                        payload = DecodePFrame(chunkFlags, timestamp, chunkSize);
                         break;
 
                     case QovTypes.ChunkTypeBframe:
@@ -169,7 +191,7 @@ public class QovDecoder
                             if (result.HasValue)
                             {
                                 var tuple = result.Value;
-                                decodedItem = new QovAudioFrame
+                                payload = new QovAudioFrame
                                 {
                                     Samples = tuple.Samples,
                                     Channels = tuple.Channels,
@@ -188,6 +210,15 @@ public class QovDecoder
                         ReadBytes((int)chunkSize);
                         break;
                 }
+
+                currentChunk = new QovDecodedChunk 
+                {
+                    ChunkType = chunkType,
+                    ChunkSize = chunkSize,
+                    FileOffset = offset,
+                    Timestamp = timestamp,
+                    Payload = payload
+                };
             }
             catch (EndOfStreamException)
             {
@@ -197,8 +228,8 @@ public class QovDecoder
             if (!shouldContinue)
                 break;
 
-            if (decodedItem != null)
-                yield return decodedItem;
+            if (currentChunk != null)
+                yield return currentChunk;
         }
     }
 

@@ -32,6 +32,14 @@ async function init() {
     // Connect WebSocket
     connectWebSocket();
 
+    // Photino Message Handler
+    window.external.receiveMessage(message => {
+        if (message.startsWith("savedFile:")) {
+            const path = message.substring(10);
+            startRecordingWithPath(path);
+        }
+    });
+
     // Event Listeners
     startBtn.addEventListener('click', toggleRecording);
     cameraSelect.addEventListener('change', startCamera);
@@ -120,7 +128,7 @@ async function startCamera() {
 }
 
 function connectWebSocket() {
-    ws = new WebSocket('ws://localhost:8000/recorder');
+    ws = new WebSocket('ws://localhost:8000/record');
     ws.binaryType = 'arraybuffer';
 
     ws.onopend = () => {
@@ -147,43 +155,58 @@ function connectWebSocket() {
 
 async function toggleRecording() {
     if (!isRecording) {
-        // Start Recording
-
-        // Ask for filename via Photino interop or WebSocket command that triggers it?
-        // Let's us WebSocket command "init" -> C# opens dialog -> returns path or starts.
-        // Actually, C# can block on the dialog.
-
-        // Prepare Start Command
-        const settings = mediaStream.getVideoTracks()[0].getSettings();
-        const startCmd = {
-            type: "start",
-            width: canvas.width,
-            height: canvas.height,
-            fps: parseInt(fpsSelect.value),
-            // We can ask C# to pick file, or we can pick it here? 
-            // Browser can't pick save path easily without File System Access API (not fully supported in webview).
-            // So we send command to C# "PleaseStartRecording", C# opens dialog, then starts.
-        };
-
-        ws.send(JSON.stringify(startCmd));
-
-        isRecording = true;
-        startBtn.textContent = "Stop Recording";
-        startBtn.classList.add('recording');
-
-        startTime = Date.now();
-        frameCount = 0;
-
-        // Start Loop
-        const interval = 1000 / startCmd.fps;
-        frameInterval = setInterval(processFrame, interval);
-
-        document.getElementById('recordingIndicator').classList.add('active');
-
+        // Start Recording -> Ask for File First
+        window.external.sendMessage("saveFile");
     } else {
         // Stop Recording
         stopRecordingInternal();
     }
+}
+
+function startRecordingWithPath(path) {
+    // Prepare Start Command
+    const settings = mediaStream.getVideoTracks()[0].getSettings();
+
+    // Get Settings
+    const keyframePeriod = parseInt(document.getElementById('keyframeInterval').value) || 30;
+    const colorspace = parseInt(document.getElementById('colorspaceSelect').value) || 0x10; // Default YUV420
+    const mode = document.getElementById('encodingMode').value;
+    let quality = 0;
+
+    if (mode === 'lossy') {
+        quality = parseInt(document.getElementById('qualitySlider').value) || 75;
+    } else if (mode === 'custom') {
+        // Custom not fully supported in bridge command yet, falling back to quality 0 (lossless) or specific params if added
+        // For now let's map custom to a quality default or handle explicit params later
+        quality = 50; // placeholder
+    }
+
+    const startCmd = {
+        type: "start",
+        path: path,
+        width: canvas.width,
+        height: canvas.height,
+        fps: parseInt(fpsSelect.value),
+        keyframePeriod: keyframePeriod,
+        colorspace: colorspace,
+        encodingMode: mode,
+        quality: quality
+    };
+
+    ws.send(JSON.stringify(startCmd));
+
+    isRecording = true;
+    startBtn.textContent = "Stop Recording";
+    startBtn.classList.add('recording');
+
+    startTime = Date.now();
+    frameCount = 0;
+
+    // Start Loop
+    const interval = 1000 / startCmd.fps;
+    frameInterval = setInterval(processFrame, interval);
+
+    document.getElementById('recordingIndicator').classList.add('active');
 }
 
 function stopRecordingInternal() {
