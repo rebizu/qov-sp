@@ -6,9 +6,13 @@ let ws = null;
 let canvas = null;
 let ctx = null;
 
+let totalFrames = 0;
+
 // UI Elements
 const dropZone = document.getElementById('dropZone');
-const timelineProgress = document.getElementById('timelineProgress'); // Not fully implemented in bridge yet
+const timelineProgress = document.getElementById('timelineProgress'); 
+const timelineCursor = document.getElementById('timelineCursor');
+const timelineClickable = document.getElementById('timelineClickable');
 const playBtn = document.getElementById('playBtn');
 const headerInfo = document.getElementById('headerInfo');
 
@@ -51,8 +55,25 @@ async function init() {
         }
     });
 
-    // Seek/Step buttons can be implemented via commands
-    // e.g. ws.send(JSON.stringify({type: "seek", frame: ...}))
+    // Timeline Click (Seek)
+    timelineClickable.addEventListener('click', (e) => {
+        if (totalFrames > 0) {
+            const rect = timelineClickable.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const width = rect.width;
+            const percent = Math.max(0, Math.min(1, x / width));
+            const targetFrame = Math.floor(percent * totalFrames);
+            
+            // Send Seek Command
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "seek", frame: targetFrame }));
+                
+                // Optimistic UI update
+                timelineProgress.style.width = `${percent * 100}%`;
+                timelineCursor.style.left = `${percent * 100}%`;
+            }
+        }
+    });
 }
 
 function connectWebSocket() {
@@ -66,6 +87,7 @@ function connectWebSocket() {
                 // Video Loaded
                 canvas.width = msg.width;
                 canvas.height = msg.height;
+                totalFrames = msg.totalFrames || 0;
 
                 dropZone.style.display = 'none';
                 playBtn.disabled = false;
@@ -99,6 +121,14 @@ function connectWebSocket() {
                 updateInfo('Current Frame', msg.num);
                 updateInfo('Timestamp', `${msg.ts}ms`);
                 updateInfo('Frame Type', msg.ftype);
+                
+                // Update Timeline
+                if (totalFrames > 0) {
+                    const pct = (msg.num / totalFrames) * 100;
+                    timelineProgress.style.width = `${pct}%`;
+                    timelineCursor.style.left = `${pct}%`;
+                }
+
             } else if (msg.type === 'chunk') {
                 // Add to Chunk Timeline
                 const chunkList = document.getElementById('chunkList');

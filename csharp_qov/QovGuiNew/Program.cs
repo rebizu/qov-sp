@@ -31,7 +31,7 @@ class Program
             .SetUseOsDefaultSize(false)
             .SetSize(1280, 820)
             .Center()
-            .RegisterWebMessageReceivedHandler((object sender, string message) => {
+            .RegisterWebMessageReceivedHandler(async (object sender, string message) => {
                 var window = (PhotinoWindow)sender;
 
                 if (message == "devtools")
@@ -50,7 +50,7 @@ class Program
                     var path = OpenFileDialog("QOV Files (*.qov)|*.qov");
                     if (!string.IsNullOrEmpty(path))
                     {
-                        server.PlayerService.LoadFile(path);
+                        await server.PlayerService.LoadFile(path);
                         window.SendWebMessage($"opened:{path.Replace("\\", "\\\\")}");
                     }
                 }

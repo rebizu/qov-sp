@@ -115,6 +115,97 @@ public class QovDecoder
         return _header;
     }
 
+    public void Seek(long offset, uint frameNumber)
+    {
+        if (_reader != null)
+        {
+            _reader.BaseStream.Seek(offset, SeekOrigin.Begin);
+        }
+        else
+        {
+            _position = (int)offset;
+        }
+
+        // Reset State
+        _frameCount = (int)frameNumber;
+        Array.Clear(_prevFrame, 0, _prevFrame.Length);
+        Array.Clear(_currFrame, 0, _currFrame.Length);
+        Array.Clear(_colorIndex, 0, 64);
+        _prevPixel = new QovPixel(0, 0, 0, 255);
+
+        if (_prevYPlane != null) Array.Clear(_prevYPlane, 0, _prevYPlane.Length);
+        if (_currYPlane != null) Array.Clear(_currYPlane, 0, _currYPlane.Length);
+        if (_prevUPlane != null) Array.Clear(_prevUPlane, 0, _prevUPlane.Length);
+        if (_currUPlane != null) Array.Clear(_currUPlane, 0, _currUPlane.Length);
+        if (_prevVPlane != null) Array.Clear(_prevVPlane, 0, _prevVPlane.Length);
+        if (_currVPlane != null) Array.Clear(_currVPlane, 0, _currVPlane.Length);
+    }
+
+    public IEnumerable<QovDecodedChunk> Scan()
+    {
+        long initialPos = _reader?.BaseStream.Position ?? _position;
+        
+        while (true)
+        {
+            bool shouldContinue = true;
+            long offset = _reader?.BaseStream.Position ?? _position;
+
+            QovDecodedChunk? currentChunk = null;
+
+            try
+            {
+                // Check for EOF
+                if (_reader != null)
+                {
+                    if (_reader.BaseStream.Position >= _reader.BaseStream.Length) break;
+                }
+                else
+                {
+                    if (_position >= _data.Length) break;
+                }
+
+                byte chunkType = ReadByte();
+                if (chunkType == QovTypes.ChunkTypeEnd)
+                    break;
+
+                byte chunkFlags = ReadByte();
+                uint chunkSize = _use32BitChunkSize ? ReadBigEndianU32() : ReadBigEndianU16();
+                uint timestamp = ReadBigEndianU32();
+
+                // Skip payload
+                if (_reader != null)
+                    _reader.BaseStream.Seek(chunkSize, SeekOrigin.Current);
+                else
+                    _position += (int)chunkSize;
+
+                currentChunk = new QovDecodedChunk
+                {
+                    ChunkType = chunkType,
+                    ChunkSize = chunkSize,
+                    FileOffset = offset,
+                    Timestamp = timestamp,
+                    Payload = null
+                };
+            }
+            catch (EndOfStreamException)
+            {
+                shouldContinue = false;
+            }
+
+            if (!shouldContinue)
+                break;
+
+            if (currentChunk != null)
+                yield return currentChunk;
+        }
+
+        // Restore position
+        if (_reader != null)
+            _reader.BaseStream.Seek(initialPos, SeekOrigin.Begin);
+        else
+            _position = (int)initialPos;
+    }
+
     public class QovDecodedChunk 
     {
         public byte ChunkType { get; init; }
