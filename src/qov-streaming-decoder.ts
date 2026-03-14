@@ -12,12 +12,25 @@ import {
   QOV_CHUNK_END,
   QOV_COLORSPACE_YUV420,
   QOV_COLORSPACE_YUV422,
+  QOV_COLORSPACE_YUV444,
   QOV_COLORSPACE_YUVA420,
   QOV_CHUNK_FLAG_COMPRESSED,
+  QOV_CHUNK_FLAG_DCT_BLOCKS,
+  QOV_OP_DCT_Y,
+  QOV_OP_DCT_UV,
+  QOV_OP_DCT_SKIP,
+  QOV_OP_DCT_ZERO,
   QOV_FLAG_HAS_ALPHA,
   QOV_VERSION_LOSSY,
   getChunkTypeName,
 } from './qov-types';
+
+import {
+  inverseDCTRaw,
+  DEFAULT_QUANT_LUMA,
+  DEFAULT_QUANT_CHROMA,
+  ZIGZAG,
+} from './dct';
 
 import { lz4Decompress } from './lz4';
 
@@ -557,6 +570,7 @@ export class QovStreamingDecoder {
 
     const isCompressed = (chunk.flags & QOV_CHUNK_FLAG_COMPRESSED) !== 0;
     const isYuvChunk = (chunk.flags & 0x01) !== 0;
+    const isDctBlocks = (chunk.flags & QOV_CHUNK_FLAG_DCT_BLOCKS) !== 0;
 
     // Handle decompression
     if (isCompressed) {
@@ -575,7 +589,11 @@ export class QovStreamingDecoder {
       }
     } else if (chunk.type === QOV_CHUNK_PFRAME) {
       if (isYuvChunk || this.isYuvMode) {
-        this.decodeYuvPFrameFromData(chunkData);
+        if (isDctBlocks) {
+          this.decodeYuvPFrameDctFromData(chunkData);
+        } else {
+          this.decodeYuvPFrameFromData(chunkData);
+        }
       } else {
         this.decodeRgbPFrameFromData(chunkData, (chunk.flags & 0x02) !== 0);
       }
@@ -796,6 +814,145 @@ export class QovStreamingDecoder {
     [this.prevFrame, this.currFrame] = [this.currFrame, this.prevFrame];
 
     this.activeData = null;
+  }
+
+
+  // Helper for DCT block decoding
+  private decodeDctBlock(quantTable: number[], qpBase: number, out: Float32Array): number {
+    const qpByte = this.readU8();
+    const qpDelta = (qpByte & 0x7F) - 64;
+    const finalQp = Math.max(0, Math.min(100, qpBase + qpDelta));
+
+    const scale = 0.1 + (finalQp * 0.1);
+
+    const dcRaw = this.readU16();
+    const dc = (dcRaw & 0x8000) ? dcRaw - 65536 : dcRaw;
+
+    const coeffs = new Float32Array(64);
+    coeffs[0] = dc * quantTable[0] * scale;
+
+    let k = 1;
+    while (k < 64) {
+      const b1 = this.readU8();
+
+      if (b1 === 0x00) break;
+      if (b1 === 0xF0) {
+        k += 16;
+        continue;
+      }
+
+      const run = (b1 >> 4) & 0x0F;
+      const size = b1 & 0x0F;
+
+      k += run;
+      if (k >= 64) break;
+
+      let level = 0;
+      if (size > 0) {
+        let rawLevel = 0;
+        for (let i = 0; i < size; i++) {
+          rawLevel = (rawLevel << 8) | this.readU8();
+        }
+
+        if (size === 1) level = (rawLevel & 0x80) ? rawLevel - 256 : rawLevel;
+        else if (size === 2) level = (rawLevel & 0x8000) ? rawLevel - 65536 : rawLevel;
+        else level = rawLevel;
+      }
+
+      coeffs[ZIGZAG[k]] = level * quantTable[ZIGZAG[k]] * scale;
+      k++;
+    }
+
+    inverseDCTRaw(coeffs, out);
+    return k;
+  }
+
+  private decodeYuvPFrameDctFromData(data: Uint8Array): void {
+    this.activeData = data;
+    this.activePos = 0;
+
+    const { width, height, colorspace } = this.header!;
+    const yW = width;
+    const yH = height;
+
+    this.currYPlane!.set(this.prevYPlane!);
+    this.currUPlane!.set(this.prevUPlane!);
+    this.currVPlane!.set(this.prevVPlane!);
+    if (this.hasYuvAlpha) this.currAPlane!.set(this.prevAPlane!);
+
+    const blockBuf = new Float32Array(64);
+
+    this.decodePlaneDct(this.currYPlane!, yW, yH, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
+
+    let uvW: number;
+    let uvH: number;
+    if (colorspace === QOV_COLORSPACE_YUV444) {
+      uvW = width;
+      uvH = height;
+    } else if (colorspace === QOV_COLORSPACE_YUV422) {
+      uvW = Math.ceil(width / 2);
+      uvH = height;
+    } else {
+      uvW = Math.ceil(width / 2);
+      uvH = Math.ceil(height / 2);
+    }
+
+    this.decodePlaneDct(this.currUPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
+    this.decodePlaneDct(this.currVPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
+
+    if (this.hasYuvAlpha && this.currAPlane) {
+        this.decodePlaneDct(this.currAPlane, yW, yH, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
+    }
+
+    this.yuvPlanesToRgba();
+
+    [this.prevYPlane, this.currYPlane] = [this.currYPlane, this.prevYPlane];
+    [this.prevUPlane, this.currUPlane] = [this.currUPlane, this.prevUPlane];
+    [this.prevVPlane, this.currVPlane] = [this.currVPlane, this.prevVPlane];
+    if (this.hasYuvAlpha) {
+      [this.prevAPlane, this.currAPlane] = [this.currAPlane, this.prevAPlane];
+    }
+    [this.prevFrame, this.currFrame] = [this.currFrame, this.prevFrame];
+
+    this.activeData = null;
+  }
+
+  private decodePlaneDct(plane: Uint8Array, w: number, h: number, quant: number[], opType: number, blockBuf: Float32Array): void {
+    const qpBase = this.header!.dctQpBase || 20;
+    const blocksX = Math.ceil(w / 8);
+    const blocksY = Math.ceil(h / 8);
+
+    let blockIdx = 0;
+    const totalBlocks = blocksX * blocksY;
+
+    while (blockIdx < totalBlocks) {
+      const b1 = this.readU8();
+      if (b1 === QOV_OP_DCT_SKIP) {
+        const count = this.readU8();
+        blockIdx += count;
+      } else if (b1 === QOV_OP_DCT_ZERO) {
+        const count = this.readU8();
+        blockIdx += count;
+      } else if (b1 === opType) {
+        this.decodeDctBlock(quant, qpBase, blockBuf);
+        const bx = (blockIdx % blocksX) * 8;
+        const by = Math.floor(blockIdx / blocksX) * 8;
+
+        for (let y = 0; y < 8; y++) {
+          if (by + y >= h) break;
+          for (let x = 0; x < 8; x++) {
+            if (bx + x >= w) break;
+            const idx = (by + y) * w + (bx + x);
+            const res = blockBuf[y * 8 + x];
+            plane[idx] = Math.max(0, Math.min(255, plane[idx] + res));
+          }
+        }
+        blockIdx++;
+      } else {
+        console.warn(`Unexpected opcode 0x${b1.toString(16)} in DCT block stream at block ${blockIdx}`);
+        blockIdx++;
+      }
+    }
   }
 
   // YUV P-frame decoding
