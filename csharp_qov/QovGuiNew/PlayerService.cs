@@ -1,21 +1,26 @@
 using System.Net.WebSockets;
 using System.Text.Json;
 using QovLibrary;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
 
 namespace QovGuiNew;
 
 public class PlayerService
 {
-    private string? _currentFile;
+    // Guards decoder/file/keyframe state. Never lock the QovDecoder instance
+    // itself: LoadFile swaps it, which silently breaks mutual exclusion.
+    private readonly object _lock = new object();
+    // Serializes file loads so two overlapping LoadFile calls cannot interleave
+    private readonly SemaphoreSlim _loadLock = new SemaphoreSlim(1, 1);
+
     private QovDecoder? _decoder;
     private FileStream? _fs;
     private QovHeader _header;
     private long _fileSize;
     private List<KeyframeInfo> _keyframes = new();
     private bool _isPlaying = false;
+
+    private CancellationTokenSource? _cts;
+    private Task? _playbackTask;
 
     private struct KeyframeInfo
     {
@@ -26,73 +31,93 @@ public class PlayerService
 
     public async Task LoadFile(string path)
     {
-        // Stop any existing playback
-        _cts?.Cancel();
-        if (_playbackTask != null)
-        {
-            try { await _playbackTask; } catch {}
-        }
-        
-        _currentFile = path;
-        
-        // Clean up
-        _fs?.Dispose();
-
+        await _loadLock.WaitAsync();
         try
         {
-            _fs = File.OpenRead(path);
-            _fileSize = _fs.Length;
-            _decoder = new QovDecoder(_fs);
-            _header = _decoder.DecodeHeader();
-            
-            // Scan for keyframes
-            _keyframes.Clear();
-            int frameCount = 0;
-            Console.WriteLine("Scanning for keyframes...");
-            
-            // Run scan on background thread to avoid blocking UI if called from there
-            await Task.Run(() => {
-                lock (_decoder)
-                {
-                    foreach (var chunk in _decoder.Scan())
+            await StopPlaybackAsync();
+
+            // Swap out the old state under the lock, dispose outside it
+            FileStream? oldFs;
+            lock (_lock)
+            {
+                oldFs = _fs;
+                _fs = null;
+                _decoder = null;
+                _keyframes = new List<KeyframeInfo>();
+                _header = default;
+                _fileSize = 0;
+            }
+            oldFs?.Dispose();
+
+            try
+            {
+                var fs = File.OpenRead(path);
+                var decoder = new QovDecoder(fs);
+                var header = decoder.DecodeHeader();
+
+                Console.WriteLine("Scanning for keyframes...");
+
+                // Build the index in a local list and publish it atomically,
+                // so seek never enumerates a half-populated list
+                var keyframes = new List<KeyframeInfo>();
+                int frameCount = 0;
+                await Task.Run(() => {
+                    foreach (var chunk in decoder.Scan())
                     {
                         if (chunk.ChunkType == QovTypes.ChunkTypeKeyframe)
                         {
-                            _keyframes.Add(new KeyframeInfo { Offset = chunk.FileOffset, Timestamp = chunk.Timestamp, FrameNumber = frameCount });
+                            keyframes.Add(new KeyframeInfo { Offset = chunk.FileOffset, Timestamp = chunk.Timestamp, FrameNumber = frameCount });
                         }
-                        
+
                         if (chunk.ChunkType == QovTypes.ChunkTypeKeyframe || chunk.ChunkType == QovTypes.ChunkTypePframe)
                         {
                             frameCount++;
                         }
                     }
+                });
+
+                lock (_lock)
+                {
+                    _fs = fs;
+                    _decoder = decoder;
+                    _header = header;
+                    _fileSize = fs.Length;
+                    _keyframes = keyframes;
                 }
-            });
-            
-            Console.WriteLine($"Loaded: {path} ({_header.Width}x{_header.Height}), found {_keyframes.Count} keyframes.");
+
+                Console.WriteLine($"Loaded: {path} ({header.Width}x{header.Height}), found {keyframes.Count} keyframes.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Load Error: {ex.Message}");
+            }
         }
-        catch (Exception ex)
+        finally
         {
-            Console.WriteLine($"Load Error: {ex.Message}");
+            _loadLock.Release();
         }
     }
 
     public async Task HandleConnection(WebSocket ws)
     {
         Console.WriteLine("Player Connected");
-        
+
         var buffer = new byte[1024];
-        
+        var textBuffer = new System.IO.MemoryStream();
+
         // Control loop
-        try 
+        try
         {
             while (ws.State == WebSocketState.Open)
             {
                 var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
                 if (result.MessageType == WebSocketMessageType.Close) break;
 
-                string msg = System.Text.Encoding.UTF8.GetString(buffer, 0, result.Count);
-                
+                textBuffer.Write(buffer, 0, result.Count);
+                if (!result.EndOfMessage) continue;
+                string msg = System.Text.Encoding.UTF8.GetString(textBuffer.ToArray());
+                textBuffer.SetLength(0);
+
                 if (msg.StartsWith("{"))
                 {
                     try {
@@ -101,27 +126,34 @@ public class PlayerService
                         if (root.TryGetProperty("type", out var typeProp))
                         {
                             string type = typeProp.GetString();
-                            if (type == "openFile") 
+                            if (type == "openFile")
                             {
-                                 if (_header.Width > 0)
+                                 QovHeader header;
+                                 long fileSize;
+                                 lock (_lock)
                                  {
-                                    var meta = new { 
-                                        type = "meta", 
-                                        width = _header.Width, 
-                                        height = _header.Height, 
-                                        fps = _header.FrameRateNum, 
-                                        totalFrames = _header.TotalFrames,
-                                        version = _header.Version,
-                                        colorspace = _header.Colorspace.ToString(),
-                                        flags = GetFlagNames(_header.Flags),
-                                        fileSize = _fileSize
-                                    }; 
+                                     header = _header;
+                                     fileSize = _fileSize;
+                                 }
+                                 if (header.Width > 0)
+                                 {
+                                    var meta = new {
+                                        type = "meta",
+                                        width = header.Width,
+                                        height = header.Height,
+                                        fps = header.FrameRateDen > 0 ? Math.Round((double)header.FrameRateNum / header.FrameRateDen, 3) : 30,
+                                        totalFrames = header.TotalFrames,
+                                        version = header.Version,
+                                        colorspace = header.Colorspace.ToString(),
+                                        flags = GetFlagNames(header.Flags),
+                                        fileSize = fileSize
+                                    };
                                     string json = JsonSerializer.Serialize(meta);
                                     var bytes = System.Text.Encoding.UTF8.GetBytes(json);
                                     await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
                                  }
                             }
-                            else if (type == "seek") 
+                            else if (type == "seek")
                             {
                                 if (root.TryGetProperty("frame", out var frameProp))
                                 {
@@ -134,17 +166,19 @@ public class PlayerService
                         Console.WriteLine($"JSON Error: {ex.Message}");
                     }
                 }
-                else if (msg == "play") 
+                else if (msg == "play")
                 {
+                    // Fully stop the previous loop before starting a new one:
+                    // two loops over one decoder/file stream interleave chunk
+                    // reads and send concurrently on the same socket
+                    await StopPlaybackAsync();
                     _isPlaying = true;
-                    _cts?.Cancel();
                     _cts = new CancellationTokenSource();
                     _playbackTask = StartStreamLoop(ws, _cts.Token);
                 }
-                else if (msg == "pause") 
+                else if (msg == "pause")
                 {
-                    _isPlaying = false;
-                    _cts?.Cancel();
+                    await StopPlaybackAsync();
                 }
             }
         }
@@ -154,43 +188,72 @@ public class PlayerService
         }
     }
 
+    private async Task StopPlaybackAsync()
+    {
+        _isPlaying = false;
+        _cts?.Cancel();
+        var task = _playbackTask;
+        _playbackTask = null;
+        if (task != null)
+        {
+            try { await task; } catch { }
+        }
+    }
+
     private async Task PerformSeek(int targetFrame, WebSocket ws)
     {
-        // Cancel current playback
-        _cts?.Cancel();
-        
-        if (_playbackTask != null)
+        await StopPlaybackAsync();
+
+        List<KeyframeInfo> snapshot;
+        lock (_lock)
         {
-            try { await _playbackTask; } catch {}
+            snapshot = new List<KeyframeInfo>(_keyframes);
         }
-        
-        // Find closest keyframe before targetFrame
-        var keyframe = _keyframes.Where(k => k.FrameNumber <= targetFrame)
+
+        // Closest keyframe at or before the target; fall back to the first
+        // keyframe when the target sits before it, and give up cleanly when
+        // the index is not available yet
+        var candidates = snapshot.Where(k => k.FrameNumber <= targetFrame)
                                  .OrderByDescending(k => k.FrameNumber)
-                                 .FirstOrDefault();
-        
-        if (keyframe.Offset == 0 && keyframe.FrameNumber != 0 && _keyframes.Count > 0)
+                                 .ToArray();
+        KeyframeInfo keyframe;
+        if (candidates.Length > 0)
         {
-             // Fallback if not found (shouldn't happen if list populated)
-             keyframe = _keyframes[0];
+            keyframe = candidates[0];
         }
+        else if (snapshot.Count > 0)
+        {
+            keyframe = snapshot[0];
+        }
+        else
+        {
+            Console.WriteLine($"Seek to frame {targetFrame} ignored: keyframe index not available");
+            return;
+        }
+
+        QovDecoder? decoder;
+        lock (_lock)
+        {
+            decoder = _decoder;
+        }
+        if (decoder == null) return;
 
         Console.WriteLine($"Seeking to frame {targetFrame}, using keyframe at {keyframe.FrameNumber} (offset {keyframe.Offset})");
 
-        // Seek decoder
-        lock (_decoder) // Ensure thread safety if needed
+        try
         {
-            _decoder?.Seek(keyframe.Offset, (uint)keyframe.FrameNumber);
+            decoder.Seek(keyframe.Offset, (uint)keyframe.FrameNumber);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Seek failed: {ex.Message}");
+            return;
         }
 
-        // If we were playing, restart loop. If paused, send one frame?
-        // For simplicity, let's just restart loop if we want to play, 
-        // OR just decode until we hit the target frame and stop if paused.
-        
         _cts = new CancellationTokenSource();
         _playbackTask = StartStreamLoop(ws, _cts.Token, targetFrame);
     }
-    
+
     private string GetFlagNames(byte flags)
     {
         var names = new List<string>();
@@ -201,29 +264,26 @@ public class PlayerService
         if ((flags & QovTypes.FlagEnhancedComp) != 0) names.Add("Enhanced");
         if ((flags & QovTypes.FlagLossyMode) != 0) names.Add("Lossy");
         if ((flags & QovTypes.FlagDctEnabled) != 0) names.Add("DCT");
-        
+
         return names.Count > 0 ? string.Join(", ", names) : "None";
     }
-    
-    private CancellationTokenSource? _cts;
-    private Task? _playbackTask;
-    
+
     public async Task StartStreamLoop(WebSocket ws, CancellationToken token, int targetFrame = -1)
     {
         await Task.Run(async () => {
              try
             {
                 IEnumerable<QovLibrary.QovDecoder.QovDecodedChunk> enumerable;
-                lock (_decoder)
+                lock (_lock)
                 {
                     if (_decoder == null) return;
                     enumerable = _decoder.DecodeAll();
                 }
 
                 using var enumerator = enumerable.GetEnumerator();
-                
-                int targetFps = _header.FrameRateNum > 0 ? _header.FrameRateNum : 30;
-                double targetIntervalMs = 1000.0 / targetFps;
+
+                double fps = _header.FrameRateDen > 0 ? (double)_header.FrameRateNum / _header.FrameRateDen : 30;
+                double targetIntervalMs = 1000.0 / fps;
                 var stopwatch = new System.Diagnostics.Stopwatch();
 
                 while (true)
@@ -234,10 +294,10 @@ public class PlayerService
 
                     QovLibrary.QovDecoder.QovDecodedChunk? chunk = null;
                     bool hasMore = false;
-                    
-                    try 
+
+                    try
                     {
-                        lock (_decoder)
+                        lock (_lock)
                         {
                             // Check token again inside lock before doing work
                             if (token.IsCancellationRequested) break;
@@ -250,14 +310,11 @@ public class PlayerService
                         Console.WriteLine($"Decode Error: {ex.Message}");
                         break;
                     }
-                    
+
                     if (!hasMore || chunk == null) break;
-                    
-                    // Send Chunk Metadata (for Timeline) - Always send metadata so timeline updates?
-                    // Maybe only send if we are close or if it's keyframes?
-                    // To keep UI responsive during seek, maybe skip sending chunk meta if skipping frames?
+
                     bool isSkipping = targetFrame != -1 && (chunk.Payload is QovFrame fCheck && fCheck.FrameNumber < targetFrame);
-                    
+
                     if (!isSkipping)
                     {
                         var chunkMeta = new {
@@ -280,10 +337,10 @@ public class PlayerService
                              {
                                  continue;
                              }
-                             
+
                              // Reached target
                              targetFrame = -1;
-                             
+
                              // If paused, send this frame and stop
                              if (!_isPlaying)
                              {
@@ -293,7 +350,7 @@ public class PlayerService
                         }
 
                         await SendFrameData(ws, frame, token);
-                         
+
                         double elapsed = stopwatch.Elapsed.TotalMilliseconds;
                         int waitTime = (int)(targetIntervalMs - elapsed);
                         if (waitTime > 0)
@@ -306,14 +363,14 @@ public class PlayerService
                         // Handle audio
                     }
                 }
-                
+
                 if (!token.IsCancellationRequested && ws.State == WebSocketState.Open && _isPlaying)
                 {
                      var eof = System.Text.Encoding.UTF8.GetBytes("{\"type\":\"eof\"}");
                      await ws.SendAsync(new ArraySegment<byte>(eof), WebSocketMessageType.Text, true, CancellationToken.None);
                 }
             }
-            catch (OperationCanceledException) 
+            catch (OperationCanceledException)
             {
                 // Normal pause
             }
@@ -332,7 +389,7 @@ public class PlayerService
             num = frame.FrameNumber,
             ts = frame.Timestamp,
             key = frame.IsKeyframe,
-            ftype = frame.IsKeyframe ? "Key" : "P-Frame" 
+            ftype = frame.IsKeyframe ? "Key" : "P-Frame"
         };
         var metaJson = JsonSerializer.Serialize(frameMeta);
         var metaBytes = System.Text.Encoding.UTF8.GetBytes(metaJson);

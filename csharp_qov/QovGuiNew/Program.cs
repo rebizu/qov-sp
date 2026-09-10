@@ -14,9 +14,9 @@ class Program
     [STAThread]
     static void Main(string[] args)
     {
-        // Start WebSocket Server
+        // Start WebSocket Server (bind fails visibly, e.g. when port 8000 is taken)
         var server = new WebSocketServer("http://localhost:8000/");
-        Task.Run(() => server.Start());
+        string? serverError = server.TryStart();
 
         // Create Photino Window
         string wwwroot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wwwroot");
@@ -27,12 +27,14 @@ class Program
         }
 
         var window = new PhotinoWindow()
-            .SetTitle("QOV GUI")
+            .SetTitle(serverError == null ? "QOV GUI" : $"QOV GUI — backend offline: {serverError}")
             .SetUseOsDefaultSize(false)
             .SetSize(1280, 820)
             .Center()
             .RegisterWebMessageReceivedHandler(async (object sender, string message) => {
-                var window = (PhotinoWindow)sender;
+                try
+                {
+                    var window = (PhotinoWindow)sender;
 
                 if (message == "devtools")
                 {
@@ -60,8 +62,8 @@ class Program
                      var path = SaveFileDialog("QOV Files (*.qov)|*.qov");
                      if (!string.IsNullOrEmpty(path))
                      {
-                         // Notify Recorder Service via WebSocket or some shared state?
-                         // Better: Send back to UI, UI sends to WebSocket.
+                         // The user picked this path, so the recorder may write to it
+                         PathGrants.Grant(path);
                          window.SendWebMessage($"savedFile:{path.Replace("\\", "\\\\")}");
                      }
                 }
@@ -87,8 +89,15 @@ class Program
                      var path = SaveFileDialog("QOV Files (*.qov)|*.qov");
                      if (!string.IsNullOrEmpty(path))
                      {
+                         PathGrants.Grant(path);
                          window.SendWebMessage($"outputSelected:{path.Replace("\\", "\\\\")}");
                      }
+                }
+                }
+                catch (Exception ex)
+                {
+                    // An escape here would crash the whole process (async void)
+                    Console.WriteLine($"UI message error: {ex.Message}");
                 }
             })
             .Load(Path.Combine(wwwroot, "index.html"));

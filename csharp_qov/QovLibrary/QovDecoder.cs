@@ -88,7 +88,7 @@ public class QovDecoder
         }
 
         _header = new QovHeader(flags, width, height, frameRateNum, frameRateDen, colorspace, audioChannels, audioRate, totalFrames,
-            quality, yQuant, uvQuant, tempThresh, dctQp);        
+            quality, yQuant, uvQuant, tempThresh, dctQp, version);
         _prevFrame = new byte[width * height * 4];
         _currFrame = new byte[width * height * 4];
 
