@@ -190,3 +190,14 @@ export function getQualityName(quality: number): string {
   if (quality >= 30) return 'Low';
   return 'Very Low';
 }
+
+// Chroma plane dimensions for a YUV colorspace (odd sizes rounded up)
+export function chromaPlaneDims(colorspace: number, width: number, height: number): { w: number; h: number } {
+  if (colorspace === QOV_COLORSPACE_YUV444) {
+    return { w: width, h: height };
+  }
+  if (colorspace === QOV_COLORSPACE_YUV422) {
+    return { w: Math.ceil(width / 2), h: height };
+  }
+  return { w: Math.ceil(width / 2), h: Math.ceil(height / 2) };
+}

@@ -34,6 +34,7 @@ import {
   QOV_MAX_DIMENSION,
   QOV_MAX_PIXELS,
   getChunkTypeName,
+  chromaPlaneDims,
 } from './qov-types';
 
 import {
@@ -223,14 +224,8 @@ export class QovDecoder {
       const ySize = width * height;
 
       // Calculate UV plane sizes based on subsampling
-      let uvSize: number;
-      if (cs === QOV_COLORSPACE_YUV420 || cs === QOV_COLORSPACE_YUVA420) {
-        uvSize = Math.ceil(width / 2) * Math.ceil(height / 2);
-      } else if (cs === QOV_COLORSPACE_YUV422) {
-        uvSize = Math.ceil(width / 2) * height;
-      } else {
-        uvSize = ySize; // 4:4:4
-      }
+      const { w: uvW, h: uvH } = chromaPlaneDims(cs, width, height);
+      const uvSize = uvW * uvH;
 
       this.prevYPlane = new Uint8Array(ySize);
       this.prevUPlane = new Uint8Array(uvSize);
@@ -1171,16 +1166,23 @@ export class QovDecoder {
     this.decodePlaneDct(this.currYPlane!, yW, yH, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
 
     // Decoding loop for UV
-    const uvW = Math.ceil(width / 2);
-    const uvH = Math.ceil(height / 2); // Assuming 4:2:0 for now
+    const { w: uvW, h: uvH } = chromaPlaneDims(this.header.colorspace, width, height);
     this.decodePlaneDct(this.currUPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
     this.decodePlaneDct(this.currVPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
+
+    // The encoder appends alpha DCT blocks (luma dimensions, luma quant table)
+    if (this.hasYuvAlpha && this.currAPlane && this.prevAPlane) {
+      this.decodePlaneDct(this.currAPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
+    }
 
     this.yuvPlanesToRgba();
     // Swap buffers
     [this.prevYPlane, this.currYPlane] = [this.currYPlane, this.prevYPlane];
     [this.prevUPlane, this.currUPlane] = [this.currUPlane, this.prevUPlane];
     [this.prevVPlane, this.currVPlane] = [this.currVPlane, this.prevVPlane];
+    if (this.hasYuvAlpha) {
+      [this.prevAPlane, this.currAPlane] = [this.currAPlane, this.prevAPlane];
+    }
     const tmp = this.prevFrame;
     this.prevFrame = this.currFrame;
     this.currFrame = tmp;

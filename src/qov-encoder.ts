@@ -7,7 +7,6 @@ import {
   QOV_COLORSPACE_SRGB,
   QOV_COLORSPACE_YUV420,
   QOV_COLORSPACE_YUV422,
-  QOV_COLORSPACE_YUV444,
   QOV_COLORSPACE_YUVA420,
   QOV_FLAG_HAS_INDEX,
   QOV_FLAG_HAS_ALPHA,
@@ -47,6 +46,7 @@ import {
   QOV_OP_DCT_SKIP,
   QOV_FLAG_DCT_ENABLED,
   QOV_CHUNK_FLAG_DCT_BLOCKS,
+  chromaPlaneDims,
 } from './qov-types';
 
 import { QoaEncoder } from './qoa';
@@ -853,85 +853,80 @@ export class QovEncoder {
     // Get temporal threshold for lossy mode
     const temporalThresh = this.lossyMode && this.lossyParams ? this.lossyParams.temporalThresh : 0;
 
-    if (this.compressionEnabled) {
-      // Compression mode: encode to temp buffer, then compress
-      this.startFrameData();
+    // Check if we should use DCT
+    const useDct = (this.header.flags & QOV_FLAG_DCT_ENABLED) !== 0;
 
-      // Check if we should use DCT
-      const useDct = (this.header.flags & QOV_FLAG_DCT_ENABLED) !== 0;
+    if (useDct) {
+      let chunkHeaderPos = -1;
+      let chunkDataStart = -1;
+      if (this.compressionEnabled) {
+        // Compression mode: encode to temp buffer, then compress
+        this.startFrameData();
+      } else {
+        // DCT_BLOCKS does not require compression: write the chunk directly
+        chunkHeaderPos = this.buffer.getSize();
+        this.writeU8(QOV_CHUNK_PFRAME);
+        this.writeU8(QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS);
+        this.writeU32(0);   // size placeholder
+        this.writeU32(timestamp);
+        chunkDataStart = this.buffer.getSize();
+      }
 
-      if (useDct) {
-        // DCT Encoding
-        const blockBuf = new Float32Array(64);
-        const nextY = new Uint8Array(planes.yPlane.length);
-        const nextU = new Uint8Array(planes.uPlane.length);
-        const nextV = new Uint8Array(planes.vPlane.length);
+      // DCT Encoding
+      const blockBuf = new Float32Array(64);
+      const nextY = new Uint8Array(planes.yPlane.length);
+      const nextU = new Uint8Array(planes.uPlane.length);
+      const nextV = new Uint8Array(planes.vPlane.length);
 
-        // Encode and reconstruct planes (to avoid drift)
-        this.encodePlaneDct(planes.yPlane, this.prevYPlane, nextY, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
-        // Chroma subsampling
+      // Encode and reconstruct planes (to avoid drift)
+      this.encodePlaneDct(planes.yPlane, this.prevYPlane, nextY, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
 
+      const { w: uvW, h: uvH } = chromaPlaneDims(colorspace, width, height);
+      this.encodePlaneDct(planes.uPlane, this.prevUPlane, nextU, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
+      this.encodePlaneDct(planes.vPlane, this.prevVPlane, nextV, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
 
-        // If not 4:2:0, adjust UV dims. BUT DCT assumes 8x8 blocks?
-        // Standard DCT works on whatever plane resolution.
-        // QOV spec says YUV 4:2:0 for DCT is standard.
-        // We use actual plane sizes.
+      // Update reference planes to RECONSTRUCTED versions
+      this.prevYPlane = nextY;
+      this.prevUPlane = nextU;
+      this.prevVPlane = nextV;
 
-        // Wait, encoder colorspace handling sets plane sizes.
-        // We need exact dimensions.
-        const headerUvW = colorspace === QOV_COLORSPACE_YUV444 ? width : (colorspace === QOV_COLORSPACE_YUV422 ? Math.ceil(width / 2) : Math.ceil(width / 2));
-        const headerUvH = colorspace === QOV_COLORSPACE_YUV444 ? height : (colorspace === QOV_COLORSPACE_YUV422 ? height : Math.ceil(height / 2));
+      // Alpha uses luma dimensions and the luma quant table
+      if (planes.aPlane && this.prevAPlane) {
+        const nextA = new Uint8Array(planes.aPlane.length);
+        this.encodePlaneDct(planes.aPlane, this.prevAPlane, nextA, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
+        this.prevAPlane = nextA;
+      }
 
-        this.encodePlaneDct(planes.uPlane, this.prevUPlane, nextU, headerUvW, headerUvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
-        this.encodePlaneDct(planes.vPlane, this.prevVPlane, nextV, headerUvW, headerUvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
+      this.writeEndMarker();
 
-        // Update reference planes to RECONSTRUCTED versions
-        this.prevYPlane = nextY;
-        this.prevUPlane = nextU;
-        this.prevVPlane = nextV;
-
-        // Alpha? DCT for alpha not explicitly detailed but logic should be same if we use Luma table.
-        // For now, ignore alpha DCT or use Luma.
-        if (planes.aPlane && this.prevAPlane) {
-          const nextA = new Uint8Array(planes.aPlane.length);
-          this.encodePlaneDct(planes.aPlane, this.prevAPlane, nextA, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
-          this.prevAPlane = nextA;
-        }
-
-        this.writeEndMarker(); // Or just let finish handle size
-        // Note: DCT stream doesn't inherently have end marker, but chunk size defines end.
-        // But writeEndMarker writes 0x00...0x01 which might be interpreted as DCT opcodes?
-        // 0x00 is SKIP_LONG? 0x01 is KEYFRAME? No, opcodes.
-        // DCT opcodes: 0x52 SKIP, 0x53 ZERO, 0x50/51 BLOCK.
-        // 0x00 is NOT a valid DCT opcode start unless it's inside?
-        // Wait, standard QOV stream ends with "7 zeros then 1".
-        // BUT DCT chunk is purely DCT blocks?
-        // Spec 3.4.2 says "The data payload of a PFRAME with DCT flag set consists of a sequence of DCT opcodes."
-        // It does NOT say it ends with 0x00..01 marker.
-        // It ends when all blocks are covered.
-        // So DO NOT write end marker for DCT chunk.
-
+      if (this.compressionEnabled) {
         this.finishFrameData(QOV_CHUNK_PFRAME, QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS, timestamp);
       } else {
-        // Legacy DPCM Encoding
-        this.encodeYuvPlanePFrame(planes.yPlane, this.prevYPlane, temporalThresh);
-        this.encodeYuvPlanePFrame(planes.uPlane, this.prevUPlane, temporalThresh);
-        this.encodeYuvPlanePFrame(planes.vPlane, this.prevVPlane, temporalThresh);
-        if (planes.aPlane && this.prevAPlane) {
-          this.encodeYuvPlanePFrame(planes.aPlane, this.prevAPlane, Math.floor(temporalThresh / 2));
-        }
-        this.writeEndMarker();
-        this.finishFrameData(QOV_CHUNK_PFRAME, QOV_CHUNK_FLAG_YUV, timestamp);
-
-        // Store planes for next P-frame (raw, assuming lossless DPCM or close enough)
-        this.prevYPlane = planes.yPlane;
-        this.prevUPlane = planes.uPlane;
-        this.prevVPlane = planes.vPlane;
-        this.prevAPlane = planes.aPlane || null;
+        const chunkSize = this.buffer.getSize() - chunkDataStart;
+        this.buffer.setByte(chunkHeaderPos + 2, (chunkSize >> 24) & 0xff);
+        this.buffer.setByte(chunkHeaderPos + 3, (chunkSize >> 16) & 0xff);
+        this.buffer.setByte(chunkHeaderPos + 4, (chunkSize >> 8) & 0xff);
+        this.buffer.setByte(chunkHeaderPos + 5, chunkSize & 0xff);
       }
+    } else if (this.compressionEnabled) {
+      // Legacy DPCM Encoding
+      this.startFrameData();
+      this.encodeYuvPlanePFrame(planes.yPlane, this.prevYPlane, temporalThresh);
+      this.encodeYuvPlanePFrame(planes.uPlane, this.prevUPlane, temporalThresh);
+      this.encodeYuvPlanePFrame(planes.vPlane, this.prevVPlane, temporalThresh);
+      if (planes.aPlane && this.prevAPlane) {
+        this.encodeYuvPlanePFrame(planes.aPlane, this.prevAPlane, Math.floor(temporalThresh / 2));
+      }
+      this.writeEndMarker();
+      this.finishFrameData(QOV_CHUNK_PFRAME, QOV_CHUNK_FLAG_YUV, timestamp);
+
+      // Store planes for next P-frame (raw, assuming lossless DPCM or close enough)
+      this.prevYPlane = planes.yPlane;
+      this.prevUPlane = planes.uPlane;
+      this.prevVPlane = planes.vPlane;
+      this.prevAPlane = planes.aPlane || null;
     } else {
-      // No compression: write directly with a proper chunk header. Uncompressed
-      // DCT is not supported, so the payload is DPCM without the DCT flag.
+      // No compression: write directly with a proper chunk header.
       const headerPos = this.buffer.getSize();
       this.writeU8(QOV_CHUNK_PFRAME);
       this.writeU8(QOV_CHUNK_FLAG_YUV);
