@@ -16,6 +16,8 @@ import {
   QOV_CHUNK_FLAG_COMPRESSED,
   QOV_FLAG_HAS_ALPHA,
   QOV_VERSION_LOSSY,
+  QOV_MAX_DIMENSION,
+  QOV_MAX_PIXELS,
   getChunkTypeName,
 } from './qov-types';
 
@@ -282,11 +284,21 @@ export class QovStreamingDecoder {
       height: (headerData[8] << 8) | headerData[9],
       frameRateNum: (headerData[10] << 8) | headerData[11],
       frameRateDen: (headerData[12] << 8) | headerData[13],
-      totalFrames: (headerData[14] << 24) | (headerData[15] << 16) | (headerData[16] << 8) | headerData[17],
+      totalFrames: ((headerData[14] << 24) | (headerData[15] << 16) | (headerData[16] << 8) | headerData[17]) >>> 0,
       audioChannels: headerData[18],
       audioRate: (headerData[19] << 16) | (headerData[20] << 8) | headerData[21],
       colorspace: headerData[22],
     };
+
+    // Validate before allocating frame buffers from untrusted header values
+    if (this.header.width === 0 || this.header.height === 0 ||
+        this.header.width > QOV_MAX_DIMENSION || this.header.height > QOV_MAX_DIMENSION ||
+        this.header.width * this.header.height > QOV_MAX_PIXELS) {
+      throw new Error(`Invalid frame dimensions: ${this.header.width}x${this.header.height}`);
+    }
+    if (this.header.frameRateDen === 0) {
+      throw new Error('Invalid frame rate: denominator is 0');
+    }
 
     // Parse lossy extension for version 0x03
     if (version === QOV_VERSION_LOSSY) {
@@ -385,11 +397,11 @@ export class QovStreamingDecoder {
       let timestamp: number;
 
       if (this.use32BitChunkSize) {
-        chunkSize = (headerData[2] << 24) | (headerData[3] << 16) | (headerData[4] << 8) | headerData[5];
-        timestamp = (headerData[6] << 24) | (headerData[7] << 16) | (headerData[8] << 8) | headerData[9];
+        chunkSize = ((headerData[2] << 24) | (headerData[3] << 16) | (headerData[4] << 8) | headerData[5]) >>> 0;
+        timestamp = ((headerData[6] << 24) | (headerData[7] << 16) | (headerData[8] << 8) | headerData[9]) >>> 0;
       } else {
         chunkSize = (headerData[2] << 8) | headerData[3];
-        timestamp = (headerData[4] << 24) | (headerData[5] << 16) | (headerData[6] << 8) | headerData[7];
+        timestamp = ((headerData[4] << 24) | (headerData[5] << 16) | (headerData[6] << 8) | headerData[7]) >>> 0;
       }
 
       // Handle compressed chunks - uncompressed size is at start of data
@@ -417,6 +429,17 @@ export class QovStreamingDecoder {
       });
 
       if (chunkType === QOV_CHUNK_END) {
+        break;
+      }
+
+      // Validate before advancing: a corrupt or negative size must not move the
+      // offset backward, and a chunk past EOF means the file is truncated.
+      if (chunkSize <= 0 || chunkSize > (1 << 30)) {
+        console.error(`[StreamingDecoder] Invalid chunk size ${chunkSize} at offset ${offset}; stopping index build`);
+        break;
+      }
+      if (fileSize !== null && offset + headerSize + chunkSize > fileSize) {
+        console.error(`[StreamingDecoder] Chunk at offset ${offset} exceeds file size ${fileSize}; stopping index build (truncated file?)`);
         break;
       }
 
@@ -560,8 +583,8 @@ export class QovStreamingDecoder {
 
     // Handle decompression
     if (isCompressed) {
-      const uncompressedSize = (chunkData[0] << 24) | (chunkData[1] << 16) |
-        (chunkData[2] << 8) | chunkData[3];
+      const uncompressedSize = (((chunkData[0] << 24) | (chunkData[1] << 16) |
+        (chunkData[2] << 8) | chunkData[3]) >>> 0);
       const compressedData = chunkData.subarray(4);
       chunkData = lz4Decompress(compressedData, uncompressedSize);
     }
@@ -586,6 +609,9 @@ export class QovStreamingDecoder {
 
   // Simplified read from activeData
   private readU8(): number {
+    if (this.activePos >= this.activeData!.length) {
+      throw new Error(`readU8: activePos ${this.activePos} >= data length ${this.activeData!.length}`);
+    }
     return this.activeData![this.activePos++];
   }
 

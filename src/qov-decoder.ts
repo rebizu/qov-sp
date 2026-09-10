@@ -28,6 +28,8 @@ import {
   QOV_OP_DCT_SKIP,
   QOV_OP_DCT_ZERO,
   QOV_CHUNK_FLAG_DCT_BLOCKS,
+  QOV_MAX_DIMENSION,
+  QOV_MAX_PIXELS,
   getChunkTypeName,
 } from './qov-types';
 
@@ -107,7 +109,7 @@ export class QovDecoder {
   }
 
   private readU32(): number {
-    return (this.readU8() << 24) | (this.readU8() << 16) | (this.readU8() << 8) | this.readU8();
+    return (((this.readU8() << 24) | (this.readU8() << 16) | (this.readU8() << 8) | this.readU8()) >>> 0);
   }
 
   // Setup to read from decompressed data
@@ -158,6 +160,16 @@ export class QovDecoder {
       audioRate: (this.readU8() << 16) | (this.readU8() << 8) | this.readU8(),
       colorspace: this.readU8(),
     };
+
+    // Validate before allocating frame buffers from untrusted header values
+    if (this.header.width === 0 || this.header.height === 0 ||
+        this.header.width > QOV_MAX_DIMENSION || this.header.height > QOV_MAX_DIMENSION ||
+        this.header.width * this.header.height > QOV_MAX_PIXELS) {
+      throw new Error(`Invalid frame dimensions: ${this.header.width}x${this.header.height}`);
+    }
+    if (this.header.frameRateDen === 0) {
+      throw new Error('Invalid frame rate: denominator is 0');
+    }
 
     // Quality byte (offset 23)
     const quality = this.readU8();
@@ -1076,7 +1088,8 @@ export class QovDecoder {
         // If size=1, int8. Size=2, int16.
         if (size === 1) level = (rawLevel & 0x80) ? rawLevel - 256 : rawLevel;
         else if (size === 2) level = (rawLevel & 0x8000) ? rawLevel - 65536 : rawLevel;
-        else level = rawLevel; // 32-bit not fully handled for sign here
+        else if (size === 3) level = (rawLevel & 0x800000) ? rawLevel - 16777216 : rawLevel;
+        else level = rawLevel; // size 4: JS bitwise ops already produce a signed int32
       }
 
       coeffs[ZIGZAG[k]] = level * quantTable[ZIGZAG[k]] * scale;
@@ -1089,7 +1102,20 @@ export class QovDecoder {
   }
 
   private decodeYuvPFrameDataDct(chunkSize: number): boolean {
-    const dataEnd = this.pos + chunkSize - 8;
+    const dataEnd = this.pos + chunkSize;
+    this.decodeYuvPFrameDataDctCore();
+    this.pos = dataEnd;
+    return true;
+  }
+
+  private decodeYuvPFrameDataDctFromBuffer(_uncompressedSize: number): boolean {
+    // Data is consumed through activeData via readU8(); the caller has already
+    // advanced this.pos past the chunk, so no file-position fixup may run here.
+    this.decodeYuvPFrameDataDctCore();
+    return true;
+  }
+
+  private decodeYuvPFrameDataDctCore(): void {
     const { width, height } = this.header;
     const yW = width;
     const yH = height;
@@ -1111,7 +1137,6 @@ export class QovDecoder {
     this.decodePlaneDct(this.currUPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
     this.decodePlaneDct(this.currVPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
 
-    this.pos = dataEnd + 8;
     this.yuvPlanesToRgba();
     // Swap buffers
     [this.prevYPlane, this.currYPlane] = [this.currYPlane, this.prevYPlane];
@@ -1120,13 +1145,6 @@ export class QovDecoder {
     const tmp = this.prevFrame;
     this.prevFrame = this.currFrame;
     this.currFrame = tmp;
-    return true;
-  }
-
-  private decodeYuvPFrameDataDctFromBuffer(uncompressedSize: number): boolean {
-    // Similar logic but using activeData / activePos
-    // For simplicity, reusing same logic since we use readU8 abstraction
-    return this.decodeYuvPFrameDataDct(uncompressedSize + 8); // +8 hack because original subtracts 8
   }
 
   private decodePlaneDct(plane: Uint8Array, w: number, h: number, quant: number[], opType: number, blockBuf: Float32Array): void {

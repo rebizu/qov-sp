@@ -34,6 +34,10 @@ export const QOV_VERSION_ORIGINAL = 0x01;    // 16-bit chunk sizes, lossless
 export const QOV_VERSION_EXTENDED = 0x02;    // 32-bit chunk sizes, lossless
 export const QOV_VERSION_LOSSY = 0x03;       // 32-bit chunk sizes, lossy support
 
+// Allocation sanity limits for untrusted headers
+export const QOV_MAX_DIMENSION = 16384;
+export const QOV_MAX_PIXELS = 8192 * 8192;
+
 // Colorspace values
 export const QOV_COLORSPACE_SRGB = 0x00;
 export const QOV_COLORSPACE_SRGBA = 0x01;

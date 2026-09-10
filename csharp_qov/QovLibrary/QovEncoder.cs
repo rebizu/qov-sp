@@ -856,9 +856,10 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                 writer.Write(opType);
                 writer.Write((byte)0x40); // Delta 0
 
-                // DC
+                // DC (big-endian, matching the decoder and the TS implementation)
                 short dcVal = (short)Math.Round(coeffs[0] * scale / quant[0]);
-                writer.Write(dcVal);
+                writer.Write((byte)((dcVal >> 8) & 0xff));
+                writer.Write((byte)(dcVal & 0xff));
                 
                 // AC
                 int zeroRun = 0;
@@ -890,13 +891,21 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                         writer.Write((byte)((zeroRun << 4) | size));
                         
                         if (size == 1) writer.Write((byte)qVal);
-                        else if (size == 2) writer.Write((short)qVal);
+                        else if (size == 2) {
+                            writer.Write((byte)((qVal >> 8) & 0xff));
+                            writer.Write((byte)(qVal & 0xff));
+                        }
                         else if (size == 3) {
                              writer.Write((byte)((qVal >> 16) & 0xff));
                              writer.Write((byte)((qVal >> 8) & 0xff));
                              writer.Write((byte)(qVal & 0xff));
                         }
-                        else writer.Write(qVal);
+                        else {
+                            writer.Write((byte)((qVal >> 24) & 0xff));
+                            writer.Write((byte)((qVal >> 16) & 0xff));
+                            writer.Write((byte)((qVal >> 8) & 0xff));
+                            writer.Write((byte)(qVal & 0xff));
+                        }
                         
                         zeroRun = 0;
                     }

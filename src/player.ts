@@ -18,6 +18,7 @@ import {
   QOV_FLAG_HAS_BFRAMES,
   QOV_FLAG_ENHANCED_COMP,
   QOV_FLAG_LOSSY_MODE,
+  QOV_FLAG_DCT_ENABLED,
   QOV_CHUNK_KEYFRAME,
   QOV_CHUNK_PFRAME,
   QOV_CHUNK_SYNC,
@@ -443,6 +444,20 @@ async function loadFromSource(source: FileDataSource | UrlDataSource): Promise<v
 
   // Get decoder mode from UI
   decoderMode = decoderSelect.value as 'streaming' | 'regular';
+
+  if (decoderMode === 'streaming') {
+    // The streaming decoder has no DCT block support; route lossy DCT files
+    // to the full decoder, which implements the DCT path.
+    try {
+      const head = await source.read(0, 6);
+      if ((head[5] & QOV_FLAG_DCT_ENABLED) !== 0) {
+        alert('This file uses DCT (lossy) encoding. Switching to the full decoder, which may take a while to decode.');
+        decoderMode = 'regular';
+      }
+    } catch {
+      // Header unreadable; let the normal loading path surface the error
+    }
+  }
 
   if (decoderMode === 'regular') {
     // Regular decoder: load all data and decode synchronously

@@ -930,45 +930,35 @@ export class QovEncoder {
         this.prevAPlane = planes.aPlane || null;
       }
     } else {
-      // No compression logic mirrored...
-      // For brevity, defaulting to compression enabled path as primary for DCT.
-      // If user disables compression, we should still support it.
-      // Copy paste logic or refactor?
-      // I'll leave the else block as is (DPCM) for now, assuming DCT usually implies compression.
-      // Or I can just force compression path?
-      // Actually, standard DPCM path at 690.
-      // I will mirror the DCT check there too if needed, but simplified.
-      const useDct = (this.header.flags & QOV_FLAG_DCT_ENABLED) !== 0;
-      if (useDct) {
-        // Fallback to DPCM if not implementing uncompressed DCT write (lazy)
-        // Or just do DPCM.
-        console.warn("Uncompressed DCT not fully set up, using DPCM");
-        this.encodeYuvPlanePFrame(planes.yPlane, this.prevYPlane, temporalThresh);
-        // ...
-        this.writeEndMarker();
+      // No compression: write directly with a proper chunk header. Uncompressed
+      // DCT is not supported, so the payload is DPCM without the DCT flag.
+      const headerPos = this.buffer.getSize();
+      this.writeU8(QOV_CHUNK_PFRAME);
+      this.writeU8(QOV_CHUNK_FLAG_YUV);
+      this.writeU32(0);   // size placeholder
+      this.writeU32(timestamp);
 
-        // Update chunk size manually...
-        // This path needs the full update chunks logic.
-        // For now, let's just stick to DPCM if uncompressed.
-        this.prevYPlane = planes.yPlane;
-        this.prevUPlane = planes.uPlane;
-        this.prevVPlane = planes.vPlane;
-      } else {
-        this.encodeYuvPlanePFrame(planes.yPlane, this.prevYPlane, temporalThresh);
-        // ...
-        this.writeEndMarker();
-        this.prevYPlane = planes.yPlane;
-        this.prevUPlane = planes.uPlane;
-        this.prevVPlane = planes.vPlane;
+      const dataStart = this.buffer.getSize();
+      this.encodeYuvPlanePFrame(planes.yPlane, this.prevYPlane, temporalThresh);
+      this.encodeYuvPlanePFrame(planes.uPlane, this.prevUPlane, temporalThresh);
+      this.encodeYuvPlanePFrame(planes.vPlane, this.prevVPlane, temporalThresh);
+      if (planes.aPlane && this.prevAPlane) {
+        this.encodeYuvPlanePFrame(planes.aPlane, this.prevAPlane, Math.floor(temporalThresh / 2));
       }
+      this.writeEndMarker();
 
-      // Fix chunk size...
-      // The original code calculated headerPos etc.
-      // I need to preserve the surrounding structure.
-      // Since I am replacing the WHOLE if/else block (674-721), I have control.
+      const chunkSize = this.buffer.getSize() - dataStart;
+      this.buffer.setByte(headerPos + 2, (chunkSize >> 24) & 0xff);
+      this.buffer.setByte(headerPos + 3, (chunkSize >> 16) & 0xff);
+      this.buffer.setByte(headerPos + 4, (chunkSize >> 8) & 0xff);
+      this.buffer.setByte(headerPos + 5, chunkSize & 0xff);
 
-      // I will just implement the Compression Enabled path correctly and leave the other as DPCM for safety/simplicity.
-      // Most users use compression.
+      this.prevYPlane = planes.yPlane;
+      this.prevUPlane = planes.uPlane;
+      this.prevVPlane = planes.vPlane;
+      if (planes.aPlane && this.prevAPlane) {
+        this.prevAPlane = planes.aPlane;
+      }
     }
 
     this.prevFrame = new Uint8ClampedArray(pixels);

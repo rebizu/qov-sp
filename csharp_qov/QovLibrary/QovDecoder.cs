@@ -843,6 +843,7 @@ public class QovDecoder
 
                 if (size == 1) level = (rawLevel & 0x80) != 0 ? (int)rawLevel - 256 : (int)rawLevel;
                 else if (size == 2) level = (rawLevel & 0x8000) != 0 ? (int)rawLevel - 65536 : (int)rawLevel;
+                else if (size == 3) level = (rawLevel & 0x800000) != 0 ? (int)rawLevel - 16777216 : (int)rawLevel;
                 else level = (int)rawLevel;
             }
 

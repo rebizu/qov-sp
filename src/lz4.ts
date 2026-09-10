@@ -137,9 +137,16 @@ export function lz4Compress(input: Uint8Array): Uint8Array | null {
 /**
  * LZ4 decompress a block of data.
  * outputSize must be known in advance (stored in chunk header).
+ * Throws on malformed input rather than returning corrupt output.
  */
 export function lz4Decompress(input: Uint8Array, outputSize: number): Uint8Array {
+  if (!Number.isSafeInteger(outputSize) || outputSize < 0) {
+    throw new Error(`lz4Decompress: invalid output size ${outputSize}`);
+  }
   if (input.length === 0) {
+    if (outputSize !== 0) {
+      throw new Error('lz4Decompress: empty input but non-zero output size');
+    }
     return new Uint8Array(0);
   }
 
@@ -147,7 +154,14 @@ export function lz4Decompress(input: Uint8Array, outputSize: number): Uint8Array
   let inPos = 0;
   let outPos = 0;
 
+  const needInput = (n: number): void => {
+    if (inPos + n > input.length) {
+      throw new Error(`lz4Decompress: truncated input at byte ${inPos} (need ${n}, ${input.length - inPos} left)`);
+    }
+  };
+
   while (inPos < input.length) {
+    needInput(1);
     // Read token
     const token = input[inPos++];
     const literalLen = token >> 4;
@@ -158,9 +172,15 @@ export function lz4Decompress(input: Uint8Array, outputSize: number): Uint8Array
     if (literalLen === 15) {
       let b;
       do {
+        needInput(1);
         b = input[inPos++];
         litLen += b;
       } while (b === 255);
+    }
+
+    needInput(litLen);
+    if (outPos + litLen > outputSize) {
+      throw new Error(`lz4Decompress: literal run overruns output (${outPos} + ${litLen} > ${outputSize})`);
     }
 
     // Copy literals
@@ -174,23 +194,39 @@ export function lz4Decompress(input: Uint8Array, outputSize: number): Uint8Array
     }
 
     // Read offset (little-endian)
+    needInput(2);
     const offset = input[inPos++] | (input[inPos++] << 8);
+    if (offset === 0) {
+      throw new Error(`lz4Decompress: invalid match offset 0 at input byte ${inPos - 2}`);
+    }
+    const matchPos = outPos - offset;
+    if (matchPos < 0) {
+      throw new Error(`lz4Decompress: match offset ${offset} reaches before output start at output byte ${outPos}`);
+    }
 
     // Decode match length
     let mLen = matchLen + 4; // Minimum match is 4
     if (matchLen === 15) {
       let b;
       do {
+        needInput(1);
         b = input[inPos++];
         mLen += b;
       } while (b === 255);
     }
 
+    if (outPos + mLen > outputSize) {
+      throw new Error(`lz4Decompress: match copy overruns output (${outPos} + ${mLen} > ${outputSize})`);
+    }
+
     // Copy match (may overlap with output)
-    const matchPos = outPos - offset;
     for (let i = 0; i < mLen; i++) {
       output[outPos++] = output[matchPos + i];
     }
+  }
+
+  if (outPos !== outputSize) {
+    throw new Error(`lz4Decompress: decompressed ${outPos} bytes but expected ${outputSize}`);
   }
 
   return output;
