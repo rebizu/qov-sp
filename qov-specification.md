@@ -263,6 +263,13 @@ Enabled via `DCT_BLOCKS` chunk flag. Operates on 8x8 blocks.
 - In a DCT P-frame, the planes appear in **Y, U, V** order (then A if
   present). Blocks of each plane are signaled with that plane's opcode
   (`0x50` for Y, `0x51` for U and V).
+- Plane geometry follows the header colorspace (§2.1), with odd sizes
+  rounded up: 4:2:0 and YUVA420 chroma planes are ⌈width/2⌉ × ⌈height/2⌉,
+  4:2:2 chroma is ⌈width/2⌉ × height, and 4:4:4 chroma is width × height.
+  The alpha plane, when present, uses luma dimensions (width × height)
+  and the luma quantizer.
+- `DCT_BLOCKS` and `COMPRESSED` (§2.2) are independent: a DCT chunk may
+  be stored LZ4-compressed or raw.
 - The coefficient scan order (zigzag), the quantization tables, and the
   QP-to-scalefactor mapping are **implementation-defined**: they are not
   part of this specification and encoder/decoder must agree on them out
@@ -410,3 +417,7 @@ This specification is placed in the public domain.
 - §3.4: added opcode precedence over the base §3.3 ranges; §3.4.2 added
   normative byte order for coefficients, `count` operand width, DCT plane
   ordering, and declared zigzag/quantization implementation-defined.
+- §3.4.2: specified DCT plane geometry per colorspace (chroma derived
+  from the header colorspace, alpha at luma dimensions with the luma
+  quantizer) and clarified that `DCT_BLOCKS` and `COMPRESSED` are
+  independent, i.e. DCT chunks may be stored uncompressed.
