@@ -368,6 +368,13 @@ public class QovDecoder
 
     private QovFrame DecodePFrame(byte chunkFlags, uint timestamp, uint chunkSize)
     {
+        if ((chunkFlags & QovTypes.ChunkFlagMotion) != 0)
+        {
+            // Motion vectors are not implemented in the C# decoder; decoding
+            // would produce garbage, so fail loudly instead (mirrors the TS decoder)
+            throw new NotSupportedException("Motion vectors (HAS_MOTION) are not supported by this decoder");
+        }
+
         bool isYuvChunk = (chunkFlags & QovTypes.ChunkFlagYuv) != 0;
         bool isCompressed = (chunkFlags & QovTypes.ChunkFlagCompressed) != 0;
 
