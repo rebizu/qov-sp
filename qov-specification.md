@@ -1,6 +1,6 @@
 # QOV (Quite OK Video) Format Specification
 
-**Version:** 3.1 (Unified)
+**Version:** 3.2 (Unified)
 **Date:** September 2026
 **Based on:** QOI (Quite OK Image) and QOA (Quite OK Audio)
 
@@ -313,11 +313,40 @@ Pixels are converted to YUV internally, quantized, and converted back to RGB (or
 ### 5.2 P-Frame
 - **Header**: Type `0x02`.
 - **Bits**:
-    - Bit 1 (`HAS_MOTION`): If set, starts with Motion Vector Block.
-- **Motion Vector Block**:
+    - Bit 1 (`HAS_MOTION`): If set, the payload **starts with a Motion Vector
+      Block**, followed by the normal P-frame opcode stream.
+- **Motion Vector Block** (syntax):
     - `block_size_id` (1 byte): 0=8x8, 1=16x16, 2=32x32.
-    - `mv_count` (2 bytes).
-    - `vectors` (2 bytes each): `mv_x` (1b), `mv_y` (1b).
+    - `mv_count` (2 bytes, big-endian).
+    - `vectors` (2 bytes each): `mv_x` (1 byte, signed), `mv_y` (1 byte, signed).
+- **Motion compensation semantics (normative, v3.2):**
+    - The block grid covers the frame in row-major order from block (0,0):
+      `grid_width = ceil(width / B)`, `grid_height = ceil(height / B)`, with
+      `B` the selected block size. The first `mv_count` grid blocks carry the
+      written vectors in row-major order; **every grid block after `mv_count`
+      defaults to vector (0, 0)**.
+    - The vectors define the effective P-frame reference: for each block, the
+      predictor is the previous frame (or plane) copied from
+      `(x + mv_x, y + mv_y)`, with source coordinates **clamped** to the frame
+      borders (never wrapped). All P-frame coding — skip runs, TDIFF/TLUMA
+      deltas, SKIP_SIMILAR, and DCT residual blocks — then applies against
+      this compensated reference exactly as it would against the previous
+      frame itself.
+    - **Chroma planes** (YUV modes) use the luma vector field at chroma
+      resolution: the chroma-grid block containing chroma pixel (cx, cy) uses
+      the luma vector of the luma block containing the corresponding luma
+      pixel, shifted per subsampled axis with an arithmetic shift:
+      `mv_c = mv_luma >> 1` — both axes for 4:2:0/YUVA420, horizontal only
+      for 4:2:2, unchanged for 4:4:4. The alpha plane uses luma vectors at
+      luma resolution.
+    - Vectors are **integer-pel** with range ±127 pixels. Half-pel vectors
+      are reserved for a future extension (no flag is defined in v3.2).
+    - Decoders MUST honor all three `block_size_id` values. v3.2 encoders
+      emit `block_size_id = 1` (16x16).
+    - The MV block appears **at most once per chunk**, before all pixel and
+      plane streams. Header flag `HAS_MOTION` (bit 3) declares that a file
+      uses motion vectors; individual P-frames still choose per chunk via
+      chunk flag bit 1.
 
 ### 5.3 Audio (QOA)
 - **Header**: Type `0x10`.
@@ -403,6 +432,16 @@ This specification is placed in the public domain.
 ---
 
 ## Changelog
+
+### 3.2 (September 2026)
+- §5.2: motion vectors are now normative. Defined the MV block placement at
+  the start of a MOTION P-frame payload, the row-major block grid with
+  implicit (0,0) vectors after `mv_count`, clamped border handling, the
+  compensated-reference rule for all P-frame opcodes (including SKIP_SIMILAR
+  and DCT residuals), chroma derivation (`mv_c = mv_luma >> 1` per subsampled
+  axis), integer-pel vectors in the range ±127, and the division of roles
+  between the `HAS_MOTION` header flag (file-wide) and chunk flag bit 1
+  (per P-frame).
 
 ### 3.1 (September 2026) — Errata
 - §4.1: quality parameter table corrected to match the normative §6.2
