@@ -11,8 +11,5 @@
   "devDependencies": {
     "typescript": "^5.3.3",
     "vite": "^5.0.10"
-  },
-  "dependencies": {
-    "jsmpeg-player": "^3.0.3"
   }
 }
