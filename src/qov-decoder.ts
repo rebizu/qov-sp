@@ -20,6 +20,7 @@ import {
   QOV_COLORSPACE_YUV422,
   QOV_COLORSPACE_YUVA420,
   QOV_CHUNK_FLAG_COMPRESSED,
+  QOV_CHUNK_FLAG_MOTION,
   QOV_FLAG_HAS_ALPHA,
   QOV_FLAG_LOSSY_MODE,
   QOV_VERSION_LOSSY,
@@ -27,6 +28,8 @@ import {
   QOV_OP_DCT_UV,
   QOV_OP_DCT_SKIP,
   QOV_OP_DCT_ZERO,
+  QOV_OP_SKIP_SIMILAR,
+  QOV_OP_SKIP_SIMILAR_LONG,
   QOV_CHUNK_FLAG_DCT_BLOCKS,
   QOV_MAX_DIMENSION,
   QOV_MAX_PIXELS,
@@ -511,6 +514,15 @@ export class QovDecoder {
         }
         // INDEX opcode retrieves a value, it doesn't update the table
         // The table is only updated when TDIFF, TLUMA, or FULL are used
+      } else if (b1 === QOV_OP_SKIP_SIMILAR || b1 === QOV_OP_SKIP_SIMILAR_LONG) {
+        // Lossy similarity skip (spec §3.4.1): values are close enough to the
+        // reference plane, so the decoder copies them from prevPlane
+        const count = b1 === QOV_OP_SKIP_SIMILAR ? this.readU8() : this.readU16();
+        this.readU8(); // threshold (informational when decoding)
+        for (let i = 0; i < count && px < size; i++) {
+          plane[px] = prevPlane[px];
+          px++;
+        }
       } else if ((b1 & 0xc0) === 0x40) {
         // TDIFF: small temporal difference
         const d = (b1 & 0x0f) - 8;
@@ -789,6 +801,20 @@ export class QovDecoder {
         const skip = (b1 & 0x3f) + 1;
         px += skip;
         skipCount++;
+      } else if (b1 === QOV_OP_SKIP_SIMILAR || b1 === QOV_OP_SKIP_SIMILAR_LONG) {
+        // Lossy similarity skip (spec §3.4.1): pixels are close enough to the
+        // reference frame, so the decoder copies them from prevFrame
+        const count = b1 === QOV_OP_SKIP_SIMILAR ? this.readU8() : this.readU16();
+        this.readU8(); // threshold (informational when decoding)
+        for (let i = 0; i < count && px < pixelCount; i++) {
+          const offset = px * 4;
+          this.currFrame![offset] = this.prevFrame![offset];
+          this.currFrame![offset + 1] = this.prevFrame![offset + 1];
+          this.currFrame![offset + 2] = this.prevFrame![offset + 2];
+          this.currFrame![offset + 3] = this.prevFrame![offset + 3];
+          px++;
+        }
+        skipCount++;
       } else if ((b1 & 0xc0) === 0x40) {
         // QOV_OP_TDIFF
         const offset = px * 4;
@@ -943,6 +969,19 @@ export class QovDecoder {
         // QOV_OP_SKIP
         const skip = (b1 & 0x3f) + 1;
         px += skip;
+      } else if (b1 === QOV_OP_SKIP_SIMILAR || b1 === QOV_OP_SKIP_SIMILAR_LONG) {
+        // Lossy similarity skip (spec §3.4.1): pixels are close enough to the
+        // reference frame, so the decoder copies them from prevFrame
+        const count = b1 === QOV_OP_SKIP_SIMILAR ? this.readU8() : this.readU16();
+        this.readU8(); // threshold (informational when decoding)
+        for (let i = 0; i < count && px < pixelCount; i++) {
+          const offset = px * 4;
+          this.currFrame![offset] = this.prevFrame![offset];
+          this.currFrame![offset + 1] = this.prevFrame![offset + 1];
+          this.currFrame![offset + 2] = this.prevFrame![offset + 2];
+          this.currFrame![offset + 3] = this.prevFrame![offset + 3];
+          px++;
+        }
       } else if ((b1 & 0xc0) === 0x40) {
         // QOV_OP_TDIFF
         const offset = px * 4;
@@ -1273,6 +1312,11 @@ export class QovDecoder {
 
 
         case QOV_CHUNK_PFRAME: {
+          if ((chunkHeader.chunkFlags & QOV_CHUNK_FLAG_MOTION) !== 0) {
+            // Motion vectors (spec §5.2) are not implemented; decoding would
+            // produce garbage, so fail loudly instead
+            throw new Error('Motion vectors (HAS_MOTION) are not supported by this decoder');
+          }
           const isYuvChunk = (chunkHeader.chunkFlags & 0x01) !== 0;
           const isCompressed = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_COMPRESSED) !== 0;
           const isDctBlocks = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_DCT_BLOCKS) !== 0;

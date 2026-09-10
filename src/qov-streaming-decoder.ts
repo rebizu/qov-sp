@@ -14,8 +14,11 @@ import {
   QOV_COLORSPACE_YUV422,
   QOV_COLORSPACE_YUVA420,
   QOV_CHUNK_FLAG_COMPRESSED,
+  QOV_CHUNK_FLAG_MOTION,
   QOV_FLAG_HAS_ALPHA,
   QOV_VERSION_LOSSY,
+  QOV_OP_SKIP_SIMILAR,
+  QOV_OP_SKIP_SIMILAR_LONG,
   QOV_MAX_DIMENSION,
   QOV_MAX_PIXELS,
   getChunkTypeName,
@@ -578,6 +581,12 @@ export class QovStreamingDecoder {
     const dataSize = chunk.size - headerSize;
     let chunkData = await this.source.read(chunk.offset + headerSize, dataSize);
 
+    if (chunk.type === QOV_CHUNK_PFRAME && (chunk.flags & QOV_CHUNK_FLAG_MOTION) !== 0) {
+      // Motion vectors (spec §5.2) are not implemented; decoding would
+      // produce garbage, so fail loudly instead
+      throw new Error('Motion vectors (HAS_MOTION) are not supported by this decoder');
+    }
+
     const isCompressed = (chunk.flags & QOV_CHUNK_FLAG_COMPRESSED) !== 0;
     const isYuvChunk = (chunk.flags & 0x01) !== 0;
 
@@ -712,6 +721,19 @@ export class QovStreamingDecoder {
       } else if ((b1 & 0xc0) === 0xc0 && b1 < 0xfe) {
         const skip = (b1 & 0x3f) + 1;
         px += skip;
+      } else if (b1 === QOV_OP_SKIP_SIMILAR || b1 === QOV_OP_SKIP_SIMILAR_LONG) {
+        // Lossy similarity skip (spec §3.4.1): pixels are close enough to the
+        // reference frame, so the decoder copies them from prevFrame
+        const count = b1 === QOV_OP_SKIP_SIMILAR ? this.readU8() : this.readU16();
+        this.readU8(); // threshold (informational when decoding)
+        for (let i = 0; i < count && px < pixelCount; i++) {
+          const offset = px * 4;
+          this.currFrame![offset] = this.prevFrame![offset];
+          this.currFrame![offset + 1] = this.prevFrame![offset + 1];
+          this.currFrame![offset + 2] = this.prevFrame![offset + 2];
+          this.currFrame![offset + 3] = this.prevFrame![offset + 3];
+          px++;
+        }
       } else if ((b1 & 0xc0) === 0x40) {
         const offset = px * 4;
         this.currFrame![offset] = (this.currFrame![offset] + ((b1 >> 4) & 0x03) - 2) & 0xff;
@@ -905,6 +927,14 @@ export class QovStreamingDecoder {
         plane[px++] = prevVal;
         // INDEX opcode retrieves a value, it doesn't update the table
         // The table is only updated when TDIFF, TLUMA, or FULL are used
+      } else if (isPFrame && (b1 === QOV_OP_SKIP_SIMILAR || b1 === QOV_OP_SKIP_SIMILAR_LONG)) {
+        // Lossy similarity skip (spec §3.4.1): values are close enough to the
+        // reference plane, so the decoder copies them from the previous plane.
+        // The plane starts as a copy of the reference in P-frames, so this is
+        // a positional skip.
+        const count = b1 === QOV_OP_SKIP_SIMILAR ? this.readU8() : this.readU16();
+        this.readU8(); // threshold (informational when decoding)
+        px += count;
       } else if ((b1 & 0xc0) === 0x40) {
         const d = (b1 & 0x0f) - 8;
         if (isPFrame) {

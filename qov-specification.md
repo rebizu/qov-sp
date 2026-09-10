@@ -1,7 +1,7 @@
 # QOV (Quite OK Video) Format Specification
 
-**Version:** 3.0 (Unified)
-**Date:** February 2026
+**Version:** 3.1 (Unified)
+**Date:** September 2026
 **Based on:** QOI (Quite OK Image) and QOA (Quite OK Audio)
 
 ---
@@ -220,7 +220,10 @@ The 64-entry index cache MUST be initialized to **-1** (not 0) at the start of e
 
 ### 3.4 Lossy Extensions (Version 0x03)
 
-If `LOSSY_MODE` is enabled, additional opcodes are available.
+If `LOSSY_MODE` is enabled, additional opcodes are available. The opcodes
+defined in this section (0x50-0x53, 0x58-0x59) take **precedence** over the
+base opcode ranges of §3.3 when the corresponding feature is in use
+(DCT_BLOCKS chunk flag for 0x50-0x53; lossy encoding for 0x58-0x59).
 
 #### 3.4.1 Lossy Skip (Similarity)
 Allows skipping pixels that are "close enough" to the reference frame.
@@ -252,6 +255,20 @@ Enabled via `DCT_BLOCKS` chunk flag. Operates on 8x8 blocks.
     - `0x00`: EOB (End of Block).
     - `0xF0`: Zero run of 16.
 
+**Normative details:**
+- All multi-byte coefficients (the 2-byte DC and every AC `level`) are
+  **big-endian two's complement** integers of `level_size` bytes.
+- The `count` operand of `QOV_OP_DCT_SKIP` and `QOV_OP_DCT_ZERO` is
+  **1 byte** (1-255).
+- In a DCT P-frame, the planes appear in **Y, U, V** order (then A if
+  present). Blocks of each plane are signaled with that plane's opcode
+  (`0x50` for Y, `0x51` for U and V).
+- The coefficient scan order (zigzag), the quantization tables, and the
+  QP-to-scalefactor mapping are **implementation-defined**: they are not
+  part of this specification and encoder/decoder must agree on them out
+  of band. Files written by an independent implementation may not decode
+  correctly even when the byte format above is followed.
+
 ---
 
 ## 4. Lossy Quality & Quantization
@@ -260,14 +277,18 @@ In Lossy Mode (v3), pixel data can be quantized *before* encoding.
 
 ### 4.1 Quality Levels (0-100)
 
+The parameters below are **derived, not stored**: they are computed from the
+`quality` byte with the normative formula in §6.2 (integer division, truncation
+toward zero). This table is informational.
+
 | Quality | Y Quant | UV Quant | Temporal Thresh | DCT QP | Typical Ratio |
 |---------|---------|----------|-----------------|--------|---------------|
-| 100     | 1       | 2        | 1               | 0      | 1.5-3x        |
-| 85      | 3       | 6        | 2               | 20     | 3-6x          |
-| 50      | 7       | 15       | 4               | 30     | 12-20x        |
-| 30      | 10      | 25       | 6               | 38     | 20-35x        |
+| 100     | 1       | 2        | 0               | 0      | 1.5-3x        |
+| 85      | 2       | 5        | 1               | 8      | 3-6x          |
+| 50      | 7       | 14       | 4               | 26     | 12-20x        |
+| 30      | 9       | 19       | 5               | 36     | 20-35x        |
 
-If header bytes 24-27 are zero, the decoder derives these parameters from the `quality` byte (byte 23).
+If header bytes 24-27 are zero, the decoder derives these parameters from the `quality` byte (byte 23) using §6.2.
 
 ### 4.2 Pixel Quantization (Simple Mode)
 Pixels are converted to YUV internally, quantized, and converted back to RGB (or left as YUV planes) before standard QOV encoding.
@@ -293,8 +314,8 @@ Pixels are converted to YUV internally, quantized, and converted back to RGB (or
 
 ### 5.3 Audio (QOA)
 - **Header**: Type `0x10`.
-- **Format**: Based on QOA specification.
-- **Structure**: `[samples_per_channel (2b)]` + `[LMS State]` + `[Slices]`.
+- **Format**: A standard QOA frame as defined by the QOA specification.
+- **Structure**: `[frame header (8b: channels (1b), sample_rate (3b), samples_per_channel (2b), frame_size (2b), all big-endian)]` + `[LMS State (16b per channel)]` + `[Slices (8b per slice per channel, interleaved per channel)]`.
 
 ### 5.4 Sync Marker
 - **Header**: Type `0x00`, Size 8.
@@ -302,8 +323,8 @@ Pixels are converted to YUV internally, quantized, and converted back to RGB (or
 
 ### 5.5 Index Table
 - **Header**: Type `0xF0`.
-- **Location**: End of file.
-- **Content**: List of `[frame_num (4b), offset (8b), timestamp (4b)]` for all keyframes.
+- **Location**: End of file, immediately before the END chunk.
+- **Content**: `entry_count (4 bytes)` followed by `entry_count` entries of `[frame_num (4b), offset (8b), timestamp (4b)]` (16 bytes each) for all keyframes.
 
 ---
 
@@ -321,8 +342,10 @@ while (p < file_size) {
     // Header parsing...
     
     if (chunk_flags & COMPRESSED) {
-        // LZ4 Decompress payload first
-        payload = lz4_decompress(data + p + 10, ...);
+        // Payload: [uncompressed_size (4 bytes, big-endian)] + [LZ4 block].
+        // The uncompressed_size field is INCLUDED in chunk_size.
+        uncompressed_size = read_u32(data + p + 10);
+        payload = lz4_decompress(data + p + 14, uncompressed_size);
     } else {
         payload = data + p + 10;
     }
@@ -369,3 +392,21 @@ if (lossy_mode) {
 ## License
 
 This specification is placed in the public domain.
+
+---
+
+## Changelog
+
+### 3.1 (September 2026) — Errata
+- §4.1: quality parameter table corrected to match the normative §6.2
+  derivation (the previous table contradicted it, most severely for DCT QP);
+  §6.2 marked as normative.
+- §6.1: decoder pseudocode fixed to skip the 4-byte `uncompressed_size`
+  field before LZ4 decompression, consistent with §2.2.
+- §5.5: documented the `entry_count` field and the index position relative
+  to the END chunk.
+- §5.3: audio chunk structure corrected to the real QOA frame layout
+  (8-byte frame header, LMS state, interleaved slices).
+- §3.4: added opcode precedence over the base §3.3 ranges; §3.4.2 added
+  normative byte order for coefficients, `count` operand width, DCT plane
+  ordering, and declared zigzag/quantization implementation-defined.

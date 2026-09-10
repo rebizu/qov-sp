@@ -73,6 +73,10 @@ export const QOV_OP_DCT_UV = 0x51;
 export const QOV_OP_DCT_SKIP = 0x52;
 export const QOV_OP_DCT_ZERO = 0x53;
 
+// Lossy similarity skip opcodes (Version 0x03, spec §3.4.1)
+export const QOV_OP_SKIP_SIMILAR = 0x58;      // | 0x58 | count (8b)  | threshold |
+export const QOV_OP_SKIP_SIMILAR_LONG = 0x59; // | 0x59 | count (16b) | threshold |
+
 // Chunk header
 export interface QovChunkHeader {
   chunkType: number;
