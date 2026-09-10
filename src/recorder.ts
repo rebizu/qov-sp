@@ -1,7 +1,7 @@
 // QOV Recorder - Camera capture and encoding
 
 import { QovEncoder } from './qov-encoder';
-import { QOV_FLAG_HAS_INDEX, LossyParams, getQualityName } from './qov-types';
+import { QOV_FLAG_HAS_INDEX, QOV_FLAG_HAS_MOTION, LossyParams, getQualityName } from './qov-types';
 
 // DOM Elements
 const preview = document.getElementById('preview') as HTMLVideoElement;
@@ -14,6 +14,7 @@ const fpsSelect = document.getElementById('fpsSelect') as HTMLSelectElement;
 const keyframeIntervalSelect = document.getElementById('keyframeInterval') as HTMLSelectElement;
 const colorspaceSelect = document.getElementById('colorspaceSelect') as HTMLSelectElement;
 const encodingModeSelect = document.getElementById('encodingMode') as HTMLSelectElement;
+const motionCheckbox = document.getElementById('motionEstimation') as HTMLInputElement;
 const qualitySetting = document.getElementById('qualitySetting') as HTMLDivElement;
 const qualitySlider = document.getElementById('qualitySlider') as HTMLInputElement;
 const qualityValueSpan = document.getElementById('qualityValue') as HTMLSpanElement;
@@ -348,7 +349,7 @@ async function startRecording(): Promise<void> {
 
   // Initialize encoder with selected colorspace and encoding mode
   encoder = new QovEncoder(
-    width, height, frameRate, 1, QOV_FLAG_HAS_INDEX, colorspace, true, quality, customParams,
+    width, height, frameRate, 1, QOV_FLAG_HAS_INDEX | (motionCheckbox.checked ? QOV_FLAG_HAS_MOTION : 0), colorspace, true, quality, customParams,
     audioChannels, audioRate
   );
   encoder.writeHeader();

@@ -45,9 +45,20 @@ import {
   QOV_OP_DCT_UV,
   QOV_OP_DCT_SKIP,
   QOV_FLAG_DCT_ENABLED,
+  QOV_FLAG_HAS_MOTION,
   QOV_CHUNK_FLAG_DCT_BLOCKS,
+  QOV_CHUNK_FLAG_MOTION,
   chromaPlaneDims,
 } from './qov-types';
+
+import {
+  MotionVectors,
+  estimateMotion,
+  compensatePlane,
+  compensateFrame,
+  writeMvBlock,
+  chromaMotionParams,
+} from './motion';
 
 import { QoaEncoder } from './qoa';
 
@@ -154,6 +165,8 @@ export class QovEncoder {
   private quality = 0;
   private lossyParams: LossyParams | null = null;
 
+  private motionEnabled = false;
+
   private qoaEncoder: QoaEncoder | null = null;
 
   constructor(
@@ -210,6 +223,7 @@ export class QovEncoder {
     this.isYuvMode = colorspace >= 0x10 && colorspace <= 0x13;
     this.hasAlpha = (flags & QOV_FLAG_HAS_ALPHA) !== 0 ||
       colorspace === QOV_COLORSPACE_YUVA420;
+    this.motionEnabled = (flags & QOV_FLAG_HAS_MOTION) !== 0;
 
     console.log(`[Encoder] Created with colorspace: 0x${colorspace.toString(16)}, YUV mode: ${this.isYuvMode}, hasAlpha: ${this.hasAlpha}, compression: ${compressionEnabled}, lossy: ${this.lossyMode}, quality: ${this.quality}`);
 
@@ -853,6 +867,32 @@ export class QovEncoder {
     // Get temporal threshold for lossy mode
     const temporalThresh = this.lossyMode && this.lossyParams ? this.lossyParams.temporalThresh : 0;
 
+    // Motion estimation on the quantized luma plane vs the stored reference
+    let mv: MotionVectors | null = null;
+    let refY = this.prevYPlane!, refU = this.prevUPlane!, refV = this.prevVPlane!, refA = this.prevAPlane;
+    if (this.motionEnabled) {
+      mv = estimateMotion(planes.yPlane, this.prevYPlane!, width, height, {
+        sadSkipThreshold: temporalThresh > 0 ? temporalThresh * 5 : 0,
+        useDiamond: this.lossyMode,
+        minMovedBlocks: Math.max(4, Math.ceil(0.005 * Math.ceil(width / 16) * Math.ceil(height / 16))),
+      });
+      if (mv) {
+        const cm = chromaMotionParams(colorspace);
+        const { w: mvUvW, h: mvUvH } = chromaPlaneDims(colorspace, width, height);
+        refY = new Uint8Array(width * height);
+        compensatePlane(this.prevYPlane!, width, height, mv, refY, 1, 1, 0, 0);
+        refU = new Uint8Array(mvUvW * mvUvH);
+        compensatePlane(this.prevUPlane!, mvUvW, mvUvH, mv, refU, cm.sx, cm.sy, cm.shx, cm.shy);
+        refV = new Uint8Array(mvUvW * mvUvH);
+        compensatePlane(this.prevVPlane!, mvUvW, mvUvH, mv, refV, cm.sx, cm.sy, cm.shx, cm.shy);
+        if (planes.aPlane && this.prevAPlane) {
+          refA = new Uint8Array(width * height);
+          compensatePlane(this.prevAPlane, width, height, mv, refA, 1, 1, 0, 0);
+        }
+      }
+    }
+    const motionFlag = mv ? QOV_CHUNK_FLAG_MOTION : 0;
+
     // Check if we should use DCT
     const useDct = (this.header.flags & QOV_FLAG_DCT_ENABLED) !== 0;
 
@@ -866,10 +906,14 @@ export class QovEncoder {
         // DCT_BLOCKS does not require compression: write the chunk directly
         chunkHeaderPos = this.buffer.getSize();
         this.writeU8(QOV_CHUNK_PFRAME);
-        this.writeU8(QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS);
+        this.writeU8(QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS | motionFlag);
         this.writeU32(0);   // size placeholder
         this.writeU32(timestamp);
+        if (mv) writeMvBlock(mv, (v) => this.writeU8(v), (v) => this.writeU16(v));
         chunkDataStart = this.buffer.getSize();
+      }
+      if (mv && this.compressionEnabled) {
+        writeMvBlock(mv, (v) => this.writeU8(v), (v) => this.writeU16(v));
       }
 
       // DCT Encoding
@@ -878,12 +922,13 @@ export class QovEncoder {
       const nextU = new Uint8Array(planes.uPlane.length);
       const nextV = new Uint8Array(planes.vPlane.length);
 
-      // Encode and reconstruct planes (to avoid drift)
-      this.encodePlaneDct(planes.yPlane, this.prevYPlane, nextY, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
+      // Encode and reconstruct planes (to avoid drift); the effective
+      // reference is the motion-compensated copy when vectors were emitted
+      this.encodePlaneDct(planes.yPlane, refY, nextY, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
 
       const { w: uvW, h: uvH } = chromaPlaneDims(colorspace, width, height);
-      this.encodePlaneDct(planes.uPlane, this.prevUPlane, nextU, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
-      this.encodePlaneDct(planes.vPlane, this.prevVPlane, nextV, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
+      this.encodePlaneDct(planes.uPlane, refU, nextU, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
+      this.encodePlaneDct(planes.vPlane, refV, nextV, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
 
       // Update reference planes to RECONSTRUCTED versions
       this.prevYPlane = nextY;
@@ -891,16 +936,16 @@ export class QovEncoder {
       this.prevVPlane = nextV;
 
       // Alpha uses luma dimensions and the luma quant table
-      if (planes.aPlane && this.prevAPlane) {
+      if (planes.aPlane && refA) {
         const nextA = new Uint8Array(planes.aPlane.length);
-        this.encodePlaneDct(planes.aPlane, this.prevAPlane, nextA, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
+        this.encodePlaneDct(planes.aPlane, refA, nextA, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
         this.prevAPlane = nextA;
       }
 
       this.writeEndMarker();
 
       if (this.compressionEnabled) {
-        this.finishFrameData(QOV_CHUNK_PFRAME, QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS, timestamp);
+        this.finishFrameData(QOV_CHUNK_PFRAME, QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS | motionFlag, timestamp);
       } else {
         const chunkSize = this.buffer.getSize() - chunkDataStart;
         this.buffer.setByte(chunkHeaderPos + 2, (chunkSize >> 24) & 0xff);
@@ -911,14 +956,15 @@ export class QovEncoder {
     } else if (this.compressionEnabled) {
       // Legacy DPCM Encoding
       this.startFrameData();
-      this.encodeYuvPlanePFrame(planes.yPlane, this.prevYPlane, temporalThresh);
-      this.encodeYuvPlanePFrame(planes.uPlane, this.prevUPlane, temporalThresh);
-      this.encodeYuvPlanePFrame(planes.vPlane, this.prevVPlane, temporalThresh);
-      if (planes.aPlane && this.prevAPlane) {
-        this.encodeYuvPlanePFrame(planes.aPlane, this.prevAPlane, Math.floor(temporalThresh / 2));
+      if (mv) writeMvBlock(mv, (v) => this.writeU8(v), (v) => this.writeU16(v));
+      this.encodeYuvPlanePFrame(planes.yPlane, refY, temporalThresh);
+      this.encodeYuvPlanePFrame(planes.uPlane, refU, temporalThresh);
+      this.encodeYuvPlanePFrame(planes.vPlane, refV, temporalThresh);
+      if (planes.aPlane && refA) {
+        this.encodeYuvPlanePFrame(planes.aPlane, refA, Math.floor(temporalThresh / 2));
       }
       this.writeEndMarker();
-      this.finishFrameData(QOV_CHUNK_PFRAME, QOV_CHUNK_FLAG_YUV, timestamp);
+      this.finishFrameData(QOV_CHUNK_PFRAME, QOV_CHUNK_FLAG_YUV | motionFlag, timestamp);
 
       // Store planes for next P-frame (raw, assuming lossless DPCM or close enough)
       this.prevYPlane = planes.yPlane;
@@ -929,16 +975,17 @@ export class QovEncoder {
       // No compression: write directly with a proper chunk header.
       const headerPos = this.buffer.getSize();
       this.writeU8(QOV_CHUNK_PFRAME);
-      this.writeU8(QOV_CHUNK_FLAG_YUV);
+      this.writeU8(QOV_CHUNK_FLAG_YUV | motionFlag);
       this.writeU32(0);   // size placeholder
       this.writeU32(timestamp);
+      if (mv) writeMvBlock(mv, (v) => this.writeU8(v), (v) => this.writeU16(v));
 
       const dataStart = this.buffer.getSize();
-      this.encodeYuvPlanePFrame(planes.yPlane, this.prevYPlane, temporalThresh);
-      this.encodeYuvPlanePFrame(planes.uPlane, this.prevUPlane, temporalThresh);
-      this.encodeYuvPlanePFrame(planes.vPlane, this.prevVPlane, temporalThresh);
-      if (planes.aPlane && this.prevAPlane) {
-        this.encodeYuvPlanePFrame(planes.aPlane, this.prevAPlane, Math.floor(temporalThresh / 2));
+      this.encodeYuvPlanePFrame(planes.yPlane, refY, temporalThresh);
+      this.encodeYuvPlanePFrame(planes.uPlane, refU, temporalThresh);
+      this.encodeYuvPlanePFrame(planes.vPlane, refV, temporalThresh);
+      if (planes.aPlane && refA) {
+        this.encodeYuvPlanePFrame(planes.aPlane, refA, Math.floor(temporalThresh / 2));
       }
       this.writeEndMarker();
 
@@ -1127,10 +1174,33 @@ export class QovEncoder {
     // RGB mode P-frame encoding
     this.frameCount++;
     const pixelCount = this.header.width * this.header.height;
-    const prevFrameRef = this.prevFrame;
 
     // Get temporal threshold for lossy mode
     const temporalThresh = this.lossyMode && this.lossyParams ? this.lossyParams.temporalThresh : 0;
+
+    // Motion estimation on luma vs the reference frame
+    let mv: MotionVectors | null = null;
+    let refFrame = this.prevFrame;
+    if (this.motionEnabled && refFrame) {
+      const currLuma = new Uint8Array(pixelCount);
+      const prevLuma = new Uint8Array(pixelCount);
+      for (let i = 0; i < pixelCount; i++) {
+        const o = i * 4;
+        currLuma[i] = (pixels[o] * 299 + pixels[o + 1] * 587 + pixels[o + 2] * 114) / 1000 | 0;
+        prevLuma[i] = (refFrame[o] * 299 + refFrame[o + 1] * 587 + refFrame[o + 2] * 114) / 1000 | 0;
+      }
+      mv = estimateMotion(currLuma, prevLuma, this.header.width, this.header.height, {
+        sadSkipThreshold: temporalThresh > 0 ? temporalThresh * 5 : 0,
+        useDiamond: this.lossyMode,
+        minMovedBlocks: Math.max(4, Math.ceil(0.005 * Math.ceil(this.header.width / 16) * Math.ceil(this.header.height / 16))),
+      });
+      if (mv) {
+        const comp = new Uint8ClampedArray(refFrame.length);
+        compensateFrame(refFrame, this.header.width, this.header.height, mv, comp);
+        refFrame = comp;
+      }
+    }
+    const motionFlag = mv ? QOV_CHUNK_FLAG_MOTION : 0;
 
     // Build quantized frame buffer for accurate next P-frame reference in lossy mode
     const quantizedFrame = this.lossyMode ? new Uint8ClampedArray(pixels.length) : null;
@@ -1138,6 +1208,7 @@ export class QovEncoder {
     // Encode frame data
     const encodeRgbPFrameData = () => {
       let skip = 0;
+      if (mv) writeMvBlock(mv, (v) => this.writeU8(v), (v) => this.writeU16(v));
 
       for (let px = 0; px < pixelCount; px++) {
         const offset = px * 4;
@@ -1150,10 +1221,10 @@ export class QovEncoder {
         });
 
         const ref: QovRGBA = {
-          r: prevFrameRef[offset],
-          g: prevFrameRef[offset + 1],
-          b: prevFrameRef[offset + 2],
-          a: prevFrameRef[offset + 3],
+          r: refFrame[offset],
+          g: refFrame[offset + 1],
+          b: refFrame[offset + 2],
+          a: refFrame[offset + 3],
         };
 
         // Check if pixel unchanged or similar enough (lossy mode)
@@ -1246,12 +1317,12 @@ export class QovEncoder {
       // Compression mode: encode to temp buffer, then compress
       this.startFrameData();
       encodeRgbPFrameData();
-      this.finishFrameData(QOV_CHUNK_PFRAME, 0x00, timestamp);
+      this.finishFrameData(QOV_CHUNK_PFRAME, motionFlag, timestamp);
     } else {
       // No compression: write directly
       const headerPos = this.buffer.getSize();
       this.writeU8(QOV_CHUNK_PFRAME);
-      this.writeU8(0x00); // flags (no motion)
+      this.writeU8(motionFlag); // flags
       this.writeU32(0);   // size placeholder
       this.writeU32(timestamp);
 

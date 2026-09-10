@@ -22,6 +22,7 @@ import {
   QOV_MAX_DIMENSION,
   QOV_MAX_PIXELS,
   getChunkTypeName,
+  chromaPlaneDims,
 } from './qov-types';
 
 import { lz4Decompress } from './lz4';
@@ -34,6 +35,13 @@ import {
 
 import { QoaDecoder } from './qoa';
 import { QOV_CHUNK_AUDIO } from './qov-types';
+
+import {
+  parseMvBlock,
+  compensatePlane,
+  compensateFrame,
+  chromaMotionParams,
+} from './motion';
 
 // Chunk metadata for seeking
 interface ChunkMeta {
@@ -581,11 +589,7 @@ export class QovStreamingDecoder {
     const dataSize = chunk.size - headerSize;
     let chunkData = await this.source.read(chunk.offset + headerSize, dataSize);
 
-    if (chunk.type === QOV_CHUNK_PFRAME && (chunk.flags & QOV_CHUNK_FLAG_MOTION) !== 0) {
-      // Motion vectors (spec §5.2) are not implemented; decoding would
-      // produce garbage, so fail loudly instead
-      throw new Error('Motion vectors (HAS_MOTION) are not supported by this decoder');
-    }
+    const hasMotion = (chunk.flags & QOV_CHUNK_FLAG_MOTION) !== 0;
 
     const isCompressed = (chunk.flags & QOV_CHUNK_FLAG_COMPRESSED) !== 0;
     const isYuvChunk = (chunk.flags & 0x01) !== 0;
@@ -607,9 +611,9 @@ export class QovStreamingDecoder {
       }
     } else if (chunk.type === QOV_CHUNK_PFRAME) {
       if (isYuvChunk || this.isYuvMode) {
-        this.decodeYuvPFrameFromData(chunkData);
+        this.decodeYuvPFrameFromData(chunkData, hasMotion);
       } else {
-        this.decodeRgbPFrameFromData(chunkData, (chunk.flags & 0x02) !== 0);
+        this.decodeRgbPFrameFromData(chunkData, hasMotion);
       }
     }
 
@@ -705,8 +709,11 @@ export class QovStreamingDecoder {
     const pixelCount = this.header!.width * this.header!.height;
     const dataEnd = data.length - 8;
 
-    // Copy previous frame as base
-    if (!hasMotion) {
+    // A motion chunk's effective reference is the compensated previous frame
+    if (hasMotion) {
+      const mv = parseMvBlock(this.readU8.bind(this), this.header!.width, this.header!.height);
+      compensateFrame(this.prevFrame!, this.header!.width, this.header!.height, mv, this.currFrame!);
+    } else {
       this.currFrame!.set(this.prevFrame!);
     }
 
@@ -847,33 +854,37 @@ export class QovStreamingDecoder {
   }
 
   // YUV P-frame decoding
-  private decodeYuvPFrameFromData(data: Uint8Array): void {
+  private decodeYuvPFrameFromData(data: Uint8Array, hasMotion: boolean): void {
     this.activeData = data;
     this.activePos = 0;
 
     const { width, height, colorspace } = this.header!;
     const ySize = width * height;
+    const { w: uvW, h: uvH } = chromaPlaneDims(colorspace, width, height);
+    const uvSize = uvW * uvH;
 
-    let uvSize: number;
-    if (colorspace === QOV_COLORSPACE_YUV420 || colorspace === QOV_COLORSPACE_YUVA420) {
-      uvSize = Math.ceil(width / 2) * Math.ceil(height / 2);
-    } else if (colorspace === QOV_COLORSPACE_YUV422) {
-      uvSize = Math.ceil(width / 2) * height;
+    // A motion chunk's effective reference is the compensated previous plane
+    const mv = hasMotion ? parseMvBlock(this.readU8.bind(this), width, height) : null;
+    if (mv) {
+      const cm = chromaMotionParams(colorspace);
+      compensatePlane(this.prevYPlane!, width, height, mv, this.currYPlane!, 1, 1, 0, 0);
+      compensatePlane(this.prevUPlane!, uvW, uvH, mv, this.currUPlane!, cm.sx, cm.sy, cm.shx, cm.shy);
+      compensatePlane(this.prevVPlane!, uvW, uvH, mv, this.currVPlane!, cm.sx, cm.sy, cm.shx, cm.shy);
+      if (this.hasYuvAlpha && this.currAPlane && this.prevAPlane) {
+        compensatePlane(this.prevAPlane, width, height, mv, this.currAPlane, 1, 1, 0, 0);
+      }
     } else {
-      uvSize = ySize;
+      // Copy previous planes and decode deltas
+      this.currYPlane!.set(this.prevYPlane!);
+      this.currUPlane!.set(this.prevUPlane!);
+      this.currVPlane!.set(this.prevVPlane!);
     }
-
-    // Copy previous planes and decode deltas
-    this.currYPlane!.set(this.prevYPlane!);
-    this.currUPlane!.set(this.prevUPlane!);
-    this.currVPlane!.set(this.prevVPlane!);
 
     this.decodeYuvPlane(this.currYPlane!, ySize, true);
     this.decodeYuvPlane(this.currUPlane!, uvSize, true);
     this.decodeYuvPlane(this.currVPlane!, uvSize, true);
 
     if (this.hasYuvAlpha && this.currAPlane && this.prevAPlane) {
-      this.currAPlane.set(this.prevAPlane);
       this.decodeYuvPlane(this.currAPlane, ySize, true);
     }
 

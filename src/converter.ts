@@ -1,7 +1,7 @@
 // Video to QOV Converter - Uses native browser video decoding
 
 import { QovEncoder } from './qov-encoder';
-import { QOV_FLAG_HAS_INDEX, QOV_FLAG_HAS_ALPHA, getQualityName } from './qov-types';
+import { QOV_FLAG_HAS_INDEX, QOV_FLAG_HAS_ALPHA, QOV_FLAG_HAS_MOTION, getQualityName } from './qov-types';
 
 // DOM Elements
 const previewCanvas = document.getElementById('previewCanvas') as HTMLCanvasElement;
@@ -15,6 +15,7 @@ const resolutionSelect = document.getElementById('resolution') as HTMLSelectElem
 const colorspaceSelect = document.getElementById('colorspace') as HTMLSelectElement;
 const flagIndexCheckbox = document.getElementById('flagIndex') as HTMLInputElement;
 const flagAlphaCheckbox = document.getElementById('flagAlpha') as HTMLInputElement;
+const motionCheckbox = document.getElementById('motionEstimation') as HTMLInputElement;
 const compressionCheckbox = document.getElementById('compressionEnabled') as HTMLInputElement;
 const encodingModeSelect = document.getElementById('encodingMode') as HTMLSelectElement;
 const qualitySetting = document.getElementById('qualitySetting') as HTMLDivElement;
@@ -262,6 +263,7 @@ async function convertToQov(): Promise<void> {
   let flags = 0;
   if (flagIndexCheckbox.checked) flags |= QOV_FLAG_HAS_INDEX;
   if (flagAlphaCheckbox.checked) flags |= QOV_FLAG_HAS_ALPHA;
+  if (motionCheckbox.checked) flags |= QOV_FLAG_HAS_MOTION;
 
   // Get compression setting
   const compressionEnabled = compressionCheckbox.checked;
