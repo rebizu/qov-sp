@@ -523,28 +523,15 @@ async function init(): Promise<void> {
     });
     log('Permission granted');
 
-    // Keep this stream for preview instead of stopping it
-    mediaStream = initialStream;
-    preview.srcObject = mediaStream;
-
-    await new Promise<void>((resolve) => {
-      preview.onloadedmetadata = () => {
-        log(`Video metadata loaded: ${preview.videoWidth}x${preview.videoHeight}`);
-        resolve();
-      };
-    });
-
-    await preview.play();
-
-    // Set canvas to actual video size
-    captureCanvas.width = preview.videoWidth;
-    captureCanvas.height = preview.videoHeight;
-
-    log(`Camera ready: ${preview.videoWidth}x${preview.videoHeight}`);
-    startBtn.disabled = false;
+    // The permission probe stream uses the browser's default resolution;
+    // stop it and hand preview/canvas setup to startPreview(), which applies
+    // the resolution selected in the UI
+    initialStream.getTracks().forEach(track => track.stop());
 
     // Now enumerate devices (labels will be available after permission)
     await populateCameras();
+
+    await startPreview();
 
     log('Initialization complete');
   } catch (err: unknown) {

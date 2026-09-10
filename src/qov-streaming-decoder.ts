@@ -1016,8 +1016,12 @@ export class QovStreamingDecoder {
       isCompressed: (c.flags & QOV_CHUNK_FLAG_COMPRESSED) !== 0,
     }));
 
-    const lastChunk = this.chunks[this.chunks.length - 1];
-    const duration = lastChunk ? lastChunk.timestamp : 0;
+    // The last chunk is END (timestamp 0), so the duration is the highest
+    // timestamp of any indexed chunk
+    let duration = 0;
+    for (const c of this.chunks) {
+      if (c.timestamp > duration) duration = c.timestamp;
+    }
 
     return {
       header: this.header,

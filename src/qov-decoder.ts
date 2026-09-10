@@ -1482,7 +1482,10 @@ export class QovDecoder {
       } else if (chunkHeader.chunkType === QOV_CHUNK_END) {
         break;
       } else {
-        this.pos += chunkHeader.chunkSize;
+        // For compressed chunks the 4-byte uncompressedSize field was already
+        // consumed by readChunkHeader and counts inside chunkSize, so skipping
+        // chunkSize alone would overshoot the stream
+        this.pos += isCompressed ? chunkHeader.chunkSize - 4 : chunkHeader.chunkSize;
       }
     }
 
