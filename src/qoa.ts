@@ -161,9 +161,9 @@ export class QoaDecoder {
                     const reconstructed = Math.max(-32768, Math.min(32767, prediction + dequantized));
 
                     // Update LMS
-                    const delta = dequantized; // residual
+                    const delta = dequantized >> 4; // round toward -inf, then apply sign (reference QOA)
                     for (let k = 0; k < 4; k++) {
-                        weights[k] += (history[k] < 0 ? -delta : delta) >> 4;
+                        weights[k] += history[k] < 0 ? -delta : delta;
                     }
 
                     // Shift history
@@ -349,9 +349,9 @@ export class QoaEncoder {
                         currentSlice |= BigInt(quantized) << BigInt((19 - i) * 3);
 
                         // Update LMS
-                        const delta = dequantized;
+                        const delta = dequantized >> 4; // round toward -inf, then apply sign (reference QOA)
                         for (let k = 0; k < 4; k++) {
-                            weights[k] += (history[k] < 0 ? -delta : delta) >> 4;
+                            weights[k] += history[k] < 0 ? -delta : delta;
                         }
                         history[0] = history[1]; history[1] = history[2]; history[2] = history[3]; history[3] = reconstructed;
                     }
@@ -393,9 +393,9 @@ const QOA_DEQUANT_TAB = [
     [422, -422, 1405, -1405, 2529, -2529, 3934, -3934],
     [548, -548, 1828, -1828, 3290, -3290, 5117, -5117],
     [696, -696, 2320, -2320, 4176, -4176, 6496, -6496],
-    [866, -866, 2885, -2885, 5193, -5193, 8077, -8077],
-    [1058, -1058, 3528, -3528, 6349, -6349, 9877, -9877],
-    [1274, -1274, 4248, -4248, 7646, -7646, 11894, -11894],
-    [1514, -1514, 5045, -5045, 9081, -9081, 14126, -14126]
+    [868, -868, 2893, -2893, 5207, -5207, 8099, -8099],
+    [1064, -1064, 3548, -3548, 6386, -6386, 9933, -9933],
+    [1286, -1286, 4288, -4288, 7718, -7718, 12005, -12005],
+    [1536, -1536, 5120, -5120, 9216, -9216, 14336, -14336]
 ];
 
