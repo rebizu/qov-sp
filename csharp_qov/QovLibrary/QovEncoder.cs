@@ -23,6 +23,7 @@ public class QovEncoder
     private readonly bool _useCompression;
     private readonly bool _lossyMode;
     private readonly LossyParams _lossyParams;
+    private readonly bool _motionEnabled;
     private readonly QoaEncoder? _qoaEncoder;
     private bool _isFinished;
 
@@ -47,6 +48,7 @@ public class QovEncoder
         LossyParams lp = LossyParams.Derive(quality);
         _lossyMode = quality > 0 && quality < 100;
         _lossyParams = _lossyMode ? lp : default;
+        _motionEnabled = (flags & QovTypes.FlagHasMotion) != 0;
 
         _writer = new BinaryWriter(output, System.Text.Encoding.ASCII, leaveOpen: true);
         _header = new QovHeader(flags, width, height, frameRateNum, frameRateDen, colorspace,
@@ -502,8 +504,35 @@ public class QovEncoder
         int temporalThresh = _lossyMode ? _lossyParams.TemporalThresh : 0;
         byte[]? quantizedFrame = _lossyMode ? new byte[pixels.Length] : null;
 
+        // Motion estimation on luma vs the reference frame
+        MotionVectors? mv = null;
+        byte[] refFrame = _prevFrame;
+        if (_motionEnabled)
+        {
+            var currLuma = new byte[pixelCount];
+            var prevLuma = new byte[pixelCount];
+            for (int i = 0; i < pixelCount; i++)
+            {
+                int o = i * 4;
+                currLuma[i] = (byte)((pixels[o] * 299 + pixels[o + 1] * 587 + pixels[o + 2] * 114) / 1000);
+                prevLuma[i] = (byte)((refFrame[o] * 299 + refFrame[o + 1] * 587 + refFrame[o + 2] * 114) / 1000);
+            }
+            mv = Motion.EstimateMotion(currLuma, prevLuma, _header.Width, _header.Height,
+                temporalThresh > 0 ? temporalThresh * 5 : 0,
+                _lossyMode,
+                Math.Max(4, (int)Math.Ceiling(0.005 * ((_header.Width + 15) / 16) * ((_header.Height + 15) / 16))));
+            if (mv != null)
+            {
+                var comp = new byte[refFrame.Length];
+                Motion.CompensateFrame(refFrame, _header.Width, _header.Height, mv.Value, comp);
+                refFrame = comp;
+            }
+        }
+        int motionFlag = mv != null ? QovTypes.ChunkFlagMotion : 0;
+
         using var tempStream = new MemoryStream();
         using var tempWriter = new BinaryWriter(tempStream);
+        if (mv != null) Motion.WriteMvBlock(mv.Value, tempWriter);
 
         int skipCount = 0;
         QovPixel prevPixel = new QovPixel(0, 0, 0, 255);
@@ -513,7 +542,7 @@ public class QovEncoder
             int idx = px * 4;
             // Apply lossy quantization if enabled
             QovPixel current = QuantizePixel(new QovPixel(pixels[idx], pixels[idx + 1], pixels[idx + 2], pixels[idx + 3]));
-            QovPixel prev = new QovPixel(_prevFrame[idx], _prevFrame[idx + 1], _prevFrame[idx + 2], _prevFrame[idx + 3]);
+            QovPixel prev = new QovPixel(refFrame[idx], refFrame[idx + 1], refFrame[idx + 2], refFrame[idx + 3]);
 
             // Check if pixel unchanged from reference (or similar enough in lossy mode)
             bool isSimilar = temporalThresh > 0
@@ -634,7 +663,7 @@ public class QovEncoder
 
         tempWriter.Flush();
         byte[] frameData = tempStream.ToArray();
-        WriteChunk(QovTypes.ChunkTypePframe, 0, timestamp, frameData, false);
+        WriteChunk(QovTypes.ChunkTypePframe, (byte)motionFlag, timestamp, frameData, false);
     }
 
     private void EncodeYuvPFrame(ReadOnlySpan<byte> pixels, uint timestamp)
@@ -662,8 +691,38 @@ public class QovEncoder
             aPlane = QuantizePlane(aPlane, _lossyParams.YQuant);
         }
 
+        // Motion estimation on the quantized luma plane vs the stored reference
+        MotionVectors? mv = null;
+        byte[] refY = _prevYPlane!, refU = _prevUPlane!, refV = _prevVPlane!, refA = _prevAPlane!;
+        if (_motionEnabled)
+        {
+            int temporalThresh = _lossyMode ? _lossyParams.TemporalThresh : 0;
+            mv = Motion.EstimateMotion(yPlane, _prevYPlane!, width, height,
+                temporalThresh > 0 ? temporalThresh * 5 : 0,
+                _lossyMode,
+                Math.Max(4, (int)Math.Ceiling(0.005 * ((width + 15) / 16) * ((height + 15) / 16))));
+            if (mv != null)
+            {
+                var cm = Motion.ChromaMotionParams(_header.Colorspace);
+                (int mvUvW, int mvUvH) = ChromaDims();
+                refY = new byte[width * height];
+                Motion.CompensatePlane(_prevYPlane!, width, height, mv.Value, refY, 1, 1, 0, 0);
+                refU = new byte[_prevUPlane!.Length];
+                Motion.CompensatePlane(_prevUPlane, mvUvW, mvUvH, mv.Value, refU, cm.Sx, cm.Sy, cm.Shx, cm.Shy);
+                refV = new byte[_prevVPlane!.Length];
+                Motion.CompensatePlane(_prevVPlane, mvUvW, mvUvH, mv.Value, refV, cm.Sx, cm.Sy, cm.Shx, cm.Shy);
+                if (aPlane != null && _prevAPlane != null)
+                {
+                    refA = new byte[_prevAPlane.Length];
+                    Motion.CompensatePlane(_prevAPlane, width, height, mv.Value, refA, 1, 1, 0, 0);
+                }
+            }
+        }
+        int motionFlag = mv != null ? QovTypes.ChunkFlagMotion : 0;
+
         using var tempStream = new MemoryStream();
         using var tempWriter = new BinaryWriter(tempStream);
+        if (mv != null) Motion.WriteMvBlock(mv.Value, tempWriter);
 
         if (useDct)
         {
@@ -672,19 +731,19 @@ public class QovEncoder
             byte[] nextU = new byte[uPlane.Length];
             byte[] nextV = new byte[vPlane.Length];
 
-            EncodePlaneDct(yPlane, _prevYPlane!, nextY, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter);
+            EncodePlaneDct(yPlane, refY, nextY, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter);
 
             // Chroma subsampling dims per header colorspace
             (int uvW, int uvH) = ChromaDims();
 
-            EncodePlaneDct(uPlane, _prevUPlane!, nextU, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter);
-            EncodePlaneDct(vPlane, _prevVPlane!, nextV, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter);
+            EncodePlaneDct(uPlane, refU, nextU, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter);
+            EncodePlaneDct(vPlane, refV, nextV, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter);
 
-            if (aPlane != null && _prevAPlane != null)
+            if (aPlane != null && refA != null)
             {
                 // Alpha is coded as a luma table plane (spec v3.2 §3.4.2)
                 byte[] nextA = new byte[aPlane.Length];
-                EncodePlaneDct(aPlane, _prevAPlane, nextA, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter);
+                EncodePlaneDct(aPlane, refA, nextA, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter);
                 nextA.AsSpan().CopyTo(_prevAPlane.AsSpan());
             }
 
@@ -702,17 +761,17 @@ public class QovEncoder
 
             tempWriter.Flush();
             byte[] frameData = tempStream.ToArray();
-            WriteChunk(QovTypes.ChunkTypePframe, (byte)(QovTypes.ChunkFlagYuv | QovTypes.ChunkFlagDctBlocks), timestamp, frameData, false);
+            WriteChunk(QovTypes.ChunkTypePframe, (byte)(QovTypes.ChunkFlagYuv | QovTypes.ChunkFlagDctBlocks | motionFlag), timestamp, frameData, false);
         }
         else
         {
-            EncodeYuvPlaneTemporal(yPlane, _prevYPlane!, tempWriter);
-            EncodeYuvPlaneTemporal(uPlane, _prevUPlane!, tempWriter);
-            EncodeYuvPlaneTemporal(vPlane, _prevVPlane!, tempWriter);
+            EncodeYuvPlaneTemporal(yPlane, refY, tempWriter);
+            EncodeYuvPlaneTemporal(uPlane, refU, tempWriter);
+            EncodeYuvPlaneTemporal(vPlane, refV, tempWriter);
 
-            if (aPlane != null && _prevAPlane != null)
+            if (aPlane != null && refA != null)
             {
-                EncodeYuvPlaneTemporal(aPlane, _prevAPlane, tempWriter);
+                EncodeYuvPlaneTemporal(aPlane, refA, tempWriter);
                 aPlane.AsSpan().CopyTo(_prevAPlane.AsSpan());
             }
 
@@ -729,7 +788,7 @@ public class QovEncoder
 
             tempWriter.Flush();
             byte[] frameData = tempStream.ToArray();
-            WriteChunk(QovTypes.ChunkTypePframe, QovTypes.ChunkFlagYuv, timestamp, frameData, false);
+            WriteChunk(QovTypes.ChunkTypePframe, (byte)(QovTypes.ChunkFlagYuv | motionFlag), timestamp, frameData, false);
         }
     }
 

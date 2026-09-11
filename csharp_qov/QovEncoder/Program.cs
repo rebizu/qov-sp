@@ -53,11 +53,6 @@ class Program
             Console.WriteLine("C# corpus generator does not support audio cases");
             return 1;
         }
-        if (hasMotion)
-        {
-            Console.WriteLine("C# corpus generator does not support motion cases");
-            return 1;
-        }
 
         int cs = colorspace switch
         {

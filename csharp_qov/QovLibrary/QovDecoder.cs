@@ -412,13 +412,7 @@ public class QovDecoder
 
     private QovFrame DecodePFrame(byte chunkFlags, uint timestamp, uint chunkSize)
     {
-        if ((chunkFlags & QovTypes.ChunkFlagMotion) != 0)
-        {
-            // Motion vectors are not implemented in the C# decoder; decoding
-            // would produce garbage, so fail loudly instead (mirrors the TS decoder)
-            throw new NotSupportedException("Motion vectors (HAS_MOTION) are not supported by this decoder");
-        }
-
+        bool hasMotion = (chunkFlags & QovTypes.ChunkFlagMotion) != 0;
         bool isYuvChunk = (chunkFlags & QovTypes.ChunkFlagYuv) != 0;
         bool isCompressed = (chunkFlags & QovTypes.ChunkFlagCompressed) != 0;
 
@@ -437,24 +431,48 @@ public class QovDecoder
             // Decode temporal YUV planes using persistent previous buffer as reference
             int pos = 0;
 
+            // A motion chunk's effective reference is the compensated previous plane
+            MotionVectors? mv = hasMotion
+                ? Motion.ParseMvBlock(frameData, ref pos, _header.Width, _header.Height)
+                : null;
+            var cm = Motion.ChromaMotionParams(_header.Colorspace);
+            (int cW, int cH) = ChromaDims();
+
+            byte[]? refY = _prevYPlane, refU = _prevUPlane, refV = _prevVPlane, refA = _prevAPlane;
+            if (mv != null)
+            {
+                refY = new byte[_prevYPlane!.Length];
+                Motion.CompensatePlane(_prevYPlane, _header.Width, _header.Height, mv.Value, refY, 1, 1, 0, 0);
+                refU = new byte[_prevUPlane!.Length];
+                Motion.CompensatePlane(_prevUPlane, cW, cH, mv.Value, refU, cm.Sx, cm.Sy, cm.Shx, cm.Shy);
+                refV = new byte[_prevVPlane!.Length];
+                Motion.CompensatePlane(_prevVPlane, cW, cH, mv.Value, refV, cm.Sx, cm.Sy, cm.Shx, cm.Shy);
+                if (_hasYuvAlpha && _prevAPlane != null)
+                {
+                    refA = new byte[_prevAPlane.Length];
+                    Motion.CompensatePlane(_prevAPlane, _header.Width, _header.Height, mv.Value, refA, 1, 1, 0, 0);
+                }
+            }
+
             if ((chunkFlags & QovTypes.ChunkFlagDctBlocks) != 0)
             {
                 // Init input planes from previous reference for DCT
-                Array.Copy(_prevYPlane, _currYPlane, _prevYPlane.Length);
-                Array.Copy(_prevUPlane, _currUPlane, _prevUPlane.Length);
-                Array.Copy(_prevVPlane, _currVPlane, _prevVPlane.Length);
-                if (_hasYuvAlpha && _currAPlane != null && _prevAPlane != null)
+                Array.Copy(refY!, _currYPlane, refY!.Length);
+                Array.Copy(refU!, _currUPlane, refU!.Length);
+                Array.Copy(refV!, _currVPlane, refV!.Length);
+                if (_hasYuvAlpha && _currAPlane != null && refA != null)
                 {
-                    Array.Copy(_prevAPlane, _currAPlane, _prevAPlane.Length);
+                    Array.Copy(refA, _currAPlane, refA.Length);
                 }
 
                 float[] blockBuf = new float[64];
-                (int uvW, int uvH) = ChromaDims();
+                int uvW = cW;
+                int uvH = cH;
 
                 pos = DecodePlaneDct(frameData, pos, _currYPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf);
                 pos = DecodePlaneDct(frameData, pos, _currUPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf);
                 pos = DecodePlaneDct(frameData, pos, _currVPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf);
-                if (_hasYuvAlpha && _currAPlane != null && _prevAPlane != null)
+                if (_hasYuvAlpha && _currAPlane != null && refA != null)
                 {
                     // Alpha is coded with luma dimensions and the luma quant table
                     pos = DecodePlaneDct(frameData, pos, _currAPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf);
@@ -462,12 +480,12 @@ public class QovDecoder
             }
             else
             {
-                pos = DecodeYuvPlaneTemporal(frameData, pos, _currYPlane, _prevYPlane);
-                pos = DecodeYuvPlaneTemporal(frameData, pos, _currUPlane, _prevUPlane);
-                pos = DecodeYuvPlaneTemporal(frameData, pos, _currVPlane, _prevVPlane);
-                if (_hasYuvAlpha && _currAPlane != null && _prevAPlane != null)
+                pos = DecodeYuvPlaneTemporal(frameData, pos, _currYPlane, refY!);
+                pos = DecodeYuvPlaneTemporal(frameData, pos, _currUPlane, refU!);
+                pos = DecodeYuvPlaneTemporal(frameData, pos, _currVPlane, refV!);
+                if (_hasYuvAlpha && _currAPlane != null && refA != null)
                 {
-                    pos = DecodeYuvPlaneTemporal(frameData, pos, _currAPlane, _prevAPlane);
+                    pos = DecodeYuvPlaneTemporal(frameData, pos, _currAPlane, refA);
                 }
             }
 
@@ -477,7 +495,7 @@ public class QovDecoder
         }
         else
         {
-            DecodeRgbPFrame(frameData, (chunkFlags & QovTypes.ChunkFlagMotion) != 0);
+            DecodeRgbPFrame(frameData, hasMotion);
         }
 
         SwapFrames();
@@ -579,10 +597,14 @@ public class QovDecoder
         int px = 0;
         int pos = 0;
 
-        // Correct Logic matching TS:
-        // If !hasMotion, we copy Reference -> Target (making Target a clone of Reference).
-        // If hasMotion, we assume Target (which was 2 frames ago) serves as the base for new diffs.
-        if (!hasMotion)
+        // A motion chunk's effective reference is the compensated previous frame;
+        // the MV block is consumed from the same cursor the opcode loop uses
+        if (hasMotion)
+        {
+            var mv = Motion.ParseMvBlock(data, ref pos, _header.Width, _header.Height);
+            Motion.CompensateFrame(_prevFrame, _header.Width, _header.Height, mv, _currFrame);
+        }
+        else
         {
             Array.Copy(_prevFrame, _currFrame, _prevFrame.Length);
         }
