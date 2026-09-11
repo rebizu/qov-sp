@@ -8,9 +8,6 @@
   "ts_stream:yuva420_lossy_dct": "streaming decoder has no DCT path (player routes lossy files to the regular decoder)",
   "ts_stream:yuv420_nearlossless": "streaming decoder has no DCT path (player routes lossy files to the regular decoder)",
   "ts_stream:rgb_lossy_quant": "streaming decoder has no DCT path (player routes lossy files to the regular decoder)",
-  "ts_stream:motion_yuv420_lossy_dct": "streaming decoder has no DCT path (player routes lossy files to the regular decoder)",
-  "cs_decode:motion_yuv420_lossless": "C# motion mirror deferred; decoder throws by design",
-  "cs_decode:motion_rgb_lossless": "C# motion mirror deferred; decoder throws by design",
-  "cs_decode:motion_yuv420_lossy_dct": "C# motion mirror deferred; decoder throws by design"
+  "ts_stream:motion_yuv420_lossy_dct": "streaming decoder has no DCT path (player routes lossy files to the regular decoder)"
  }
 }

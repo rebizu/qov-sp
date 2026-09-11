@@ -145,6 +145,7 @@ def main() -> int:
 
     # C# encoder-supported subset: no motion, no audio, RGB-family or 420-family
     CS_ENCODE_OK = {"srgb", "srgba", "linear", "linear_a", "yuv420", "yuv422", "yuv444", "yuva420"}
+    CS_ENCODE_OK_ALL_FEATURES = CS_ENCODE_OK | {"motion"}  # motion handled via flags, not colorspace
 
     results: dict = {}
     stale_xfail = []
@@ -203,7 +204,7 @@ def main() -> int:
         # 6. C# encode cross-check (only where the C# encoder can express the case)
         if not have_cs:
             row["cs_encode"] = "skip"
-        elif case["colorspace"] not in CS_ENCODE_OK or "motion" in (case.get("flags") or []) or case.get("audio"):
+        elif case["colorspace"] not in CS_ENCODE_OK or case.get("audio"):
             row["cs_encode"] = "n/a"
         else:
             with tempfile.TemporaryDirectory() as td:
