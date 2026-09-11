@@ -101,6 +101,10 @@ qov_result qov_decode_header(const uint8_t *data, size_t size, qov_header *out);
 qov_result qov_decode_all(const uint8_t *data, size_t size,
                           qov_image **frames_out, size_t *count_out,
                           qov_decode_stats *stats);
+/* Decodes only the first frame (always a keyframe) into *out. Stops reading
+   after the first video chunk - cheap for previews/thumbnails.
+   out->rgba is malloc'd (free with qov_free()). */
+qov_result qov_decode_first_frame(const uint8_t *data, size_t size, qov_image *out);
 void qov_frames_free(qov_image *frames, size_t count);
 
 /* ---- encode API ---- */
@@ -1347,9 +1351,9 @@ qov_result qov_decode_header(const uint8_t *data, size_t size, qov_header *out)
     return QOV_OK;
 }
 
-qov_result qov_decode_all(const uint8_t *data, size_t size,
-                          qov_image **frames_out, size_t *count_out,
-                          qov_decode_stats *stats)
+static qov_result qov__decode_impl(const uint8_t *data, size_t size,
+                                   qov_image **frames_out, size_t *count_out,
+                                   qov_decode_stats *stats, size_t max_frames)
 {
     if (frames_out) *frames_out = NULL;
     if (count_out) *count_out = 0;
@@ -1399,7 +1403,7 @@ qov_result qov_decode_all(const uint8_t *data, size_t size,
     size_t chunk_hdr = d.use32 ? 10 : 8;
 
     size_t pos = hdr.header_size;
-    while (pos + chunk_hdr <= size) {
+    while (pos + chunk_hdr <= size && count < max_frames) {
         uint8_t ctype = data[pos], cflags = data[pos + 1];
         uint32_t csize = d.use32 ? qov_be32(data + pos + 2) : (uint32_t)((data[pos + 2] << 8) | data[pos + 3]);
         uint32_t ts = qov_be32(data + pos + (d.use32 ? 6 : 4));
@@ -1550,6 +1554,26 @@ qov_result qov_decode_all(const uint8_t *data, size_t size,
     return QOV_OK;
 }
 
+qov_result qov_decode_all(const uint8_t *data, size_t size,
+                          qov_image **frames_out, size_t *count_out,
+                          qov_decode_stats *stats)
+{
+    return qov__decode_impl(data, size, frames_out, count_out, stats, (size_t)-1);
+}
+
+qov_result qov_decode_first_frame(const uint8_t *data, size_t size, qov_image *out)
+{
+    if (!out) return QOV_ERR_PARAM;
+    qov_image *frames = NULL;
+    size_t count = 0;
+    qov_result r = qov__decode_impl(data, size, &frames, &count, NULL, 1);
+    if (r != QOV_OK) return r;
+    if (count == 0) { qov__free(frames); return QOV_ERR_TRUNCATED; }
+    *out = frames[0];   /* takes ownership of rgba */
+    qov__free(frames);
+    return QOV_OK;
+}
+
 void qov_frames_free(qov_image *frames, size_t count)
 {
     if (!frames) return;
@@ -1560,6 +1584,8 @@ void qov_frames_free(qov_image *frames, size_t count)
 /* ==================================================================== */
 /* encoder                                                             */
 /* ==================================================================== */
+
+typedef struct { uint32_t frame, offset, ts; } qov__kf_t;
 
 struct qov_encoder {
     qov_encode_params p;
@@ -1573,7 +1599,7 @@ struct qov_encoder {
     int has_prev_frame;
     int is_yuv, has_alpha, lossy, use_dct;
     int y_quant, uv_quant, temporal_thresh, dct_qp;
-    struct { uint32_t frame, offset, ts; } *keyframes;
+    qov__kf_t *keyframes;
     size_t n_keyframes, key_cap;
 };
 
@@ -2209,7 +2235,7 @@ static qov_result qov__kf_record(qov_encoder *e, uint32_t frame, uint32_t ts)
         size_t nc = e->key_cap ? e->key_cap * 2 : 16;
         void *nk = qov__realloc(e->keyframes, nc * sizeof(*e->keyframes));
         if (!nk) return QOV_ERR_OOM;
-        e->keyframes = nk;
+        e->keyframes = (qov__kf_t *)nk;
         e->key_cap = nc;
     }
     e->keyframes[e->n_keyframes].frame = frame;

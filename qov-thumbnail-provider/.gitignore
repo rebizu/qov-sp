@@ -1,0 +1,9 @@
+obj/
+*.dll
+*.exe
+*.lib
+*.exp
+*.res
+*.bmp
+*.png
+reglog.txt
