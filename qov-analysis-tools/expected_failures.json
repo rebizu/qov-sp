@@ -11,12 +11,6 @@
   "ts_stream:motion_yuv420_lossy_dct": "streaming decoder has no DCT path (player routes lossy files to the regular decoder)",
   "cs_decode:motion_yuv420_lossless": "C# motion mirror deferred; decoder throws by design",
   "cs_decode:motion_rgb_lossless": "C# motion mirror deferred; decoder throws by design",
-  "cs_decode:motion_yuv420_lossy_dct": "C# motion mirror deferred; decoder throws by design",
-  "cs_encode:yuv420_lossless": "C# YUV<->RGB conversion rounding differs from TS (C# decode verdict is 'near'); encode bytes differ",
-  "cs_encode:yuv420_lossy_dct_lz4": "C# lossy YUV+DCT encoder not byte-identical to TS (rounding and coding decisions differ); both decode within tolerance",
-  "cs_encode:yuv420_lossy_dct_nolz4": "C# lossy YUV+DCT encoder not byte-identical to TS (rounding and coding decisions differ); both decode within tolerance",
-  "cs_encode:yuv420_nearlossless": "C# lossy YUV+DCT encoder not byte-identical to TS (rounding and coding decisions differ); both decode within tolerance",
-  "cs_encode:yuva420_lossy_dct": "C# lossy YUV+DCT encoder not byte-identical to TS (rounding, alpha and coding decisions differ); both decode within tolerance",
-  "cs_encode:rgb_lossy_quant": "C# RGB lossy quantization not byte-identical to TS; both decode within tolerance"
+  "cs_decode:motion_yuv420_lossy_dct": "C# motion mirror deferred; decoder throws by design"
  }
 }

@@ -21,6 +21,8 @@ public class QovEncoder
     private readonly bool _isYuvMode;
     private readonly bool _hasAlpha;
     private readonly bool _useCompression;
+    private readonly bool _lossyMode;
+    private readonly LossyParams _lossyParams;
     private readonly QoaEncoder? _qoaEncoder;
     private bool _isFinished;
 
@@ -43,6 +45,8 @@ public class QovEncoder
 
         byte version = (flags & QovTypes.FlagLossyMode) != 0 ? QovTypes.Version3 : QovTypes.Version2;
         LossyParams lp = LossyParams.Derive(quality);
+        _lossyMode = quality > 0 && quality < 100;
+        _lossyParams = _lossyMode ? lp : default;
 
         _writer = new BinaryWriter(output, System.Text.Encoding.ASCII, leaveOpen: true);
         _header = new QovHeader(flags, width, height, frameRateNum, frameRateDen, colorspace,
@@ -169,11 +173,10 @@ public class QovEncoder
     private void EncodeRgbKeyframe(ReadOnlySpan<byte> pixels, uint timestamp)
     {
         if (_isFinished) return;
-        // Update previous frame buffer (lossless)
-        pixels.CopyTo(_prevFrame.AsSpan());
 
         int frameNumber = _frameCount++;
         int pixelCount = _header.Width * _header.Height;
+        byte[]? quantizedFrame = _lossyMode ? new byte[pixels.Length] : null;
 
         if ((_header.Flags & QovTypes.FlagHasIndex) != 0)
         {
@@ -200,7 +203,17 @@ public class QovEncoder
         for (int px = 0; px < pixelCount; px++)
         {
             int idx = px * 4;
-            QovPixel current = new QovPixel(pixels[idx], pixels[idx + 1], pixels[idx + 2], pixels[idx + 3]);
+            // Apply lossy quantization if enabled
+            QovPixel current = QuantizePixel(new QovPixel(pixels[idx], pixels[idx + 1], pixels[idx + 2], pixels[idx + 3]));
+
+            // Store quantized pixel for P-frame reference
+            if (quantizedFrame != null)
+            {
+                quantizedFrame[idx] = current.R;
+                quantizedFrame[idx + 1] = current.G;
+                quantizedFrame[idx + 2] = current.B;
+                quantizedFrame[idx + 3] = current.A;
+            }
 
             // Check for run-length encoding
             if (QovPixel.Equals(current, prevPixel))
@@ -290,7 +303,65 @@ public class QovEncoder
         tempWriter.Flush();
         byte[] frameData = tempStream.ToArray();
         WriteChunk(QovTypes.ChunkTypeKeyframe, 0, timestamp, frameData, true);
+
+        // Reference: quantized pixels in lossy mode (decoder reconstructs quantized)
+        if (quantizedFrame != null) quantizedFrame.AsSpan().CopyTo(_prevFrame.AsSpan());
+        else pixels.CopyTo(_prevFrame.AsSpan());
     }
+
+    // ---- Lossy quantization (mirrors TS quantizePlane/quantizePixel exactly) ----
+
+    private static int QuantizePlaneValue(int value, int quantStep)
+    {
+        if (quantStep <= 1) return value;
+        return Math.Clamp(ColorConversion.JsRound(value / (double)quantStep) * quantStep, 0, 255);
+    }
+
+    private byte[]? QuantizePlane(byte[]? plane, int quantStep)
+    {
+        if (!_lossyMode || quantStep <= 1 || plane == null) return plane;
+        var result = new byte[plane.Length];
+        for (int i = 0; i < plane.Length; i++) result[i] = (byte)QuantizePlaneValue(plane[i], quantStep);
+        return result;
+    }
+
+    private QovPixel QuantizePixel(QovPixel c)
+    {
+        if (!_lossyMode) return c;
+        int yQuant = _lossyParams.YQuant;
+        int uvQuant = _lossyParams.UvQuant;
+
+        // Integer fixed-point BT.709-style transform; floor divisions on
+        // possibly-negative numerators must be true floors (TS Math.floor)
+        double y = Math.Floor((66 * c.R + 129 * c.G + 25 * c.B + 128) / 256.0);
+        double cb = Math.Floor((-38 * c.R - 74 * c.G + 112 * c.B + 128) / 256.0);
+        double cr = Math.Floor((112 * c.R - 94 * c.G - 18 * c.B + 128) / 256.0);
+
+        y += 16; cb += 128; cr += 128;
+
+        y = ColorConversion.JsRound(y / yQuant) * yQuant;
+        cb = ColorConversion.JsRound(cb / uvQuant) * uvQuant;
+        cr = ColorConversion.JsRound(cr / uvQuant) * uvQuant;
+
+        double cy = y - 16;
+        double d = cb - 128;
+        double e = cr - 128;
+
+        return new QovPixel(
+            (byte)Math.Clamp(Math.Floor((298 * cy + 409 * e + 128) / 256.0), 0, 255),
+            (byte)Math.Clamp(Math.Floor((298 * cy - 100 * d - 208 * e + 128) / 256.0), 0, 255),
+            (byte)Math.Clamp(Math.Floor((298 * cy + 516 * d + 128) / 256.0), 0, 255),
+            c.A);
+    }
+
+    private static bool ValuesAreSimilar(int a, int b, int threshold)
+        => Math.Abs(a - b) <= threshold;
+
+    private static bool PixelsAreSimilar(QovPixel c, QovPixel r, int threshold)
+        => ValuesAreSimilar(c.R, r.R, threshold)
+        && ValuesAreSimilar(c.G, r.G, threshold)
+        && ValuesAreSimilar(c.B, r.B, threshold)
+        && ValuesAreSimilar(c.A, r.A, (int)Math.Floor(threshold / 2.0));
 
     // Chroma plane dims per header colorspace (spec: 444→w×h, 422→⌈w/2⌉×h, else ⌈w/2⌉×⌈h/2⌉)
     private (int W, int H) ChromaDims()
@@ -360,15 +431,28 @@ public class QovEncoder
 
         RgbaToYuvPlanes(pixels, width, height, out byte[] yPlane, out byte[] uPlane, out byte[] vPlane);
 
+        // Apply lossy quantization if enabled (reference = quantized planes)
+        if (_lossyMode)
+        {
+            yPlane = QuantizePlane(yPlane, _lossyParams.YQuant)!;
+            uPlane = QuantizePlane(uPlane, _lossyParams.UvQuant)!;
+            vPlane = QuantizePlane(vPlane, _lossyParams.UvQuant)!;
+        }
+
         // Store planes for P-frame reference
         yPlane.AsSpan().CopyTo(_prevYPlane.AsSpan()!);
         uPlane.AsSpan().CopyTo(_prevUPlane.AsSpan()!);
         vPlane.AsSpan().CopyTo(_prevVPlane.AsSpan()!);
-        
+
         if (_prevAPlane != null)
         {
             // Extract alpha
             for (int i = 0; i < pixelCount; i++) _prevAPlane[i] = pixels[i * 4 + 3];
+            if (_lossyMode)
+            {
+                var quantizedA = QuantizePlane(_prevAPlane, _lossyParams.YQuant);
+                quantizedA?.AsSpan().CopyTo(_prevAPlane.AsSpan());
+            }
         }
 
         using var tempStream = new MemoryStream();
@@ -415,6 +499,8 @@ public class QovEncoder
     {
         int frameNumber = _frameCount++;
         int pixelCount = _header.Width * _header.Height;
+        int temporalThresh = _lossyMode ? _lossyParams.TemporalThresh : 0;
+        byte[]? quantizedFrame = _lossyMode ? new byte[pixels.Length] : null;
 
         using var tempStream = new MemoryStream();
         using var tempWriter = new BinaryWriter(tempStream);
@@ -425,13 +511,25 @@ public class QovEncoder
         for (int px = 0; px < pixelCount; px++)
         {
             int idx = px * 4;
-            int prevIdx = idx;
-            QovPixel current = new QovPixel(pixels[idx], pixels[idx + 1], pixels[idx + 2], pixels[idx + 3]);
-            QovPixel prev = new QovPixel(_prevFrame[prevIdx], _prevFrame[prevIdx + 1], _prevFrame[prevIdx + 2], _prevFrame[prevIdx + 3]);
+            // Apply lossy quantization if enabled
+            QovPixel current = QuantizePixel(new QovPixel(pixels[idx], pixels[idx + 1], pixels[idx + 2], pixels[idx + 3]));
+            QovPixel prev = new QovPixel(_prevFrame[idx], _prevFrame[idx + 1], _prevFrame[idx + 2], _prevFrame[idx + 3]);
 
-            // Check if pixel unchanged from reference
-            if (QovPixel.Equals(current, prev))
+            // Check if pixel unchanged from reference (or similar enough in lossy mode)
+            bool isSimilar = temporalThresh > 0
+                ? PixelsAreSimilar(current, prev, temporalThresh)
+                : QovPixel.Equals(current, prev);
+
+            if (isSimilar)
             {
+                // Decoder retains the reference pixel when skipping, so store ref
+                if (quantizedFrame != null)
+                {
+                    quantizedFrame[idx] = prev.R;
+                    quantizedFrame[idx + 1] = prev.G;
+                    quantizedFrame[idx + 2] = prev.B;
+                    quantizedFrame[idx + 3] = prev.A;
+                }
                 skipCount++;
                 // If we reach max skip count or at end, write the skip
                 if (skipCount == QovTypes.SkipMaxCount || px == pixelCount - 1)
@@ -465,6 +563,15 @@ public class QovEncoder
                     tempWriter.Write((ushort)skipCount);
                 }
                 skipCount = 0;
+            }
+
+            // Store quantized pixel for next P-frame reference
+            if (quantizedFrame != null)
+            {
+                quantizedFrame[idx] = current.R;
+                quantizedFrame[idx + 1] = current.G;
+                quantizedFrame[idx + 2] = current.B;
+                quantizedFrame[idx + 3] = current.A;
             }
 
             // Try temporal diff
@@ -516,7 +623,9 @@ public class QovEncoder
         }
 
         // Update previous frame buffer after encoding loop
-        pixels.CopyTo(_prevFrame.AsSpan());
+        // (quantized pixels in lossy mode — reference matches decoder reconstruction)
+        if (quantizedFrame != null) quantizedFrame.AsSpan().CopyTo(_prevFrame.AsSpan());
+        else pixels.CopyTo(_prevFrame.AsSpan());
 
 
         // Write end marker
@@ -537,11 +646,20 @@ public class QovEncoder
 
         RgbaToYuvPlanes(pixels, width, height, out byte[] yPlane, out byte[] uPlane, out byte[] vPlane);
 
+        // Apply lossy quantization if enabled
+        if (_lossyMode)
+        {
+            yPlane = QuantizePlane(yPlane, _lossyParams.YQuant)!;
+            uPlane = QuantizePlane(uPlane, _lossyParams.UvQuant)!;
+            vPlane = QuantizePlane(vPlane, _lossyParams.UvQuant)!;
+        }
+
         byte[]? aPlane = null;
         if (_prevAPlane != null)
         {
             aPlane = new byte[width * height];
             for (int i = 0; i < aPlane.Length; i++) aPlane[i] = pixels[i * 4 + 3];
+            aPlane = QuantizePlane(aPlane, _lossyParams.YQuant);
         }
 
         using var tempStream = new MemoryStream();

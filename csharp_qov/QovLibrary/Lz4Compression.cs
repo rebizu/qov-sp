@@ -128,7 +128,9 @@ public static class Lz4Compression
                 output[outPos++] = input[anchor + i];
         }
 
-        if (outPos >= inputSize * 0.95)
+        // Match the TS codec's acceptance rule: keep compression only when it
+        // saves at least 20% (outPos < inputSize * 0.80)
+        if (outPos >= inputSize * 0.80)
             return null;
 
         return output.AsSpan(0, outPos).ToArray();
@@ -192,8 +194,14 @@ public static class Lz4Compression
 
     private static int Hash4(ReadOnlySpan<byte> data, int pos)
     {
-        int v = data[pos] | (data[pos + 1] << 8) | (data[pos + 2] << 16) | (data[pos + 3] << 24);
-        return (v * HashPrime >>> 16) & 0xFFFF;
+        // TS computes the hash as a DOUBLE multiply (v * 2654435769), which
+        // loses precision above 2^53 and therefore differs from an exact
+        // 32-bit wrap for large v. Replicate the double semantics exactly:
+        // ToUint32(prod) >>> 16 & 0xFFFF == (exactInteger(prod) >> 16) & 0xFFFF.
+        uint v = (uint)(data[pos] | (data[pos + 1] << 8) | (data[pos + 2] << 16) | (data[pos + 3] << 24));
+        double prod = v * 2654435769.0;
+        ulong exact = (ulong)prod; // prod is an exact integer double < 2^64
+        return (int)((exact >> 16) & 0xFFFF);
     }
 
     private static bool Match4(ReadOnlySpan<byte> data, int pos1, int pos2)
