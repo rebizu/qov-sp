@@ -1,4 +1,5 @@
 using QovLibrary;
+using System.Security.Cryptography;
 
 namespace QovValidator;
 
@@ -17,6 +18,8 @@ class Program
             Console.WriteLine("Options:");
             Console.WriteLine("  --verbose, -v    Show detailed chunk information");
             Console.WriteLine("  --decode, -d     Attempt to decode all frames");
+            Console.WriteLine("  --hashes         With --decode: print 'FRAME_SHA256 <i> <hex>' per frame");
+            Console.WriteLine("  --raw-out <dir>  With --decode: dump decoded frames as frame_N.rgba");
             Console.WriteLine("  --hex            Show hex dump of header");
             return 1;
         }
@@ -25,6 +28,14 @@ class Program
         bool verbose = args.Contains("--verbose") || args.Contains("-v");
         bool decode = args.Contains("--decode") || args.Contains("-d");
         bool showHex = args.Contains("--hex");
+        bool hashes = args.Contains("--hashes");
+        string? rawOut = null;
+        int rawIdx = Array.IndexOf(args, "--raw-out");
+        if (rawIdx >= 0 && rawIdx + 1 < args.Length)
+        {
+            rawOut = args[rawIdx + 1];
+            Directory.CreateDirectory(rawOut);
+        }
 
         if (!File.Exists(filepath))
         {
@@ -32,7 +43,7 @@ class Program
             return 1;
         }
 
-        var validator = new QovFileValidator(filepath, verbose, decode, showHex);
+        var validator = new QovFileValidator(filepath, verbose, decode, showHex, hashes, rawOut);
         return validator.Validate() ? 0 : 1;
     }
 }
@@ -43,6 +54,8 @@ class QovFileValidator
     private readonly bool _verbose;
     private readonly bool _decode;
     private readonly bool _showHex;
+    private readonly bool _hashes;
+    private readonly string? _rawOut;
     private readonly List<string> _errors = new();
     private readonly List<string> _warnings = new();
     private int _chunkCount;
@@ -52,12 +65,15 @@ class QovFileValidator
     private long _fileSize;
     private byte _version;
 
-    public QovFileValidator(string filepath, bool verbose, bool decode, bool showHex)
+    public QovFileValidator(string filepath, bool verbose, bool decode, bool showHex,
+        bool hashes = false, string? rawOut = null)
     {
         _filepath = filepath;
         _verbose = verbose;
         _decode = decode;
         _showHex = showHex;
+        _hashes = hashes;
+        _rawOut = rawOut;
     }
 
     public bool Validate()
@@ -111,6 +127,19 @@ class QovFileValidator
         var header = new byte[24];
         stream.Read(header, 0, 24);
 
+        // v3 lossy files have a 32-byte header; read the extension now
+        byte[]? extHeader = null;
+        if (header[4] == 0x03)
+        {
+            if (_fileSize < 32)
+            {
+                _errors.Add($"v3 file too small for 32-byte header (got {_fileSize})");
+                return false;
+            }
+            extHeader = new byte[8];
+            stream.Read(extHeader, 0, 8);
+        }
+
         if (_showHex)
         {
             Console.WriteLine("Header hex dump:");
@@ -143,13 +172,14 @@ class QovFileValidator
 
         // Version
         _version = header[4];
-        if (_version != 0x01 && _version != 0x02)
+        if (_version != 0x01 && _version != 0x02 && _version != 0x03)
         {
-            _errors.Add($"Invalid version: expected 0x01 or 0x02, got 0x{_version:X2}");
+            _errors.Add($"Invalid version: expected 0x01, 0x02 or 0x03, got 0x{_version:X2}");
         }
         else
         {
-            Console.WriteLine($"  Version: 0x{_version:X2} ({(_version == 1 ? "16-bit chunks" : "32-bit chunks")}) [OK]");
+            string vName = _version switch { 1 => "16-bit chunks", 2 => "32-bit chunks", _ => "32-bit chunks + lossy" };
+            Console.WriteLine($"  Version: 0x{_version:X2} ({vName}) [OK]");
         }
 
         // Flags
@@ -160,7 +190,9 @@ class QovFileValidator
         if ((flags & 0x04) != 0) flagNames.Add("HAS_INDEX");
         if ((flags & 0x08) != 0) flagNames.Add("HAS_BFRAMES");
         if ((flags & 0x10) != 0) flagNames.Add("ENHANCED_COMP");
-        if ((flags & 0xE0) != 0) _warnings.Add($"Reserved flag bits set: 0x{(flags & 0xE0):X2}");
+        if ((flags & 0x20) != 0) flagNames.Add("LOSSY_MODE");
+        if ((flags & 0x40) != 0) flagNames.Add("DCT_ENABLED");
+        if ((flags & 0x80) != 0) _warnings.Add($"Reserved flag bits set: 0x{(flags & 0x80):X2}");
         string flagStr = flagNames.Count > 0 ? string.Join(", ", flagNames) : "none";
         Console.WriteLine($"  Flags: 0x{flags:X2} [{flagStr}]");
 
@@ -220,11 +252,29 @@ class QovFileValidator
         }
         Console.WriteLine($"  Colorspace: {csName}");
 
-        // Reserved byte
-        byte reserved = header[23];
-        if (reserved != 0)
+        // Quality byte (lossy files: quality level; lossless: must be 0)
+        byte qualityByte = header[23];
+        if ((flags & 0x20) != 0)
         {
-            _warnings.Add($"Reserved byte is non-zero: 0x{reserved:X2}");
+            Console.WriteLine($"  Quality: {qualityByte}");
+        }
+        else if (qualityByte != 0)
+        {
+            _warnings.Add($"Quality byte is non-zero in a lossless file: 0x{qualityByte:X2}");
+        }
+
+        // v3 extended header
+        if (_version == 0x03 && extHeader != null)
+        {
+            if ((flags & 0x20) == 0)
+            {
+                _errors.Add("v3 header without LOSSY_MODE flag");
+            }
+            Console.WriteLine($"  Lossy: yQuant={extHeader[1]} uvQuant={extHeader[2]} temporal={extHeader[3]} dctQp={extHeader[4]}");
+            if (extHeader[5] != 0 || extHeader[6] != 0 || extHeader[7] != 0)
+            {
+                _warnings.Add("v3 reserved bytes are non-zero");
+            }
         }
 
         Console.WriteLine();
@@ -235,9 +285,10 @@ class QovFileValidator
     {
         Console.WriteLine("=== Chunk Validation ===");
 
-        int chunkHeaderSize = _version == 0x02 ? 10 : 8;
+        int chunkHeaderSize = _version >= 0x02 ? 10 : 8;
+        int fileHeaderSize = _version == 0x03 ? 32 : 24;
 
-        stream.Position = 24; // After file header
+        stream.Position = fileHeaderSize; // After file header
 
         bool foundEnd = false;
         bool foundIndex = false;
@@ -261,7 +312,7 @@ class QovFileValidator
             byte chunkFlags = chunkHeader[1];
             uint chunkSize, timestamp;
 
-            if (_version == 0x02)
+            if (_version >= 0x02)
             {
                 chunkSize = ReadU32BE(chunkHeader, 2);
                 timestamp = ReadU32BE(chunkHeader, 6);
@@ -557,6 +608,17 @@ class QovFileValidator
                 if (actualPixels != expectedPixels)
                 {
                     _errors.Add($"Frame {frameCount} has wrong pixel count: expected {expectedPixels}, got {actualPixels}");
+                }
+
+                if (_hashes)
+                {
+                    var hash = Convert.ToHexStringLower(SHA256.HashData(frame.Pixels));
+                    Console.WriteLine($"FRAME_SHA256 {frameCount - 1} {hash}");
+                }
+
+                if (_rawOut != null)
+                {
+                    File.WriteAllBytes(Path.Combine(_rawOut, $"frame_{frameCount - 1}.rgba"), frame.Pixels);
                 }
             }
 
