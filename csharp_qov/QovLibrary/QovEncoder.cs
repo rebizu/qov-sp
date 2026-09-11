@@ -851,23 +851,24 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                 Dct.ForwardDct(blockBuf, coeffs);
 
                 // 4. Quantize
-                float scale = 1.0f / (0.1f + (qpBase * 0.1f));
-                
+                // TS uses double math here (1.0 / (0.1 + qp * 0.1)); float breaks bit-exactness
+                double scale = 1.0 / (0.1 + qpBase * 0.1);
+
                 writer.Write(opType);
                 writer.Write((byte)0x40); // Delta 0
 
                 // DC (big-endian, matching the decoder and the TS implementation)
-                short dcVal = (short)Math.Round(coeffs[0] * scale / quant[0]);
+                int dcVal = ColorConversion.JsRound(coeffs[0] * scale / quant[0]);
                 writer.Write((byte)((dcVal >> 8) & 0xff));
                 writer.Write((byte)(dcVal & 0xff));
-                
+
                 // AC
                 int zeroRun = 0;
                 for (int k = 1; k < 64; k++)
                 {
                     int zigzagIdx = Dct.ZigZag[k];
-                    float coeff = coeffs[zigzagIdx];
-                    int qVal = (int)Math.Round(coeff * scale / quant[zigzagIdx]);
+                    double coeff = coeffs[zigzagIdx];
+                    int qVal = ColorConversion.JsRound(coeff * scale / quant[zigzagIdx]);
                     
                     if (qVal == 0)
                     {
@@ -912,14 +913,14 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                 }
                 writer.Write((byte)0x00); // EOB
 
-                // 5. Reconstruct
+                // 5. Reconstruct (double math, stored to float32 — mirrors TS)
                 float[] recCoeffs = new float[64];
-                recCoeffs[0] = (float)Math.Round(coeffs[0] * scale / quant[0]) * quant[0] / scale;
+                recCoeffs[0] = (float)(ColorConversion.JsRound(coeffs[0] * scale / quant[0]) * quant[0] / scale);
                 for (int k = 1; k < 64; k++)
                 {
                      int z = Dct.ZigZag[k];
-                     float qVal = (float)Math.Round(coeffs[z] * scale / quant[z]);
-                     recCoeffs[z] = qVal * quant[z] / scale;
+                     int qVal = ColorConversion.JsRound(coeffs[z] * scale / quant[z]);
+                     recCoeffs[z] = (float)(qVal * quant[z] / scale);
                 }
                 
                 // IDCT

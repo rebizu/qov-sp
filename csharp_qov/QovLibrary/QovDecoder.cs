@@ -820,14 +820,15 @@ public class QovDecoder
         byte qpByte = data[pos++];
         int qpDelta = (qpByte & 0x7F) - 64;
         int finalQp = Math.Clamp(qpBase + qpDelta, 0, 100);
-        float scale = 0.1f + (finalQp * 0.1f);
+        // TS uses double math (0.1 + finalQp * 0.1); float breaks bit-exactness
+        double scale = 0.1 + finalQp * 0.1;
 
         ushort dcRaw = (ushort)((data[pos] << 8) | data[pos + 1]);
         pos += 2;
         int dc = (dcRaw & 0x8000) != 0 ? dcRaw - 65536 : dcRaw;
 
         float[] coeffs = new float[64];
-        coeffs[0] = dc * quantTable[0] * scale;
+        coeffs[0] = (float)(dc * (double)quantTable[0] * scale);
 
         int k = 1;
         while (k < 64)
@@ -854,7 +855,7 @@ public class QovDecoder
                 else level = (int)rawLevel;
             }
 
-            coeffs[Dct.ZigZag[k]] = level * quantTable[Dct.ZigZag[k]] * scale;
+            coeffs[Dct.ZigZag[k]] = (float)(level * (double)quantTable[Dct.ZigZag[k]] * scale);
             k++;
         }
 
@@ -898,7 +899,8 @@ public class QovDecoder
                     {
                         if (bx + x >= w) break;
                         int idx = (by + y) * w + (bx + x);
-                        int val = plane[idx] + (int)blockBuf[y * 8 + x];
+                        // TS adds the untruncated float residual, clamps, then truncates on store
+                        int val = (int)(plane[idx] + blockBuf[y * 8 + x]);
                         plane[idx] = (byte)Math.Clamp(val, 0, 255);
                     }
                 }
