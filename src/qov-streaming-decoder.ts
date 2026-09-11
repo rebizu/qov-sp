@@ -878,6 +878,9 @@ export class QovStreamingDecoder {
       this.currYPlane!.set(this.prevYPlane!);
       this.currUPlane!.set(this.prevUPlane!);
       this.currVPlane!.set(this.prevVPlane!);
+      if (this.hasYuvAlpha && this.currAPlane && this.prevAPlane) {
+        this.currAPlane!.set(this.prevAPlane);
+      }
     }
 
     this.decodeYuvPlane(this.currYPlane!, ySize, true);
