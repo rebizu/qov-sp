@@ -212,7 +212,9 @@ def main() -> int:
 
         # 3. TS full decode
         dec = ts_decode(node, bundle, qov, False, None)
-        row["ts_full"] = "ok" if dec["frameSha256"] == entry["decode_full"]["frame_sha256"] else "FAIL"
+        ok = dec["frameSha256"] == entry["decode_full"]["frame_sha256"] \
+            and dec.get("audioPcmSha256") == entry["decode_full"].get("audio_pcm_sha256")
+        row["ts_full"] = "ok" if ok else "FAIL"
 
         # 4. TS streaming decode
         if not entry["decode_streaming"]["supported"]:
@@ -272,12 +274,14 @@ def main() -> int:
                 results.setdefault("_detail", {})[f"c_decode:{cid}"] = "decode error: " + p.stderr.strip()[-200:]
             else:
                 dec = json.loads(p.stdout)
-                row["c_decode"] = "ok" if dec["frameSha256"] == entry["decode_full"]["frame_sha256"] else "FAIL"
+                ok = dec["frameSha256"] == entry["decode_full"]["frame_sha256"] \
+                    and dec.get("audioPcmSha256") == entry["decode_full"].get("audio_pcm_sha256")
+                row["c_decode"] = "ok" if ok else "FAIL"
 
-        # 8. C single-header encode cross-check (no audio support by design)
+        # 8. C single-header encode cross-check (audio supported via embedded QOA)
         if not have_c:
             row["c_encode"] = "skip"
-        elif case["colorspace"] not in CS_ENCODE_OK or case.get("audio"):
+        elif case["colorspace"] not in CS_ENCODE_OK:
             row["c_encode"] = "n/a"
         else:
             with tempfile.TemporaryDirectory() as td:

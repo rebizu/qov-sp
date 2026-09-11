@@ -12,16 +12,18 @@ python qov-analysis-tools/conformance.py --skip-csharp
 python qov-analysis-tools/conformance.py --only <case-id>
 ```
 
-The runner executes six steps per corpus case:
+The runner executes eight steps per corpus case:
 
 | Step         | What it does |
 |--------------|--------------|
 | `integrity`  | corpus file bytes match the manifest SHA-256 |
 | `structure`  | `analyze_qov.walk_file()` finds no issues and the chunk summary matches the manifest |
-| `ts_full`    | the TS full decoder reproduces the manifest's per-frame SHA-256 |
+| `ts_full`    | the TS full decoder reproduces the manifest's per-frame SHA-256 (and the decoded-QOA audio PCM hash when the case has audio) |
 | `ts_stream`  | the TS streaming decoder reproduces them (`n/a` for lossy cases — it has no DCT path; the player routes those to the regular decoder) |
 | `cs_decode`  | `QovValidator --decode --hashes` reproduces them; `near` = pixel output within tolerance (max ≤ 2, mean ≤ 1) instead of exact |
 | `cs_encode`  | the parameterized C# generator encodes the same case byte-identically to the frozen file (`n/a` for motion/audio cases the C# encoder can't express) |
+| `c_decode`   | `c/main.c` `qov_cli decode` reproduces the video frame hashes and the audio PCM hash (audio verified via the incremental decoder) |
+| `c_encode`   | the parameterized C generator encodes the same case byte-identically to the frozen file, audio included (`n/a` for C#-unsupported colorspaces only) |
 
 Exit code is non-zero on any failure **not** listed in `expected_failures.json`.
 Verdicts: `ok` / `near` / `xfail` (documented) / `FAIL` / `n/a` / `skip`.

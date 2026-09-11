@@ -43,7 +43,9 @@
      "f63b184407eba310b40039ed8948a6bfef4372b95a625231ef4ccfd9341f23ae",
      "e9edaf84fc32e575efef6a55a10915e578e091d93573e208e19bde12a3c6c7bb"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": true,
@@ -112,7 +114,9 @@
      "f63b184407eba310b40039ed8948a6bfef4372b95a625231ef4ccfd9341f23ae",
      "e9edaf84fc32e575efef6a55a10915e578e091d93573e208e19bde12a3c6c7bb"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": true,
@@ -182,7 +186,9 @@
      "30a4b7bb0eba618b4dda04a4d4c7701c7ee466ece40a9e93b71d34da7baeb5f7",
      "eb5fb4acded11b24cbd0bf56de8afbecef1e5e34432ae2ebe5d6a48a45d6f9c2"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": true,
@@ -255,7 +261,9 @@
      "a851aa33154a1135be0ebcaa9d2609672a64d0660eb9ca44e9044c2d52e9f7b3",
      "f40de17d8ff32f9bfca69719f3855c12b6630c9371483262ac82eb70d708febe"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": true,
@@ -324,7 +332,9 @@
      "b930494df62d7e8b78d8bc9d0a9de3e8330a311c5f9ddfb27f766d6cc42fb2be",
      "884bdf292d6ff6bf9527c61a591916647990f4b4ba473d6f7d847339989ba17a"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": true,
@@ -393,7 +403,9 @@
      "505b4e0ce01f5eceef34bf2be0ecdf51d231dc667587f2276c150756a54f00d9",
      "895ef0df3443230c741d5f4edcca2b68a2df9b065c8c372c4543d1d25de75e7d"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": true,
@@ -462,7 +474,9 @@
      "6520cc1f9e5c30d7c15061c97d0c1604e36561a5b81c349aa3ef5e20c35df105",
      "2336ebc6239d2acc1ad24ac6fb686c9fe5d9d993298c0b3ffd81346dca8f8a80"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": true,
@@ -531,7 +545,9 @@
      "4487304f660efcbd243c4d88f9955c705096f0d0db367002a44db6d15fcfac60",
      "ba5670e1f4badc754d10acc999c8ce0c6447e062c3a687b5cc7c311f057d0bf2"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": true,
@@ -604,7 +620,9 @@
      "05f621ecf080955673391c8385b92454e2186e9e6946ddabaa41c5193f67e2f7",
      "f274f2ff60edbf4a4826938ca10040b63814a0d62cae6d65a7fa01ae1031e70a"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": false,
@@ -674,7 +692,9 @@
      "05f621ecf080955673391c8385b92454e2186e9e6946ddabaa41c5193f67e2f7",
      "f274f2ff60edbf4a4826938ca10040b63814a0d62cae6d65a7fa01ae1031e70a"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": false,
@@ -745,7 +765,9 @@
      "040af239440c4991d8b265668afb23f9d236133d1a00c15ac678b091c39ae09e",
      "dfa26b237d93c4a9cc1db76ec7c72d0c4d9312a07f9f6f326d2ab401361448fe"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": false,
@@ -815,7 +837,9 @@
      "1338f4d4f36853816e3dbac4df8945aea2446d7d23d3947cb5b06e6edb08fd22",
      "83b67fb26efcf16661872d72ca0e9c24d0c420c4a663e60bbbc4052aa8e05250"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": false,
@@ -885,7 +909,9 @@
      "0c4c098a99bd5897215529244e272ad85027a720cb50b8bfe804c12b839a1d6a",
      "91dc098e3e310ad7d1a2a0b7339a315d2efb2af47b602f34723fce2478718021"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": false,
@@ -959,7 +985,9 @@
      "45a1da5b51d3c3907d63b7a5d661b95c634b5b31510c6c45bfe3936a74041dbe",
      "e1e2522376daa82411d28edb37bd662c4ce20e0c48f7944c12931adfabd345ff"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": false,
@@ -1029,7 +1057,9 @@
      "4c4cd53f766f8ecf6314415cb93564653796afe5e90296f2451351918302a6d0",
      "5c282b0453f28f564816acff19e442aa41ea07b91a1e3c20378386490bbe84ca"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": false,
@@ -1100,7 +1130,9 @@
      "443ebeaa8f18215fa89b765ad9e8193c41e9efd19b4afcb572cc52ecaa91a256",
      "e97fc8e141667c29b08bd60d3b5bd5dc7b5ebf38bc1471b7a7845bfc3367153d"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": true,
@@ -1175,7 +1207,9 @@
      "fdebdc927e1d7cdc067f9a8329b2ef1ec6dec1d8217b22b67600b36b7d160431",
      "a18fbf29096ad11f7c133631e9d8b19a0f63333b4a221d17240e46ab2c0fc1ad"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": true,
@@ -1250,7 +1284,9 @@
      "1d1b871d74c9577dd2b6b11f1d35148fa6ba8a1a4d2fc19801c3bbe862b9af58",
      "06cf54c7e0fdd086397e69ea8865f38d7450abc1736b9baec7dd4298202ecf9e"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": false,
@@ -1324,7 +1360,9 @@
      "26b00cf28bb87a30524d48a208428f1b08d78aa39b9b46a428a1c3edc76461d1",
      "b930494df62d7e8b78d8bc9d0a9de3e8330a311c5f9ddfb27f766d6cc42fb2be"
     ],
-    "audio_frames": 0
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
    },
    "decode_streaming": {
     "supported": true,
@@ -1401,7 +1439,9 @@
      "623a4e16e1ddfa1049c99ac988daf50e6d780f44ed30f79103f0241bf284d35d",
      "f63b184407eba310b40039ed8948a6bfef4372b95a625231ef4ccfd9341f23ae"
     ],
-    "audio_frames": 4
+    "audio_frames": 4,
+    "audio_pcm_sha256": "b4208a82aff86ba19c0948eb5c8dcc79f7ac973ed817f3d0e47013fea8acafdd",
+    "audio_samples": 1024
    },
    "decode_streaming": {
     "supported": true,

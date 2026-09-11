@@ -314,6 +314,10 @@ static int cmd_encode(const char *case_path, const char *out_path)
     p.motion = motion;
     p.lz4 = lz4;
     p.quality = quality;
+    if (json_present(js, "audio")) {
+        p.audio_channels = (uint8_t)json_int(js, "channels", 0);
+        p.audio_rate = (uint32_t)json_int(js, "rate", 0);
+    }
 
     qov_encoder *e = qov_encode_start(&p);
     if (!e) {
@@ -324,6 +328,7 @@ static int cmd_encode(const char *case_path, const char *out_path)
 
     uint8_t *px = (uint8_t *)malloc((size_t)width * height * 4);
     if (!px) return 2;
+    int audio_ch = p.audio_channels;
     for (int n = 0; n < frames; n++) {
         make_frame(px, width, height, pattern, n, has_alpha_flag);
         uint32_t ts = (uint32_t)floor(n * 1e6 / fps + 0.5);
@@ -333,6 +338,20 @@ static int cmd_encode(const char *case_path, const char *out_path)
         if (r != QOV_OK) {
             fprintf(stderr, "qov_cli ERROR: encode frame %d failed (%d)\n", n, r);
             return 2;
+        }
+        if (audio_ch > 0) {
+            /* mirrors tscli.ts: 256 samples/channel deterministic sine */
+            int16_t samples[256 * 8];
+            for (int i = 0; i < 256; i++) {
+                double v = floor(sin((2.0 * 3.14159265358979323846 * 440.0 * (n * 256 + i)) / (double)p.audio_rate) * 16000.0 + 0.5);
+                int16_t s = (int16_t)(v < -32768.0 ? -32768 : (v > 32767.0 ? 32767 : v));
+                for (int c = 0; c < audio_ch; c++) samples[i * audio_ch + c] = s;
+            }
+            r = qov_encode_audio(e, samples, (size_t)256 * audio_ch, ts);
+            if (r != QOV_OK) {
+                fprintf(stderr, "qov_cli ERROR: encode audio %d failed (%d)\n", n, r);
+                return 2;
+            }
         }
     }
 
@@ -396,6 +415,50 @@ static int cmd_decode(const char *path, const char *raw_dir)
     char sha[65];
     sha256_hex(data, size, sha);
 
+    /* audio pass: walk chunks through the incremental decoder, hash the
+       concatenated interleaved s16 PCM (little-endian, as decoded) */
+    uint8_t *pcm_all = NULL;
+    size_t pcm_len = 0, pcm_cap = 0;
+    int audio_chunks = (int)stats.audio_chunks;
+    if (audio_chunks > 0) {
+        qov_decoder *dec = NULL;
+        if (qov_decoder_new(&hdr, &dec) == QOV_OK) {
+            size_t pos = hdr.header_size;
+            size_t chunk_hdr = hdr.version >= 2 ? 10 : 8;
+            while (pos + chunk_hdr <= size) {
+                uint8_t ctype = data[pos], cflags = data[pos + 1];
+                uint32_t csize = hdr.version >= 2
+                    ? ((uint32_t)data[pos+2]<<24)|((uint32_t)data[pos+3]<<16)|((uint32_t)data[pos+4]<<8)|data[pos+5]
+                    : (uint32_t)((data[pos+2]<<8)|data[pos+3]);
+                if (pos + chunk_hdr + csize > size) break;
+                if (ctype == 0xFF) break;
+                if (ctype == 0x10) {
+                    qov_audio aud;
+                    if (qov_decoder_feed(dec, ctype, cflags, data + pos + chunk_hdr, csize, 0,
+                                         NULL, &aud) == QOV_OK && aud.sample_count > 0) {
+                        size_t bytes = aud.sample_count * aud.channels * 2;
+                        if (pcm_len + bytes > pcm_cap) {
+                            size_t ncap = pcm_cap ? pcm_cap * 2 : bytes * 4;
+                            while (ncap < pcm_len + bytes) ncap *= 2;
+                            uint8_t *np = (uint8_t *)realloc(pcm_all, ncap);
+                            if (!np) break;
+                            pcm_all = np;
+                            pcm_cap = ncap;
+                        }
+                        memcpy(pcm_all + pcm_len, aud.samples, bytes);
+                        pcm_len += bytes;
+                    }
+                }
+                pos += chunk_hdr + csize;
+            }
+            qov_decoder_free(dec);
+        }
+    }
+    if (!pcm_all) {
+        pcm_all = (uint8_t *)malloc(1);
+        pcm_len = 0;
+    }
+
     printf("{\"file\":");
     print_json_string(path);
     printf(",\"fileSha256\":\"%s\",\"frames\":%d,\"frameSha256\":[",
@@ -404,10 +467,17 @@ static int cmd_decode(const char *path, const char *raw_dir)
         sha256_hex(frames[i].rgba, (size_t)frames[i].width * frames[i].height * 4, sha);
         printf("%s\"%s\"", i ? "," : "", sha);
     }
-    printf("],\"audioFrames\":%d,\"header\":{\"version\":%d,\"colorspace\":%d,"
+    printf("],\"audioFrames\":%d,\"audioPcmSha256\":", (int)stats.audio_chunks);
+    if (audio_chunks > 0) {
+        sha256_hex(pcm_all, pcm_len, sha);
+        printf("\"%s\"", sha);
+    } else {
+        printf("null");
+    }
+    printf(",\"header\":{\"version\":%d,\"colorspace\":%d,"
            "\"flags\":%d,\"width\":%u,\"height\":%u,\"totalFrames\":%u,"
            "\"audioChannels\":%d}}",
-           (int)stats.audio_chunks, hdr.version, hdr.colorspace, hdr.flags,
+           hdr.version, hdr.colorspace, hdr.flags,
            hdr.width, hdr.height, hdr.total_frames, hdr.audio_channels);
 
     if (raw_dir) {
@@ -425,6 +495,7 @@ static int cmd_decode(const char *path, const char *raw_dir)
     }
 
     qov_frames_free(frames, count);
+    free(pcm_all);
     free(data);
     return 0;
 }

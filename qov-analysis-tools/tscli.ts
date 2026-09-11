@@ -145,11 +145,31 @@ async function main(): Promise<void> {
       const dec = new QovDecoder(data);
       const header = dec.decodeHeader();
       report.header = { version: header.version, colorspace: header.colorspace, flags: header.flags, width: header.width, height: header.height, totalFrames: header.totalFrames, audioChannels: header.audioChannels };
+      const pcmParts: Buffer[] = [];
+      let pcmSamples = 0;
       for (const f of dec.decodeFrames()) {
-        if ((f as any).samples) { report.audioFrames++; continue; }
+        if ((f as any).samples) {
+          report.audioFrames++;
+          const s = (f as any).samples as Float32Array;
+          const i16 = new Int16Array(s.length);
+          for (let i = 0; i < s.length; i++) {
+            const v = Math.round(s[i] * 32768);
+            i16[i] = Math.max(-32768, Math.min(32767, v));
+          }
+          pcmParts.push(Buffer.from(i16.buffer, 0, i16.length * 2));
+          pcmSamples += s.length;
+          continue;
+        }
         report.frameSha256.push(sha(f.pixels));
         report.frames++;
         if (rawDir) fs.writeFileSync(`${rawDir}/frame_${report.frames - 1}.rgba`, Buffer.from(f.pixels.buffer, f.pixels.byteOffset, f.pixels.length));
+      }
+      if (report.audioFrames > 0) {
+        report.audioPcmSha256 = sha(Buffer.concat(pcmParts));
+        report.audioSamples = pcmSamples;
+      } else {
+        report.audioPcmSha256 = null;
+        report.audioSamples = 0;
       }
     }
     process.stdout.write(JSON.stringify(report));

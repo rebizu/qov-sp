@@ -144,6 +144,8 @@ typedef struct {
     int motion;             /* motion estimation (HAS_MOTION) */
     int lz4;                /* per-chunk LZ4 compression */
     int quality;            /* <=0 or >=100: lossless; 1-99: lossy DCT */
+    uint8_t audio_channels; /* 0 = no audio (QOV_CHUNK_AUDIO via qov_encode_audio) */
+    uint32_t audio_rate;    /* required when audio_channels > 0 */
 } qov_encode_params;
 
 typedef struct qov_encoder qov_encoder;
@@ -155,6 +157,11 @@ qov_encoder *qov_encode_start(const qov_encode_params *params);
 qov_result qov_encode_keyframe(qov_encoder *e, const uint8_t *rgba, uint64_t timestamp_us);
 /* Encodes one full frame as a P-frame, predicted from the previous frame. */
 qov_result qov_encode_pframe(qov_encoder *e, const uint8_t *rgba, uint64_t timestamp_us);
+/* Encodes one AUDIO chunk: total_samples interleaved s16 samples become a
+   single QOA frame (mirrors src/qov-encoder.ts encodeAudio: never LZ4
+   compressed). Requires audio_channels/audio_rate in the encode params. */
+qov_result qov_encode_audio(qov_encoder *e, const int16_t *samples,
+                            size_t total_samples, uint64_t timestamp_us);
 /* Writes the index table + END chunk, patches the total frame count and
    hands ownership of the buffer to the caller (free with qov_free()).
    The encoder is freed; NULL inputs return QOV_ERR_PARAM. */
@@ -1944,6 +1951,8 @@ struct qov_encoder {
     int y_quant, uv_quant, temporal_thresh, dct_qp;
     qov__kf_t *keyframes;
     size_t n_keyframes, key_cap;
+    qov__qoa_lms qoa_lms[8];
+    int has_audio;
 };
 
 static void qov__enc_write_sync(qov_encoder *e, uint32_t frame, uint32_t ts)
@@ -2030,10 +2039,21 @@ qov_encoder *qov_encode_start(const qov_encode_params *params)
     qov__buf_be32(&e->out, ((uint32_t)e->p.width << 16) | (e->p.height & 0xFFFF));
     qov__buf_be32(&e->out, ((uint32_t)e->p.fps_num << 16) | (e->p.fps_den & 0xFFFF));
     qov__buf_be32(&e->out, 0); /* total frames, patched in finish */
-    qov__buf_u8(&e->out, 0);   /* audio channels */
-    qov__buf_u8(&e->out, 0);   /* audio rate (3 bytes) */
-    qov__buf_u8(&e->out, 0);
-    qov__buf_u8(&e->out, 0);
+    e->has_audio = e->p.audio_channels > 0 && e->p.audio_rate > 0;
+    if (e->has_audio && e->p.audio_channels <= 8) {
+        for (int c = 0; c < e->p.audio_channels; c++) {
+            e->qoa_lms[c].weights[0] = 0;
+            e->qoa_lms[c].weights[1] = 0;
+            e->qoa_lms[c].weights[2] = (int16_t)-(1 << 13);
+            e->qoa_lms[c].weights[3] = (int16_t)(1 << 14);
+        }
+    } else {
+        e->has_audio = 0;
+    }
+    qov__buf_u8(&e->out, e->has_audio ? e->p.audio_channels : 0);
+    qov__buf_u8(&e->out, e->has_audio ? (uint8_t)((e->p.audio_rate >> 16) & 0xff) : 0);
+    qov__buf_u8(&e->out, e->has_audio ? (uint8_t)((e->p.audio_rate >> 8) & 0xff) : 0);
+    qov__buf_u8(&e->out, e->has_audio ? (uint8_t)(e->p.audio_rate & 0xff) : 0);
     qov__buf_u8(&e->out, e->p.colorspace);
     qov__buf_u8(&e->out, e->lossy ? (uint8_t)params->quality : 0);
     if (version == 3) {
@@ -2610,6 +2630,31 @@ qov_result qov_encode_pframe(qov_encoder *e, const uint8_t *rgba, uint64_t times
     e->frame_count++;
     if (e->is_yuv) qov__enc_yuv_pframe(e, rgba, ts);
     else qov__enc_rgb_pframe(e, rgba, ts);
+    return QOV_OK;
+}
+
+qov_result qov_encode_audio(qov_encoder *e, const int16_t *samples,
+                            size_t total_samples, uint64_t timestamp_us)
+{
+    if (!e || !samples) return QOV_ERR_PARAM;
+    if (!e->has_audio) return QOV_ERR_PARAM;
+    int ch = e->p.audio_channels;
+    size_t per_ch = total_samples / (size_t)ch;
+    if (per_ch == 0 || per_ch > 0xffff || per_ch * (size_t)ch != total_samples)
+        return QOV_ERR_PARAM;
+
+    uint8_t buf[8 + 8 * 16 + QOV_QOA_SLICES_PER_FRAME * 8 * 8];
+    size_t frame_len = qov__qoa_encode_frame(samples, ch, (int)e->p.audio_rate,
+                                             per_ch, e->qoa_lms, buf);
+    if (frame_len == 0) return QOV_ERR_PARAM;
+
+    /* mirrors src/qov-encoder.ts encodeAudio: AUDIO chunks are never compressed */
+    uint32_t ts = (uint32_t)timestamp_us;
+    qov__buf_u8(&e->out, 0x10);
+    qov__buf_u8(&e->out, 0);
+    qov__buf_be32(&e->out, (uint32_t)frame_len);
+    qov__buf_be32(&e->out, ts);
+    qov__buf_bytes(&e->out, buf, frame_len);
     return QOV_OK;
 }
 
