@@ -83,6 +83,44 @@ dotnet run --project QovEncoder -- --help
 
 See [csharp_qov/README.md](csharp_qov/README.md) for detailed documentation and usage examples.
 
+### C (single-header)
+
+`qov.h` is a stb-style, dependency-free C99 implementation of the whole format —
+decoder **and** encoder — bit-exact with the TypeScript/C# references (verified
+against the golden corpus by the conformance suite, including the LZ4 and DCT
+bit-exactness quirks).
+
+```c
+#define QOV_IMPLEMENTATION
+#include "qov.h"
+
+/* decode every frame of a file */
+qov_image *frames; size_t count;
+qov_decode_all(data, size, &frames, &count, NULL);
+qov_frames_free(frames, count);
+
+/* encode */
+qov_encode_params p = {0};
+p.width = 128; p.height = 96; p.fps_num = 30; p.fps_den = 1;
+p.colorspace = QOV_CS_YUV420; p.lz4 = 1;
+qov_encoder *e = qov_encode_start(&p);
+qov_encode_keyframe(e, rgba, 0);
+qov_encode_pframe(e, rgba, 33333);
+uint8_t *out; size_t out_size;
+qov_encode_finish(e, &out, &out_size);   /* free with qov_free() */
+```
+
+Custom allocators: `qov_set_allocator()`. Audio chunks are skipped on decode
+(counted, not decoded); the C implementation does not encode audio.
+
+A small CLI used by the conformance suite lives in `c/main.c`:
+
+```bash
+gcc -O2 -std=c99 -o qov_cli c/main.c
+./qov_cli encode case.json out.qov    # corpus case JSON, same as tscli
+./qov_cli decode video.qov            # JSON report with per-frame SHA-256
+```
+
 ## Specification
 
 See the full format specification: [qov-specification.md](qov-specification.md)
@@ -108,6 +146,10 @@ csharp_qov/               # C#/.NET implementation
   QovScreenRecorder/      # Screen recording tool
   QovValidator/           # Format validation tool
   QovLibrary.Tests/       # Test suite
+
+qov.h                     # C single-header implementation (decoder + encoder)
+c/
+  main.c                  # C CLI used by the conformance suite
 ```
 
 ## License

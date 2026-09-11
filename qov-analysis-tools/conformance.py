@@ -5,7 +5,7 @@ QOV conformance runner.
 Runs every implementation against the frozen golden corpus
 (qov-analysis-tools/corpus) and prints a drift matrix:
 
-    integrity | structure | ts_full | ts_stream | cs_decode | cs_encode
+    integrity | structure | ts_full | ts_stream | cs_decode | cs_encode | c_decode | c_encode
 
 Verdicts: ok, FAIL, near (C# pixel output within tolerance), xfail
 (documented expected failure), n/a (step not applicable), skip (tooling
@@ -13,12 +13,13 @@ missing). Exit code is non-zero if any step fails without an entry in
 expected_failures.json.
 
 Usage:
-    python conformance.py [--skip-csharp] [--only <case-id>] [--json]
+    python conformance.py [--skip-csharp] [--skip-c] [--only <case-id>] [--json]
 """
 
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -30,7 +31,8 @@ ROOT = TOOLS.parent
 CORPUS = TOOLS / "corpus"
 NODE_ESBUILD = ROOT / "node_modules" / "esbuild" / "bin" / "esbuild"
 
-STEPS = ["integrity", "structure", "ts_full", "ts_stream", "cs_decode", "cs_encode"]
+STEPS = ["integrity", "structure", "ts_full", "ts_stream", "cs_decode", "cs_encode",
+         "c_decode", "c_encode"]
 
 
 def sha256_file(path: Path) -> str:
@@ -65,6 +67,40 @@ def find_csharp_tool(name: str) -> Path | None:
         return None
     exes = sorted(base.glob(f"*/{name}.exe"))
     return exes[-1] if exes else None
+
+
+def build_c() -> Path | None:
+    """Compile the qov.h CLI. Returns the exe path or None."""
+    out = TOOLS / ".build" / "qov_cli.exe"
+    src = ROOT / "c" / "main.c"
+    hdr = ROOT / "qov.h"
+    out.parent.mkdir(exist_ok=True)
+    if out.exists() and out.stat().st_mtime > src.stat().st_mtime \
+            and out.stat().st_mtime > hdr.stat().st_mtime:
+        return out
+
+    # candidate compilers: on PATH first, then well-known MinGW locations
+    candidates: list = [[gcc] for gcc in ("gcc", "cc") if shutil.which(gcc)]
+    for base in (r"C:\msys64\mingw64\bin", "/c/msys64/mingw64/bin", "/usr/bin"):
+        exe = Path(base) / "gcc.exe"
+        if not exe.exists():
+            exe = Path(base) / "gcc"
+        if exe.exists():
+            candidates.append([str(exe)])
+    candidates.append(["zig", "cc"])
+
+    for cc in candidates:
+        env = dict(os.environ)
+        cc_dir = str(Path(cc[0]).resolve().parent) if os.sep in cc[0] else None
+        if cc_dir:
+            # MinGW gcc needs its bin dir on PATH to run cc1 (DLL deps)
+            env["PATH"] = cc_dir + os.pathsep + env.get("PATH", "")
+        p = subprocess.run(cc + ["-O2", "-std=c99", "-Wall", "-w",
+                                 "-o", str(out), str(src)],
+                           capture_output=True, text=True, cwd=ROOT, env=env)
+        if p.returncode == 0 and out.exists():
+            return out
+    return None
 
 
 def build_csharp() -> bool:
@@ -108,6 +144,7 @@ def near_diff(dir_a: Path, dir_b: Path, frames: int) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--skip-csharp", action="store_true")
+    ap.add_argument("--skip-c", action="store_true")
     ap.add_argument("--only", metavar="CASE_ID")
     ap.add_argument("--json", action="store_true", help="print results as JSON")
     args = ap.parse_args()
@@ -142,6 +179,13 @@ def main() -> int:
             if validator is None or encoder is None:
                 print("C# binaries not found after build; skipping C# steps")
                 have_cs = False
+
+    # C single-header CLI: compile once, skip steps gracefully if no compiler
+    have_c = not args.skip_c
+    qov_cli = build_c() if have_c else None
+    if qov_cli is None:
+        print("no C compiler found (gcc/cc/zig cc); skipping C steps")
+        have_c = False
 
     # C# encoder-supported subset: no motion, no audio, RGB-family or 420-family
     CS_ENCODE_OK = {"srgb", "srgba", "linear", "linear_a", "yuv420", "yuv422", "yuv444", "yuva420"}
@@ -217,6 +261,35 @@ def main() -> int:
                     results.setdefault("_detail", {})[f"cs_encode:{cid}"] = "encode error: " + p.stderr.strip()[-200:]
                 else:
                     row["cs_encode"] = "ok" if sha256_file(out) == entry["file_sha256"] else "FAIL"
+
+        # 7. C single-header decode (exact hash, same report shape as ts_full)
+        if not have_c:
+            row["c_decode"] = "skip"
+        else:
+            p = run([str(qov_cli), "decode", str(qov)])
+            if p.returncode != 0:
+                row["c_decode"] = "FAIL"
+                results.setdefault("_detail", {})[f"c_decode:{cid}"] = "decode error: " + p.stderr.strip()[-200:]
+            else:
+                dec = json.loads(p.stdout)
+                row["c_decode"] = "ok" if dec["frameSha256"] == entry["decode_full"]["frame_sha256"] else "FAIL"
+
+        # 8. C single-header encode cross-check (no audio support by design)
+        if not have_c:
+            row["c_encode"] = "skip"
+        elif case["colorspace"] not in CS_ENCODE_OK or case.get("audio"):
+            row["c_encode"] = "n/a"
+        else:
+            with tempfile.TemporaryDirectory() as td:
+                out = Path(td) / f"{cid}.c.qov"
+                case_file = Path(td) / f"{cid}.case.json"
+                case_file.write_text(json.dumps(case), encoding="utf-8")
+                p = run([str(qov_cli), "encode", str(case_file), str(out)])
+                if p.returncode != 0:
+                    row["c_encode"] = "FAIL"
+                    results.setdefault("_detail", {})[f"c_encode:{cid}"] = "encode error: " + p.stderr.strip()[-200:]
+                else:
+                    row["c_encode"] = "ok" if sha256_file(out) == entry["file_sha256"] else "FAIL"
 
         # apply xfail / stale detection
         for step in STEPS:
