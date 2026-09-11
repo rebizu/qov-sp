@@ -1,0 +1,25 @@
+{
+  "comment": "Golden corpus case list. Each case is encoded by tscli.ts (TS codec) and frozen with a SHA-256 manifest. Defaults: flags=[index], keyframeInterval=2, compression=true, audio=null.",
+  "cases": [
+    { "id": "rgb_lossless_lz4", "width": 128, "height": 96, "frames": 5, "fps": 30, "colorspace": "srgb", "pattern": "stripes" },
+    { "id": "rgb_lossless_nolz4", "width": 128, "height": 96, "frames": 5, "fps": 30, "colorspace": "srgb", "pattern": "stripes", "compression": false },
+    { "id": "srgba_lossless", "width": 128, "height": 96, "frames": 5, "fps": 30, "colorspace": "srgba", "flags": ["index", "alpha"], "pattern": "gradient" },
+    { "id": "linear_lossless", "width": 128, "height": 96, "frames": 5, "fps": 30, "colorspace": "linear", "pattern": "gradient" },
+    { "id": "yuv420_lossless", "width": 128, "height": 96, "frames": 5, "fps": 30, "colorspace": "yuv420", "pattern": "gradient" },
+    { "id": "yuv422_lossless", "width": 128, "height": 96, "frames": 5, "fps": 30, "colorspace": "yuv422", "pattern": "gradient" },
+    { "id": "yuv444_lossless", "width": 128, "height": 96, "frames": 5, "fps": 30, "colorspace": "yuv444", "pattern": "gradient" },
+    { "id": "yuva420_lossless", "width": 128, "height": 96, "frames": 5, "fps": 30, "colorspace": "yuva420", "flags": ["index", "alpha"], "pattern": "gradient" },
+    { "id": "yuv420_lossy_dct_lz4", "width": 128, "height": 96, "frames": 5, "fps": 30, "colorspace": "yuv420", "quality": 50, "pattern": "noise" },
+    { "id": "yuv420_lossy_dct_nolz4", "width": 128, "height": 96, "frames": 5, "fps": 30, "colorspace": "yuv420", "quality": 50, "compression": false, "pattern": "noise" },
+    { "id": "yuv422_lossy_dct", "width": 128, "height": 96, "frames": 5, "fps": 30, "colorspace": "yuv422", "quality": 50, "pattern": "noise" },
+    { "id": "yuv444_lossy_dct", "width": 128, "height": 96, "frames": 5, "fps": 30, "colorspace": "yuv444", "quality": 50, "pattern": "noise" },
+    { "id": "yuva420_lossy_dct", "width": 128, "height": 96, "frames": 5, "fps": 30, "colorspace": "yuva420", "flags": ["index", "alpha"], "quality": 50, "pattern": "noise" },
+    { "id": "yuv420_nearlossless", "width": 128, "height": 96, "frames": 5, "fps": 30, "colorspace": "yuv420", "quality": 95, "pattern": "gradient" },
+    { "id": "rgb_lossy_quant", "width": 128, "height": 96, "frames": 5, "fps": 30, "colorspace": "srgb", "quality": 40, "pattern": "noise" },
+    { "id": "motion_yuv420_lossless", "width": 128, "height": 96, "frames": 6, "fps": 30, "colorspace": "yuv420", "flags": ["index", "motion"], "pattern": "scroll16" },
+    { "id": "motion_rgb_lossless", "width": 128, "height": 96, "frames": 6, "fps": 30, "colorspace": "srgb", "flags": ["index", "motion"], "pattern": "scroll16" },
+    { "id": "motion_yuv420_lossy_dct", "width": 128, "height": 96, "frames": 6, "fps": 30, "colorspace": "yuv420", "flags": ["index", "motion"], "quality": 50, "pattern": "scroll16" },
+    { "id": "motion_static_420", "width": 128, "height": 96, "frames": 4, "fps": 30, "colorspace": "yuv420", "flags": ["index", "motion"], "pattern": "gradient", "expect": { "motion_chunks": 0 } },
+    { "id": "audio_srgb_lossless", "width": 128, "height": 96, "frames": 4, "fps": 30, "colorspace": "srgb", "pattern": "stripes", "audio": { "channels": 1, "rate": 48000 } }
+  ]
+}

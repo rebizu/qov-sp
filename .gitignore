@@ -582,3 +582,8 @@ $RECYCLE.BIN/
 install.sh
 /bin
 /obj
+
+# QOV golden corpus files are intentionally tracked (conformance fixtures)
+!qov-analysis-tools/corpus/*.qov
+# tscli esbuild bundle is a build artifact
+qov-analysis-tools/tscli.cjs
