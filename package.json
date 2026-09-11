@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "npx vite",
     "build": "npx tsc && npx vite build",
-    "preview": "npx vite preview"
+    "preview": "npx vite preview",
+    "corpus": "python qov-analysis-tools/gen_corpus.py",
+    "conformance": "python qov-analysis-tools/conformance.py"
   },
   "devDependencies": {
     "typescript": "^5.3.3",

@@ -102,10 +102,12 @@ src/
 ```
 
 ### Testing
-No test framework currently configured. When adding tests:
-- Check package.json for existing test scripts
-- Run `npm test` if available
-- For single test: check test framework documentation
+Conformance suite (golden corpus + multi-implementation runner):
+- `npm run conformance` (or `python qov-analysis-tools/conformance.py`) — runs every implementation against the frozen corpus in `qov-analysis-tools/corpus/`
+- TS-only run: add `--skip-csharp`; single case: `--only <case-id>`
+- Codec changes that intentionally alter output require `npm run corpus` with `--force` (approval test — review the manifest diff)
+- Failures that are permanent, documented limitations go in `qov-analysis-tools/expected_failures.json` with a measured reason; the runner warns when such entries go stale
+- See `qov-analysis-tools/README.md` for the full workflow
 
 ### Commit Guidelines
 - Use conventional commits format
