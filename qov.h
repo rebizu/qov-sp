@@ -107,6 +107,34 @@ qov_result qov_decode_all(const uint8_t *data, size_t size,
 qov_result qov_decode_first_frame(const uint8_t *data, size_t size, qov_image *out);
 void qov_frames_free(qov_image *frames, size_t count);
 
+/* ---- incremental decode API ---- */
+/* Decoded QOA audio for one AUDIO chunk (interleaved s16). */
+typedef struct {
+    int16_t *samples;       /* sample_count * channels, interleaved */
+    size_t sample_count;    /* per-channel samples */
+    uint32_t rate;
+    uint8_t channels;
+} qov_audio;
+
+typedef struct qov_decoder qov_decoder;
+
+/* Creates a decoder context from a parsed header. NULL on invalid/OOM. */
+qov_result qov_decoder_new(const qov_header *hdr, qov_decoder **out);
+/* Feeds one raw chunk payload. chunk_type/chunk_flags are the chunk header
+   fields (COMPRESSED 0x10 handled internally for frame chunks). Fills *out_img
+   for KEYFRAME/PFRAME chunks and *out_aud for AUDIO chunks; either may be NULL.
+   Both output buffers are owned by the decoder and stay valid only until the
+   next feed/reset/free. SYNC/BFRAME/INDEX/END/unknown chunks produce no output.
+   timestamp_us only feeds out_img->timestamp_us. */
+qov_result qov_decoder_feed(qov_decoder *dec, uint8_t chunk_type, uint8_t chunk_flags,
+                            const uint8_t *payload, size_t size, uint32_t timestamp_us,
+                            qov_image *out_img, qov_audio *out_aud);
+/* Clears reference frames and the RGB color cache (call after seeking to a
+   keyframe boundary). */
+qov_result qov_decoder_reset(qov_decoder *dec);
+void qov_decoder_free(qov_decoder *dec);
+
+
 /* ---- encode API ---- */
 typedef struct {
     uint32_t width, height;
@@ -429,6 +457,188 @@ static qov_result qov__lz4_compress(const uint8_t *in, size_t in_size,
     *out_data = out;
     *out_len = out_pos;
     return QOV_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* QOA (Quite OK Audio) - bit-exact with src/qoa.ts                    */
+/* ------------------------------------------------------------------ */
+
+#define QOV_QOA_SLICE_SAMPLES 20
+#define QOV_QOA_SLICES_PER_FRAME 256
+#define QOV_QOA_LMS_LEN 4
+
+typedef struct {
+    int16_t history[QOV_QOA_LMS_LEN];
+    int16_t weights[QOV_QOA_LMS_LEN];
+} qov__qoa_lms;
+
+/* Reference dequant table (qoaformat.org); rows 12-15 fixed in 72fcdc2 */
+static const int qov__qoa_dequant_tab[16][8] = {
+    {   1,    -1,    3,    -3,    5,    -5,     7,     -7},
+    {   5,    -5,   18,   -18,   32,   -32,    49,    -49},
+    {  16,   -16,   53,   -53,   95,   -95,   147,   -147},
+    {  34,   -34,  113,  -113,  203,  -203,   315,   -315},
+    {  63,   -63,  210,  -210,  378,  -378,   588,   -588},
+    { 104,  -104,  345,  -345,  621,  -621,   966,   -966},
+    { 158,  -158,  528,  -528,  950,  -950,  1477,  -1477},
+    { 228,  -228,  760,  -760, 1368, -1368,  2128,  -2128},
+    { 316,  -316, 1053, -1053, 1895, -1895,  2947,  -2947},
+    { 422,  -422, 1405, -1405, 2529, -2529,  3934,  -3934},
+    { 548,  -548, 1828, -1828, 3290, -3290,  5117,  -5117},
+    { 696,  -696, 2320, -2320, 4176, -4176,  6496,  -6496},
+    { 868,  -868, 2893, -2893, 5207, -5207,  8099,  -8099},
+    {1064, -1064, 3548, -3548, 6386, -6386,  9933,  -9933},
+    {1286, -1286, 4288, -4288, 7718, -7718, 12005, -12005},
+    {1536, -1536, 5120, -5120, 9216, -9216, 14336, -14336},
+};
+
+static int qov__qoa_clamp16(int v) { return v < -32768 ? -32768 : (v > 32767 ? 32767 : v); }
+
+static int qov__qoa_lms_predict(const qov__qoa_lms *lms)
+{
+    int p = 0;
+    for (int i = 0; i < QOV_QOA_LMS_LEN; i++) p += lms->weights[i] * lms->history[i];
+    return p >> 13;
+}
+
+static void qov__qoa_lms_update(qov__qoa_lms *lms, int residual)
+{
+    int delta = residual >> 4;
+    for (int i = 0; i < QOV_QOA_LMS_LEN; i++)
+        lms->weights[i] = (int16_t)(lms->weights[i] + (lms->history[i] < 0 ? -delta : delta));
+    for (int i = 0; i < QOV_QOA_LMS_LEN - 1; i++) lms->history[i] = lms->history[i + 1];
+    /* caller stores the reconstructed sample into history[LMS_LEN-1] */
+}
+
+/* Decodes one QOA frame. Returns per-channel sample count, 0 on error.
+   out needs room for sample_count * channels samples (interleaved). */
+static size_t qov__qoa_decode_frame(const uint8_t *payload, size_t size,
+                                    qov__qoa_lms *lms, int16_t *out)
+{
+    if (size < 8) return 0;
+    uint32_t channels = payload[0];
+    uint32_t samplerate = ((uint32_t)payload[1] << 16) | ((uint32_t)payload[2] << 8) | payload[3];
+    uint32_t fsamples = ((uint32_t)payload[4] << 8) | payload[5];
+    uint32_t frame_size = ((uint32_t)payload[6] << 8) | payload[7];
+    (void)samplerate;
+    if (channels == 0 || channels > 8 || fsamples == 0) return 0;
+
+    size_t header_size = 8 + (size_t)channels * 16;
+    if (frame_size < header_size || frame_size > size) return 0;
+    size_t num_slices = (frame_size - header_size) / 8;
+    size_t slices_needed = ((size_t)fsamples + QOV_QOA_SLICE_SAMPLES - 1) / QOV_QOA_SLICE_SAMPLES;
+    if (slices_needed > QOV_QOA_SLICES_PER_FRAME || slices_needed * channels > num_slices) return 0;
+
+    size_t p = 8;
+    for (uint32_t c = 0; c < channels; c++) {
+        uint64_t history = 0, weights = 0;
+        for (int i = 0; i < 8; i++) history = (history << 8) | payload[p++];
+        for (int i = 0; i < 8; i++) weights = (weights << 8) | payload[p++];
+        for (int i = 0; i < QOV_QOA_LMS_LEN; i++)
+            lms[c].history[i] = (int16_t)(uint16_t)(history >> (48 - 16 * i));
+        for (int i = 0; i < QOV_QOA_LMS_LEN; i++)
+            lms[c].weights[i] = (int16_t)(uint16_t)(weights >> (48 - 16 * i));
+    }
+
+    for (uint32_t slice = 0; slice < slices_needed; slice++) {
+        for (uint32_t c = 0; c < channels; c++) {
+            uint64_t bits = 0;
+            for (int i = 0; i < 8; i++) bits = (bits << 8) | payload[p++];
+            int scalefactor = (int)((bits >> 60) & 0xf);
+            bits <<= 4;
+            for (int i = 0; i < QOV_QOA_SLICE_SAMPLES; i++) {
+                int quantized = (int)((bits >> 61) & 0x7);
+                bits <<= 3;
+                int predicted = qov__qoa_lms_predict(&lms[c]);
+                int dequantized = qov__qoa_dequant_tab[scalefactor][quantized];
+                int reconstructed = qov__qoa_clamp16(predicted + dequantized);
+                qov__qoa_lms_update(&lms[c], dequantized);
+                lms[c].history[QOV_QOA_LMS_LEN - 1] = (int16_t)reconstructed;
+                uint32_t idx = slice * QOV_QOA_SLICE_SAMPLES + (uint32_t)i;
+                if (idx < fsamples) out[(size_t)idx * channels + c] = (int16_t)reconstructed;
+            }
+        }
+    }
+    return fsamples;
+}
+
+/* Encodes one QOA frame from interleaved s16 samples - mirrors the fixed
+   src/qoa.ts QoaEncoder.encodeFrame exactly (exhaustive scalefactor search in
+   ascending order, nearest-dequant quantization with strict-less tie-break). */
+static size_t qov__qoa_encode_frame(const int16_t *samples, int channels, int samplerate,
+                                    size_t sample_count, qov__qoa_lms *lms, uint8_t *out)
+{
+    size_t slices = (sample_count + QOV_QOA_SLICE_SAMPLES - 1) / QOV_QOA_SLICE_SAMPLES;
+    size_t frame_size = 8 + (size_t)channels * 16 + slices * 8 * (size_t)channels;
+    if (sample_count == 0 || sample_count > 0xffff || frame_size > 0xffff) return 0;
+
+    size_t p = 0;
+    out[p++] = (uint8_t)channels;
+    out[p++] = (uint8_t)((samplerate >> 16) & 0xff);
+    out[p++] = (uint8_t)((samplerate >> 8) & 0xff);
+    out[p++] = (uint8_t)(samplerate & 0xff);
+    out[p++] = (uint8_t)((sample_count >> 8) & 0xff);
+    out[p++] = (uint8_t)(sample_count & 0xff);
+    out[p++] = (uint8_t)((frame_size >> 8) & 0xff);
+    out[p++] = (uint8_t)(frame_size & 0xff);
+    for (int c = 0; c < channels; c++) {
+        for (int i = 0; i < QOV_QOA_LMS_LEN; i++) {
+            uint16_t h = (uint16_t)lms[c].history[i];
+            out[p++] = (uint8_t)(h >> 8); out[p++] = (uint8_t)(h & 0xff);
+        }
+        for (int i = 0; i < QOV_QOA_LMS_LEN; i++) {
+            uint16_t w = (uint16_t)lms[c].weights[i];
+            out[p++] = (uint8_t)(w >> 8); out[p++] = (uint8_t)(w & 0xff);
+        }
+    }
+
+    for (size_t slice_start = 0; slice_start < sample_count; slice_start += QOV_QOA_SLICE_SAMPLES) {
+        size_t slice_len = sample_count - slice_start;
+        if (slice_len > QOV_QOA_SLICE_SAMPLES) slice_len = QOV_QOA_SLICE_SAMPLES;
+        for (int c = 0; c < channels; c++) {
+            uint64_t best_error = (uint64_t)-1;
+            uint64_t best_slice = 0;
+            qov__qoa_lms best_lms = lms[c];
+
+            for (int sf = 0; sf < 16; sf++) {
+                qov__qoa_lms trial = lms[c];
+                uint64_t current_error = 0;
+                uint64_t current_slice = (uint64_t)sf << 60;
+
+                for (size_t i = 0; i < slice_len; i++) {
+                    int sample = samples[(slice_start + i) * (size_t)channels + c];
+                    int predicted = qov__qoa_lms_predict(&trial);
+                    int residual = sample - predicted;
+
+                    int best_diff = 0x7fffffff, best_q = 0;
+                    for (int q = 0; q < 8; q++) {
+                        int diff = residual - qov__qoa_dequant_tab[sf][q];
+                        if (diff < 0) diff = -diff;
+                        if (diff < best_diff) { best_diff = diff; best_q = q; }
+                    }
+                    int dequantized = qov__qoa_dequant_tab[sf][best_q];
+                    int reconstructed = qov__qoa_clamp16(predicted + dequantized);
+
+                    int err = sample - reconstructed;
+                    current_error += (uint64_t)((int64_t)err * err);
+                    current_slice |= (uint64_t)best_q << ((19 - i) * 3);
+
+                    qov__qoa_lms_update(&trial, dequantized);
+                    trial.history[QOV_QOA_LMS_LEN - 1] = (int16_t)reconstructed;
+                }
+
+                if (current_error < best_error) {
+                    best_error = current_error;
+                    best_slice = current_slice;
+                    best_lms = trial;
+                }
+            }
+
+            lms[c] = best_lms;
+            for (int i = 0; i < 8; i++) out[p++] = (uint8_t)(best_slice >> (56 - 8 * i));
+        }
+    }
+    return frame_size;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1351,6 +1561,272 @@ qov_result qov_decode_header(const uint8_t *data, size_t size, qov_header *out)
     return QOV_OK;
 }
 
+struct qov_decoder {
+    qov__dec d;
+    int is_yuv;
+    size_t pixel_bytes, uv_bytes;
+    uint8_t *img_rgba;      /* reused output image buffer */
+    int16_t *aud_pcm;       /* reused output audio buffer (interleaved) */
+    size_t aud_cap;         /* capacity in samples (total, not per channel) */
+};
+
+qov_result qov_decoder_new(const qov_header *hdr, qov_decoder **out)
+{
+    if (!hdr || !out) return QOV_ERR_PARAM;
+    if (hdr->width == 0 || hdr->height == 0 || hdr->fps_den == 0) return QOV_ERR_HEADER;
+    *out = NULL;
+
+    qov_decoder *dec = (qov_decoder *)qov__malloc(sizeof(qov_decoder));
+    if (!dec) return QOV_ERR_OOM;
+    memset(dec, 0, sizeof(*dec));
+
+    qov__dec *d = &dec->d;
+    d->hdr = *hdr;
+    dec->is_yuv = hdr->colorspace >= QOV_CS_YUV420 && hdr->colorspace <= QOV_CS_YUVA420;
+    d->y_size = (int)(hdr->width * hdr->height);
+    d->uv_w = (int)qov_chroma_w(hdr->colorspace, hdr->width);
+    d->uv_h = (int)qov_chroma_h(hdr->colorspace, hdr->height);
+    d->has_yuv_alpha = (hdr->flags & QOV_F_HAS_ALPHA) != 0 ||
+                       hdr->colorspace == QOV_CS_YUVA420;
+    dec->uv_bytes = (size_t)d->uv_w * d->uv_h;
+    dec->pixel_bytes = (size_t)hdr->width * hdr->height * 4;
+
+    d->prev_frame = qov__u8malloc(dec->pixel_bytes);
+    d->curr_frame = qov__u8malloc(dec->pixel_bytes);
+    if (dec->is_yuv) {
+        d->prev_y = qov__u8malloc((size_t)d->y_size);
+        d->prev_u = qov__u8malloc(dec->uv_bytes);
+        d->prev_v = qov__u8malloc(dec->uv_bytes);
+        d->curr_y = qov__u8malloc((size_t)d->y_size);
+        d->curr_u = qov__u8malloc(dec->uv_bytes);
+        d->curr_v = qov__u8malloc(dec->uv_bytes);
+        if (d->has_yuv_alpha) {
+            d->prev_a = qov__u8malloc((size_t)d->y_size);
+            d->curr_a = qov__u8malloc((size_t)d->y_size);
+        }
+    }
+    dec->img_rgba = qov__u8malloc(dec->pixel_bytes);
+    if (!d->prev_frame || !d->curr_frame || !dec->img_rgba ||
+        (dec->is_yuv && (!d->prev_y || !d->prev_u || !d->prev_v || !d->curr_y || !d->curr_u || !d->curr_v ||
+                        (d->has_yuv_alpha && (!d->prev_a || !d->curr_a))))) {
+        qov_decoder_free(dec);
+        return QOV_ERR_OOM;
+    }
+    qov_decoder_reset(dec);
+    *out = dec;
+    return QOV_OK;
+}
+
+qov_result qov_decoder_reset(qov_decoder *dec)
+{
+    if (!dec) return QOV_ERR_PARAM;
+    qov__dec *d = &dec->d;
+    memset(d->prev_frame, 0, dec->pixel_bytes);
+    memset(d->curr_frame, 0, dec->pixel_bytes);
+    if (dec->is_yuv) {
+        memset(d->prev_y, 0, (size_t)d->y_size);
+        memset(d->prev_u, 0, dec->uv_bytes);
+        memset(d->prev_v, 0, dec->uv_bytes);
+        memset(d->curr_y, 0, (size_t)d->y_size);
+        memset(d->curr_u, 0, dec->uv_bytes);
+        memset(d->curr_v, 0, dec->uv_bytes);
+        if (d->has_yuv_alpha) {
+            memset(d->prev_a, 0, (size_t)d->y_size);
+            memset(d->curr_a, 0, (size_t)d->y_size);
+        }
+    }
+    qov__dec_reset_rgb(d);
+    return QOV_OK;
+}
+
+void qov_decoder_free(qov_decoder *dec)
+{
+    if (!dec) return;
+    qov__dec *d = &dec->d;
+    qov__free(d->prev_frame);
+    qov__free(d->curr_frame);
+    qov__free(d->prev_y);
+    qov__free(d->prev_u);
+    qov__free(d->prev_v);
+    qov__free(d->prev_a);
+    qov__free(d->curr_y);
+    qov__free(d->curr_u);
+    qov__free(d->curr_v);
+    qov__free(d->curr_a);
+    qov__free(dec->img_rgba);
+    qov__free(dec->aud_pcm);
+    qov__free(dec);
+}
+
+static qov_result qov__dec_feed(qov_decoder *dec, uint8_t ctype, uint8_t cflags,
+                                const uint8_t *payload, size_t csize, uint32_t ts,
+                                qov_image *out_img, qov_audio *out_aud)
+{
+    if (out_img) memset(out_img, 0, sizeof(*out_img));
+    if (out_aud) memset(out_aud, 0, sizeof(*out_aud));
+    if (ctype == 0xFF) return QOV_OK;
+
+    qov__dec *d = &dec->d;
+    qov_header *hdr = &d->hdr;
+    const uint8_t *p = payload;
+    size_t payload_len = csize;
+    uint8_t *decomp = NULL;
+    qov_result r = QOV_OK;
+
+    if ((cflags & 0x10) && (ctype == 0x01 || ctype == 0x02 || ctype == 0x03)) {
+        if (csize < 4) return QOV_ERR_TRUNCATED;
+        uint32_t usz = qov_be32(p);
+        decomp = qov__u8malloc(usz);
+        if (!decomp) return QOV_ERR_OOM;
+        r = qov__lz4_decompress(p + 4, csize - 4, decomp, usz);
+        if (r != QOV_OK) { qov__free(decomp); return r; }
+        payload_len = usz;
+        p = decomp;
+    }
+
+    if (ctype == 0x10) {
+        /* AUDIO: one or more QOA frames back to back (mirrors src/qoa.ts:
+           LMS state reloads from each frame header) */
+        size_t pos = 0;
+        size_t total = 0;
+        int channels = 0;
+        while (pos + 8 <= payload_len) {
+            qov__qoa_lms lms[8];
+            channels = p[0];
+            if (channels <= 0 || channels > 8) { r = QOV_ERR_CORRUPT; break; }
+            uint32_t frame_size = ((uint32_t)p[pos + 6] << 8) | p[pos + 7];
+            if (frame_size < 8 || pos + frame_size > payload_len) { r = QOV_ERR_TRUNCATED; break; }
+            size_t need = total + 5120 * (size_t)channels;
+            if (need > dec->aud_cap) {
+                size_t ncap = dec->aud_cap ? dec->aud_cap : need;
+                while (ncap < need) ncap *= 2;
+                int16_t *np = (int16_t *)qov__realloc(dec->aud_pcm, ncap * sizeof(int16_t));
+                if (!np) { r = QOV_ERR_OOM; break; }
+                dec->aud_pcm = np;
+                dec->aud_cap = ncap;
+            }
+            size_t got = qov__qoa_decode_frame(p + pos, payload_len - pos, lms,
+                                               dec->aud_pcm + total);
+            if (!got) { r = QOV_ERR_CORRUPT; break; }
+            total += got * (size_t)channels;
+            pos += frame_size;
+        }
+        if (r == QOV_OK && out_aud) {
+            out_aud->samples = dec->aud_pcm;
+            out_aud->sample_count = channels > 0 ? total / (size_t)channels : 0;
+            out_aud->rate = hdr->audio_rate;
+            out_aud->channels = (uint8_t)hdr->audio_channels;
+        }
+        if (decomp) qov__free(decomp);
+        return r;
+    }
+
+    if (ctype == 0x01 || ctype == 0x02) {
+        size_t payload_len_v = payload_len;
+        int has_motion = (cflags & 0x02) != 0;
+
+        if (dec->is_yuv) {
+            size_t pos = 0;
+            qov__mv mv;
+            int have_mv = 0;
+            if (has_motion) {
+                qov__mv_parse(p, payload_len_v, &pos, (int)hdr->width, (int)hdr->height, &mv);
+                have_mv = 1;
+            }
+            uint8_t *ref_y = d->prev_y, *ref_u = d->prev_u, *ref_v = d->prev_v, *ref_a = d->prev_a;
+            uint8_t *comp_y = NULL, *comp_u = NULL, *comp_v = NULL, *comp_a = NULL;
+            if (have_mv) {
+                comp_y = qov__u8malloc((size_t)d->y_size);
+                comp_u = qov__u8malloc(dec->uv_bytes);
+                comp_v = qov__u8malloc(dec->uv_bytes);
+                qov__mv_compensate_plane(d->prev_y, (int)hdr->width, (int)hdr->height, &mv, comp_y, 1, 1, 0, 0);
+                qov__mv_compensate_plane(d->prev_u, d->uv_w, d->uv_h, &mv, comp_u, 2, 2, 1, 1);
+                qov__mv_compensate_plane(d->prev_v, d->uv_w, d->uv_h, &mv, comp_v, 2, 2, 1, 1);
+                ref_y = comp_y; ref_u = comp_u; ref_v = comp_v;
+                if (d->has_yuv_alpha && d->prev_a) {
+                    comp_a = qov__u8malloc((size_t)d->y_size);
+                    qov__mv_compensate_plane(d->prev_a, (int)hdr->width, (int)hdr->height, &mv, comp_a, 1, 1, 0, 0);
+                    ref_a = comp_a;
+                }
+            }
+            if (ctype == 0x01) {
+                qov__dec_yuv_plane_keyframe(p, payload_len_v, &pos, d->curr_y, (size_t)d->y_size);
+                qov__dec_yuv_plane_keyframe(p, payload_len_v, &pos, d->curr_u, dec->uv_bytes);
+                qov__dec_yuv_plane_keyframe(p, payload_len_v, &pos, d->curr_v, dec->uv_bytes);
+                if (d->has_yuv_alpha)
+                    qov__dec_yuv_plane_keyframe(p, payload_len_v, &pos, d->curr_a, (size_t)d->y_size);
+            } else if (cflags & 0x20) {
+                /* DCT P-frame: seed from (compensated) reference, decode residuals */
+                uint8_t qp = hdr->dct_qp ? hdr->dct_qp : 20;
+                memcpy(d->curr_y, ref_y, (size_t)d->y_size);
+                memcpy(d->curr_u, ref_u, dec->uv_bytes);
+                memcpy(d->curr_v, ref_v, dec->uv_bytes);
+                if (d->has_yuv_alpha && ref_a) memcpy(d->curr_a, ref_a, (size_t)d->y_size);
+                qov__dec_plane_dct(p, payload_len_v, &pos, d->curr_y, (int)hdr->width, (int)hdr->height, qov_quant_luma, qp, 0x50);
+                qov__dec_plane_dct(p, payload_len_v, &pos, d->curr_u, d->uv_w, d->uv_h, qov_quant_chroma, qp, 0x51);
+                qov__dec_plane_dct(p, payload_len_v, &pos, d->curr_v, d->uv_w, d->uv_h, qov_quant_chroma, qp, 0x51);
+                if (d->has_yuv_alpha && ref_a)
+                    qov__dec_plane_dct(p, payload_len_v, &pos, d->curr_a, (int)hdr->width, (int)hdr->height, qov_quant_luma, qp, 0x50);
+            } else {
+                qov__dec_yuv_plane_temporal(p, payload_len_v, &pos, d->curr_y, ref_y, (size_t)d->y_size);
+                qov__dec_yuv_plane_temporal(p, payload_len_v, &pos, d->curr_u, ref_u, dec->uv_bytes);
+                qov__dec_yuv_plane_temporal(p, payload_len_v, &pos, d->curr_v, ref_v, dec->uv_bytes);
+                if (d->has_yuv_alpha && ref_a)
+                    qov__dec_yuv_plane_temporal(p, payload_len_v, &pos, d->curr_a, ref_a, (size_t)d->y_size);
+            }
+            if (have_mv) qov__mv_free(&mv);
+            if (comp_y) qov__free(comp_y);
+            if (comp_u) qov__free(comp_u);
+            if (comp_v) qov__free(comp_v);
+            if (comp_a) qov__free(comp_a);
+        } else if (ctype == 0x01) {
+            qov__dec_reset_rgb(d);
+            qov__dec_rgb_keyframe(d, p, payload_len_v);
+        } else {
+            qov__dec_rgb_pframe(d, p, payload_len_v, has_motion);
+        }
+
+        /* swap refs (RGB decoders swap prev/curr internally) */
+        if (dec->is_yuv) {
+            uint8_t *t;
+            t = d->prev_y; d->prev_y = d->curr_y; d->curr_y = t;
+            t = d->prev_u; d->prev_u = d->curr_u; d->curr_u = t;
+            t = d->prev_v; d->prev_v = d->curr_v; d->curr_v = t;
+            if (d->has_yuv_alpha) {
+                t = d->prev_a; d->prev_a = d->curr_a; d->curr_a = t;
+            }
+        }
+
+        /* emit frame into the reused buffer */
+        if (dec->is_yuv)
+            qov_yuv_planes_to_rgba(d->prev_y, d->prev_u, d->prev_v,
+                                   d->has_yuv_alpha ? d->prev_a : NULL,
+                                   hdr->width, hdr->height, hdr->colorspace, dec->img_rgba);
+        else
+            memcpy(dec->img_rgba, d->prev_frame, dec->pixel_bytes);
+        if (out_img) {
+            out_img->rgba = dec->img_rgba;
+            out_img->width = hdr->width;
+            out_img->height = hdr->height;
+            out_img->timestamp_us = ts;
+            out_img->keyframe = (ctype == 0x01);
+        }
+    }
+    /* SYNC(0x00), BFRAME(0x03), INDEX(0xF0), unknown: skip */
+
+    if (decomp) qov__free(decomp);
+    return r;
+}
+
+qov_result qov_decoder_feed(qov_decoder *dec, uint8_t chunk_type, uint8_t chunk_flags,
+                            const uint8_t *payload, size_t size, uint32_t timestamp_us,
+                            qov_image *out_img, qov_audio *out_aud)
+{
+    if (!dec || (!payload && size > 0)) return QOV_ERR_PARAM;
+    return qov__dec_feed(dec, chunk_type, chunk_flags, payload, size, timestamp_us,
+                         out_img, out_aud);
+}
+
 static qov_result qov__decode_impl(const uint8_t *data, size_t size,
                                    qov_image **frames_out, size_t *count_out,
                                    qov_decode_stats *stats, size_t max_frames)
@@ -1363,147 +1839,31 @@ static qov_result qov__decode_impl(const uint8_t *data, size_t size,
     qov_result r = qov_decode_header(data, size, &hdr);
     if (r != QOV_OK) return r;
 
-    qov__dec d;
-    memset(&d, 0, sizeof(d));
-    d.hdr = hdr;
-    d.data = data;
-    d.size = size;
-    d.use32 = hdr.version >= 2;
-    d.y_size = (int)(hdr.width * hdr.height);
-    d.uv_w = (int)qov_chroma_w(hdr.colorspace, hdr.width);
-    d.uv_h = (int)qov_chroma_h(hdr.colorspace, hdr.height);
-    d.has_yuv_alpha = (hdr.flags & QOV_F_HAS_ALPHA) != 0 ||
-                      hdr.colorspace == QOV_CS_YUVA420;
-
-    size_t pixel_bytes = (size_t)hdr.width * hdr.height * 4;
-    size_t uv_bytes = (size_t)d.uv_w * d.uv_h;
-    d.prev_frame = qov__u8malloc(pixel_bytes);
-    d.curr_frame = qov__u8malloc(pixel_bytes);
-    int is_yuv = hdr.colorspace >= QOV_CS_YUV420 && hdr.colorspace <= QOV_CS_YUVA420;
-    if (is_yuv) {
-        d.prev_y = qov__u8malloc((size_t)d.y_size);
-        d.prev_u = qov__u8malloc(uv_bytes);
-        d.prev_v = qov__u8malloc(uv_bytes);
-        d.curr_y = qov__u8malloc((size_t)d.y_size);
-        d.curr_u = qov__u8malloc(uv_bytes);
-        d.curr_v = qov__u8malloc(uv_bytes);
-        if (d.has_yuv_alpha) {
-            d.prev_a = qov__u8malloc((size_t)d.y_size);
-            d.curr_a = qov__u8malloc((size_t)d.y_size);
-        }
-    }
-    if (!d.prev_frame || !d.curr_frame ||
-        (is_yuv && (!d.prev_y || !d.prev_u || !d.prev_v || !d.curr_y || !d.curr_u || !d.curr_v ||
-                    (d.has_yuv_alpha && (!d.prev_a || !d.curr_a))))) {
-        return QOV_ERR_OOM;
-    }
+    qov_decoder *dec = NULL;
+    r = qov_decoder_new(&hdr, &dec);
+    if (r != QOV_OK) return r;
 
     qov_image *frames = NULL;
     size_t count = 0, cap = 0;
-    size_t chunk_hdr = d.use32 ? 10 : 8;
+    size_t chunk_hdr = (hdr.version >= 2) ? 10 : 8;
 
     size_t pos = hdr.header_size;
     while (pos + chunk_hdr <= size && count < max_frames) {
         uint8_t ctype = data[pos], cflags = data[pos + 1];
-        uint32_t csize = d.use32 ? qov_be32(data + pos + 2) : (uint32_t)((data[pos + 2] << 8) | data[pos + 3]);
-        uint32_t ts = qov_be32(data + pos + (d.use32 ? 6 : 4));
+        uint32_t csize = (hdr.version >= 2) ? qov_be32(data + pos + 2) : (uint32_t)((data[pos + 2] << 8) | data[pos + 3]);
+        uint32_t ts = qov_be32(data + pos + ((hdr.version >= 2) ? 6 : 4));
 
         if (csize > size || pos + chunk_hdr + csize > size) { r = QOV_ERR_TRUNCATED; break; }
         const uint8_t *payload = data + pos + chunk_hdr;
 
-        uint8_t *decomp = NULL;
-        if ((cflags & 0x10) && (ctype == 0x01 || ctype == 0x02 || ctype == 0x03)) {
-            if (csize < 4) { r = QOV_ERR_TRUNCATED; break; }
-            uint32_t usz = qov_be32(payload);
-            decomp = qov__u8malloc(usz);
-            if (!decomp) { r = QOV_ERR_OOM; break; }
-            r = qov__lz4_decompress(payload + 4, csize - 4, decomp, usz);
-            if (r != QOV_OK) { qov__free(decomp); break; }
-            payload = decomp;
-        }
+        if (ctype == 0xFF) break;
 
-        if (ctype == 0xFF) {
-            if (decomp) qov__free(decomp);
-            break;
-        } else if (ctype == 0x10) {
-            if (stats) stats->audio_chunks++;
-        } else if (ctype == 0x01 || ctype == 0x02) {
-            size_t payload_len = decomp ? (size_t)qov_be32(payload - 4) : (size_t)csize;
-            int has_motion = (cflags & 0x02) != 0;
+        qov_image img;
+        r = qov__dec_feed(dec, ctype, cflags, payload, csize, ts, &img, NULL);
+        if (r != QOV_OK) break;
+        if (ctype == 0x10 && stats) stats->audio_chunks++;
 
-            if (is_yuv) {
-                size_t p = 0;
-                qov__mv mv;
-                int have_mv = 0;
-                if (has_motion) {
-                    qov__mv_parse(payload, payload_len, &p, (int)hdr.width, (int)hdr.height, &mv);
-                    have_mv = 1;
-                }
-                uint8_t *ref_y = d.prev_y, *ref_u = d.prev_u, *ref_v = d.prev_v, *ref_a = d.prev_a;
-                uint8_t *comp_y = NULL, *comp_u = NULL, *comp_v = NULL, *comp_a = NULL;
-                if (have_mv) {
-                    comp_y = qov__u8malloc((size_t)d.y_size);
-                    comp_u = qov__u8malloc(uv_bytes);
-                    comp_v = qov__u8malloc(uv_bytes);
-                    qov__mv_compensate_plane(d.prev_y, (int)hdr.width, (int)hdr.height, &mv, comp_y, 1, 1, 0, 0);
-                    qov__mv_compensate_plane(d.prev_u, d.uv_w, d.uv_h, &mv, comp_u, 2, 2, 1, 1);
-                    qov__mv_compensate_plane(d.prev_v, d.uv_w, d.uv_h, &mv, comp_v, 2, 2, 1, 1);
-                    ref_y = comp_y; ref_u = comp_u; ref_v = comp_v;
-                    if (d.has_yuv_alpha && d.prev_a) {
-                        comp_a = qov__u8malloc((size_t)d.y_size);
-                        qov__mv_compensate_plane(d.prev_a, (int)hdr.width, (int)hdr.height, &mv, comp_a, 1, 1, 0, 0);
-                        ref_a = comp_a;
-                    }
-                }
-                if (ctype == 0x01) {
-                    qov__dec_yuv_plane_keyframe(payload, payload_len, &p, d.curr_y, (size_t)d.y_size);
-                    qov__dec_yuv_plane_keyframe(payload, payload_len, &p, d.curr_u, uv_bytes);
-                    qov__dec_yuv_plane_keyframe(payload, payload_len, &p, d.curr_v, uv_bytes);
-                    if (d.has_yuv_alpha)
-                        qov__dec_yuv_plane_keyframe(payload, payload_len, &p, d.curr_a, (size_t)d.y_size);
-                } else if (cflags & 0x20) {
-                    /* DCT P-frame: seed from (compensated) reference, decode residuals */
-                    uint8_t qp = hdr.dct_qp ? hdr.dct_qp : 20;
-                    memcpy(d.curr_y, ref_y, (size_t)d.y_size);
-                    memcpy(d.curr_u, ref_u, uv_bytes);
-                    memcpy(d.curr_v, ref_v, uv_bytes);
-                    if (d.has_yuv_alpha && ref_a) memcpy(d.curr_a, ref_a, (size_t)d.y_size);
-                    qov__dec_plane_dct(payload, payload_len, &p, d.curr_y, (int)hdr.width, (int)hdr.height, qov_quant_luma, qp, 0x50);
-                    qov__dec_plane_dct(payload, payload_len, &p, d.curr_u, d.uv_w, d.uv_h, qov_quant_chroma, qp, 0x51);
-                    qov__dec_plane_dct(payload, payload_len, &p, d.curr_v, d.uv_w, d.uv_h, qov_quant_chroma, qp, 0x51);
-                    if (d.has_yuv_alpha && ref_a)
-                        qov__dec_plane_dct(payload, payload_len, &p, d.curr_a, (int)hdr.width, (int)hdr.height, qov_quant_luma, qp, 0x50);
-                } else {
-                    qov__dec_yuv_plane_temporal(payload, payload_len, &p, d.curr_y, ref_y, (size_t)d.y_size);
-                    qov__dec_yuv_plane_temporal(payload, payload_len, &p, d.curr_u, ref_u, uv_bytes);
-                    qov__dec_yuv_plane_temporal(payload, payload_len, &p, d.curr_v, ref_v, uv_bytes);
-                    if (d.has_yuv_alpha && ref_a)
-                        qov__dec_yuv_plane_temporal(payload, payload_len, &p, d.curr_a, ref_a, (size_t)d.y_size);
-                }
-                if (have_mv) qov__mv_free(&mv);
-                if (comp_y) qov__free(comp_y);
-                if (comp_u) qov__free(comp_u);
-                if (comp_v) qov__free(comp_v);
-                if (comp_a) qov__free(comp_a);
-            } else if (ctype == 0x01) {
-                qov__dec_reset_rgb(&d);
-                qov__dec_rgb_keyframe(&d, payload, payload_len);
-            } else {
-                qov__dec_rgb_pframe(&d, payload, payload_len, has_motion);
-            }
-
-            /* swap refs */
-            if (is_yuv) {
-                uint8_t *t;
-                t = d.prev_y; d.prev_y = d.curr_y; d.curr_y = t;
-                t = d.prev_u; d.prev_u = d.curr_u; d.curr_u = t;
-                t = d.prev_v; d.prev_v = d.curr_v; d.curr_v = t;
-                if (d.has_yuv_alpha) {
-                    t = d.prev_a; d.prev_a = d.curr_a; d.curr_a = t;
-                }
-            }
-
-            /* emit frame */
+        if (ctype == 0x01 || ctype == 0x02) {
             if (count == cap) {
                 size_t ncap = cap ? cap * 2 : 16;
                 qov_image *nf = (qov_image *)qov__realloc(frames, sizeof(qov_image) * ncap);
@@ -1511,37 +1871,20 @@ static qov_result qov__decode_impl(const uint8_t *data, size_t size,
                 frames = nf;
                 cap = ncap;
             }
-            frames[count].rgba = qov__u8malloc(pixel_bytes);
+            frames[count].rgba = qov__u8malloc(dec->pixel_bytes);
             if (!frames[count].rgba) { r = QOV_ERR_OOM; break; }
-            if (is_yuv)
-                qov_yuv_planes_to_rgba(d.prev_y, d.prev_u, d.prev_v,
-                                       d.has_yuv_alpha ? d.prev_a : NULL,
-                                       hdr.width, hdr.height, hdr.colorspace, frames[count].rgba);
-            else
-                memcpy(frames[count].rgba, d.prev_frame, pixel_bytes);
-            frames[count].width = hdr.width;
-            frames[count].height = hdr.height;
-            frames[count].timestamp_us = ts;
-            frames[count].keyframe = (ctype == 0x01);
+            memcpy(frames[count].rgba, img.rgba, dec->pixel_bytes);
+            frames[count].width = img.width;
+            frames[count].height = img.height;
+            frames[count].timestamp_us = img.timestamp_us;
+            frames[count].keyframe = img.keyframe;
             count++;
             if (stats) stats->frame_count = count;
         }
-        /* SYNC(0x00), BFRAME(0x03), INDEX(0xF0), unknown: skip */
-
-        if (decomp) qov__free(decomp);
         pos += chunk_hdr + csize;
     }
 
-    qov__free(d.prev_frame);
-    qov__free(d.curr_frame);
-    qov__free(d.prev_y);
-    qov__free(d.prev_u);
-    qov__free(d.prev_v);
-    qov__free(d.prev_a);
-    qov__free(d.curr_y);
-    qov__free(d.curr_u);
-    qov__free(d.curr_v);
-    qov__free(d.curr_a);
+    qov_decoder_free(dec);
 
     if (r != QOV_OK) {
         qov_frames_free(frames, count);
