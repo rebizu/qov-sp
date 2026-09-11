@@ -162,6 +162,11 @@ qov_result qov_encode_pframe(qov_encoder *e, const uint8_t *rgba, uint64_t times
    compressed). Requires audio_channels/audio_rate in the encode params. */
 qov_result qov_encode_audio(qov_encoder *e, const int16_t *samples,
                             size_t total_samples, uint64_t timestamp_us);
+/* Takes the chunk bytes encoded so far (everything after the file header)
+   out of the internal buffer, so an incremental consumer can stream them.
+   The encoder keeps running; qov_encode_finish still writes the index and
+   END chunk. *data_out is NULL when nothing is pending (QOV_OK). */
+qov_result qov_encoder_take_chunks(qov_encoder *e, uint8_t **data_out, size_t *size_out);
 /* Writes the index table + END chunk, patches the total frame count and
    hands ownership of the buffer to the caller (free with qov_free()).
    The encoder is freed; NULL inputs return QOV_ERR_PARAM. */
@@ -2655,6 +2660,25 @@ qov_result qov_encode_audio(qov_encoder *e, const int16_t *samples,
     qov__buf_be32(&e->out, (uint32_t)frame_len);
     qov__buf_be32(&e->out, ts);
     qov__buf_bytes(&e->out, buf, frame_len);
+    return QOV_OK;
+}
+
+qov_result qov_encoder_take_chunks(qov_encoder *e, uint8_t **data_out, size_t *size_out)
+{
+    if (!e || !data_out || !size_out) return QOV_ERR_PARAM;
+    *data_out = NULL;
+    *size_out = 0;
+    size_t hdr_size = e->lossy ? 32 : 24;
+    if (e->out.size <= hdr_size) return QOV_OK;
+
+    size_t chunk_len = e->out.size - hdr_size;
+    uint8_t *chunks = qov__u8malloc(chunk_len);
+    if (!chunks) return QOV_ERR_OOM;
+    memcpy(chunks, e->out.data + hdr_size, chunk_len);
+    memmove(e->out.data, e->out.data + hdr_size, hdr_size);
+    e->out.size = hdr_size;
+    *data_out = chunks;
+    *size_out = chunk_len;
     return QOV_OK;
 }
 
