@@ -20,6 +20,8 @@ public class QovDecoder
     private byte[] _prevYPlane, _currYPlane;
     private byte[] _prevUPlane, _currUPlane;
     private byte[] _prevVPlane, _currVPlane;
+    private byte[]? _prevAPlane, _currAPlane;
+    private bool _hasYuvAlpha;
 
     public QovDecoder(Stream input) : base()
     {
@@ -94,17 +96,22 @@ public class QovDecoder
 
         // Allocate YUV buffers if needed
         bool isYuv = colorspace >= QovTypes.ColorspaceYuv420 && colorspace <= QovTypes.ColorspaceYuva420;
+        _hasYuvAlpha = (flags & QovTypes.FlagHasAlpha) != 0 || colorspace == QovTypes.ColorspaceYuva420;
         if (isYuv)
         {
             int ySize = width * height;
             int uvW = (colorspace == QovTypes.ColorspaceYuv444) ? width : (width + 1) / 2;
-            int uvH = (colorspace == QovTypes.ColorspaceYuv444) ? height : 
+            int uvH = (colorspace == QovTypes.ColorspaceYuv444) ? height :
                       (colorspace == QovTypes.ColorspaceYuv422) ? height : (height + 1) / 2;
             int uvSize = uvW * uvH;
 
             _prevYPlane = new byte[ySize]; _currYPlane = new byte[ySize];
             _prevUPlane = new byte[uvSize]; _currUPlane = new byte[uvSize];
             _prevVPlane = new byte[uvSize]; _currVPlane = new byte[uvSize];
+            if (_hasYuvAlpha)
+            {
+                _prevAPlane = new byte[ySize]; _currAPlane = new byte[ySize];
+            }
         }
         
         if (audioChannels > 0)
@@ -139,6 +146,8 @@ public class QovDecoder
         if (_currUPlane != null) Array.Clear(_currUPlane, 0, _currUPlane.Length);
         if (_prevVPlane != null) Array.Clear(_prevVPlane, 0, _prevVPlane.Length);
         if (_currVPlane != null) Array.Clear(_currVPlane, 0, _currVPlane.Length);
+        if (_prevAPlane != null) Array.Clear(_prevAPlane, 0, _prevAPlane.Length);
+        if (_currAPlane != null) Array.Clear(_currAPlane, 0, _currAPlane.Length);
     }
 
     public IEnumerable<QovDecodedChunk> Scan()
@@ -324,6 +333,37 @@ public class QovDecoder
         }
     }
 
+    // Chroma plane dims per header colorspace (spec: 444→w×h, 422→⌈w/2⌉×h, else ⌈w/2⌉×⌈h/2⌉)
+    private (int W, int H) ChromaDims()
+    {
+        return _header.Colorspace switch
+        {
+            QovTypes.ColorspaceYuv444 => (_header.Width, _header.Height),
+            QovTypes.ColorspaceYuv422 => ((_header.Width + 1) / 2, _header.Height),
+            _ => ((_header.Width + 1) / 2, (_header.Height + 1) / 2),
+        };
+    }
+
+    private void ConvertCurrYuvPlanesToRgba()
+    {
+        byte[]? a = _hasYuvAlpha ? _currAPlane : null;
+        switch (_header.Colorspace)
+        {
+            case QovTypes.ColorspaceYuv444:
+                if (a != null) ColorConversion.Yuv444ToRgbaWithAlpha(_currYPlane, _currUPlane, _currVPlane, a, _header.Width, _header.Height, _currFrame);
+                else ColorConversion.Yuv444ToRgba(_currYPlane, _currUPlane, _currVPlane, _header.Width, _header.Height, _currFrame);
+                break;
+            case QovTypes.ColorspaceYuv422:
+                if (a != null) ColorConversion.Yuv422ToRgbaWithAlpha(_currYPlane, _currUPlane, _currVPlane, a, _header.Width, _header.Height, _currFrame);
+                else ColorConversion.Yuv422ToRgba(_currYPlane, _currUPlane, _currVPlane, _header.Width, _header.Height, _currFrame);
+                break;
+            default:
+                if (a != null) ColorConversion.Yuv420ToRgbaWithAlpha(_currYPlane, _currUPlane, _currVPlane, a, _header.Width, _header.Height, _currFrame);
+                else ColorConversion.Yuv420ToRgba(_currYPlane, _currUPlane, _currVPlane, _header.Width, _header.Height, _currFrame);
+                break;
+        }
+    }
+
     private QovFrame DecodeKeyframe(byte chunkFlags, uint timestamp, uint chunkSize)
     {
         bool isYuvChunk = (chunkFlags & QovTypes.ChunkFlagYuv) != 0;
@@ -343,9 +383,13 @@ public class QovDecoder
         {
             int yEnd = DecodeYuvPlane(frameData, 0, _currYPlane);
             int uEnd = DecodeYuvPlane(frameData, yEnd, _currUPlane);
-            DecodeYuvPlane(frameData, uEnd, _currVPlane);
+            int vEnd = DecodeYuvPlane(frameData, uEnd, _currVPlane);
+            if (_hasYuvAlpha && _currAPlane != null)
+            {
+                DecodeYuvPlane(frameData, vEnd, _currAPlane);
+            }
 
-            ColorConversion.Yuv420ToRgba(_currYPlane, _currUPlane, _currVPlane, _header.Width, _header.Height, _currFrame);
+            ConvertCurrYuvPlanesToRgba();
             SwapYuvPlanes();
         }
         else
@@ -392,31 +436,43 @@ public class QovDecoder
         {
             // Decode temporal YUV planes using persistent previous buffer as reference
             int pos = 0;
-            
+
             if ((chunkFlags & QovTypes.ChunkFlagDctBlocks) != 0)
             {
                 // Init input planes from previous reference for DCT
                 Array.Copy(_prevYPlane, _currYPlane, _prevYPlane.Length);
                 Array.Copy(_prevUPlane, _currUPlane, _prevUPlane.Length);
                 Array.Copy(_prevVPlane, _currVPlane, _prevVPlane.Length);
+                if (_hasYuvAlpha && _currAPlane != null && _prevAPlane != null)
+                {
+                    Array.Copy(_prevAPlane, _currAPlane, _prevAPlane.Length);
+                }
 
                 float[] blockBuf = new float[64];
-                int uvW = (_header.Width + 1) / 2;
-                int uvH = (_header.Height + 1) / 2;
+                (int uvW, int uvH) = ChromaDims();
 
                 pos = DecodePlaneDct(frameData, pos, _currYPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf);
                 pos = DecodePlaneDct(frameData, pos, _currUPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf);
                 pos = DecodePlaneDct(frameData, pos, _currVPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf);
+                if (_hasYuvAlpha && _currAPlane != null && _prevAPlane != null)
+                {
+                    // Alpha is coded with luma dimensions and the luma quant table
+                    pos = DecodePlaneDct(frameData, pos, _currAPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf);
+                }
             }
             else
             {
                 pos = DecodeYuvPlaneTemporal(frameData, pos, _currYPlane, _prevYPlane);
                 pos = DecodeYuvPlaneTemporal(frameData, pos, _currUPlane, _prevUPlane);
                 pos = DecodeYuvPlaneTemporal(frameData, pos, _currVPlane, _prevVPlane);
+                if (_hasYuvAlpha && _currAPlane != null && _prevAPlane != null)
+                {
+                    pos = DecodeYuvPlaneTemporal(frameData, pos, _currAPlane, _prevAPlane);
+                }
             }
 
             // Convert decoded YUV back to RGBA
-            ColorConversion.Yuv420ToRgba(_currYPlane, _currUPlane, _currVPlane, _header.Width, _header.Height, _currFrame);
+            ConvertCurrYuvPlanesToRgba();
             SwapYuvPlanes();
         }
         else
@@ -748,6 +804,10 @@ public class QovDecoder
         byte[] tempY = _prevYPlane; _prevYPlane = _currYPlane; _currYPlane = tempY;
         byte[] tempU = _prevUPlane; _prevUPlane = _currUPlane; _currUPlane = tempU;
         byte[] tempV = _prevVPlane; _prevVPlane = _currVPlane; _currVPlane = tempV;
+        if (_prevAPlane != null && _currAPlane != null)
+        {
+            byte[] tempA = _prevAPlane; _prevAPlane = _currAPlane; _currAPlane = tempA;
+        }
     }
 
     private void SwapFrames()

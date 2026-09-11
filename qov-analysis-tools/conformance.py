@@ -144,7 +144,7 @@ def main() -> int:
                 have_cs = False
 
     # C# encoder-supported subset: no motion, no audio, RGB-family or 420-family
-    CS_ENCODE_OK = {"srgb", "srgba", "linear", "linear_a", "yuv420", "yuva420"}
+    CS_ENCODE_OK = {"srgb", "srgba", "linear", "linear_a", "yuv420", "yuv422", "yuv444", "yuva420"}
 
     results: dict = {}
     stale_xfail = []

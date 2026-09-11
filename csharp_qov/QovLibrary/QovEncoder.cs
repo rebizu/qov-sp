@@ -19,6 +19,7 @@ public class QovEncoder
     private int _frameCount;
     private bool _hasPrevFrame;
     private readonly bool _isYuvMode;
+    private readonly bool _hasAlpha;
     private readonly bool _useCompression;
     private readonly QoaEncoder? _qoaEncoder;
     private bool _isFinished;
@@ -63,17 +64,19 @@ public class QovEncoder
         _hasPrevFrame = false;
  
         _isYuvMode = colorspace >= QovTypes.ColorspaceYuv420;
+        _hasAlpha = (flags & QovTypes.FlagHasAlpha) != 0 || colorspace == QovTypes.ColorspaceYuva420;
 
         if (_isYuvMode)
         {
             int pixelCount = width * height;
-            int uvWidth = (width + 1) / 2;
-            int uvHeight = (height + 1) / 2;
+            int uvWidth = (colorspace == QovTypes.ColorspaceYuv444) ? width : (width + 1) / 2;
+            int uvHeight = (colorspace == QovTypes.ColorspaceYuv444) ? height
+                         : (colorspace == QovTypes.ColorspaceYuv422) ? height : (height + 1) / 2;
             int uvSize = uvWidth * uvHeight;
             _prevYPlane = new byte[pixelCount];
             _prevUPlane = new byte[uvSize];
             _prevVPlane = new byte[uvSize];
-            if (colorspace == QovTypes.ColorspaceYuva420)
+            if (_hasAlpha)
             {
                 _prevAPlane = new byte[pixelCount];
             }
@@ -289,6 +292,50 @@ public class QovEncoder
         WriteChunk(QovTypes.ChunkTypeKeyframe, 0, timestamp, frameData, true);
     }
 
+    // Chroma plane dims per header colorspace (spec: 444→w×h, 422→⌈w/2⌉×h, else ⌈w/2⌉×⌈h/2⌉)
+    private (int W, int H) ChromaDims()
+    {
+        return _header.Colorspace switch
+        {
+            QovTypes.ColorspaceYuv444 => (_header.Width, _header.Height),
+            QovTypes.ColorspaceYuv422 => ((_header.Width + 1) / 2, _header.Height),
+            _ => ((_header.Width + 1) / 2, (_header.Height + 1) / 2),
+        };
+    }
+
+    private void RgbaToYuvPlanes(ReadOnlySpan<byte> pixels, int width, int height,
+        out byte[] yPlane, out byte[] uPlane, out byte[] vPlane)
+    {
+        switch (_header.Colorspace)
+        {
+            case QovTypes.ColorspaceYuv444:
+                ColorConversion.RgbaToYuv444(pixels, width, height, out yPlane, out uPlane, out vPlane);
+                break;
+            case QovTypes.ColorspaceYuv422:
+                ColorConversion.RgbaToYuv422(pixels, width, height, out yPlane, out uPlane, out vPlane);
+                break;
+            default:
+                ColorConversion.RgbaToYuv420(pixels, width, height, out yPlane, out uPlane, out vPlane);
+                break;
+        }
+    }
+
+    private void YuvPlanesToRgba(byte[] yPlane, byte[] uPlane, byte[] vPlane, Span<byte> output)
+    {
+        switch (_header.Colorspace)
+        {
+            case QovTypes.ColorspaceYuv444:
+                ColorConversion.Yuv444ToRgba(yPlane, uPlane, vPlane, _header.Width, _header.Height, output);
+                break;
+            case QovTypes.ColorspaceYuv422:
+                ColorConversion.Yuv422ToRgba(yPlane, uPlane, vPlane, _header.Width, _header.Height, output);
+                break;
+            default:
+                ColorConversion.Yuv420ToRgba(yPlane, uPlane, vPlane, _header.Width, _header.Height, output);
+                break;
+        }
+    }
+
     private void EncodeYuvKeyframe(ReadOnlySpan<byte> pixels, uint timestamp)
     {
         // For Keyframe, we just store original.
@@ -311,8 +358,7 @@ public class QovEncoder
 
         WriteSync(frameNumber, timestamp);
 
-        ColorConversion.RgbaToYuv420(pixels, width, height,
-            out byte[] yPlane, out byte[] uPlane, out byte[] vPlane);
+        RgbaToYuvPlanes(pixels, width, height, out byte[] yPlane, out byte[] uPlane, out byte[] vPlane);
 
         // Store planes for P-frame reference
         yPlane.AsSpan().CopyTo(_prevYPlane.AsSpan()!);
@@ -489,8 +535,7 @@ public class QovEncoder
         int height = _header.Height;
         bool useDct = (_header.Flags & QovTypes.FlagDctEnabled) != 0;
 
-        ColorConversion.RgbaToYuv420(pixels, width, height,
-            out byte[] yPlane, out byte[] uPlane, out byte[] vPlane);
+        RgbaToYuvPlanes(pixels, width, height, out byte[] yPlane, out byte[] uPlane, out byte[] vPlane);
 
         byte[]? aPlane = null;
         if (_prevAPlane != null)
@@ -510,19 +555,16 @@ public class QovEncoder
             byte[] nextV = new byte[vPlane.Length];
 
             EncodePlaneDct(yPlane, _prevYPlane!, nextY, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter);
-            
-            // Chroma subsampling dims
-            int uvW = (width + 1) / 2;
-            int uvH = (height + 1) / 2;
-            
+
+            // Chroma subsampling dims per header colorspace
+            (int uvW, int uvH) = ChromaDims();
+
             EncodePlaneDct(uPlane, _prevUPlane!, nextU, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter);
             EncodePlaneDct(vPlane, _prevVPlane!, nextV, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter);
 
             if (aPlane != null && _prevAPlane != null)
             {
-                // DCT for alpha? Specification usually treats alpha as a Y plane.
-                // For simplicity, we just use Keyframe encoding for alpha in P-frames if not implemented yet,
-                // or we skip for now. Lossless DPCM for alpha is safer.
+                // Alpha is coded as a luma table plane (spec v3.2 §3.4.2)
                 byte[] nextA = new byte[aPlane.Length];
                 EncodePlaneDct(aPlane, _prevAPlane, nextA, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter);
                 nextA.AsSpan().CopyTo(_prevAPlane.AsSpan());
@@ -534,7 +576,7 @@ public class QovEncoder
             nextV.AsSpan().CopyTo(_prevVPlane.AsSpan()!);
 
             // Reconstruct _prevFrame from nextY/U/V to avoid drift (for UI preview if needed)
-            ColorConversion.Yuv420ToRgba(nextY, nextU, nextV, width, height, _prevFrame);
+            YuvPlanesToRgba(nextY, nextU, nextV, _prevFrame);
 
             // Write end marker
             for (int i = 0; i < 7; i++) tempWriter.Write((byte)0);

@@ -63,8 +63,9 @@ public static class ColorConversion
                             byte b = pixels[idx + 2];
 
                             double yVal = yPlane[srcY * width + srcX];
-                            double u = -0.169 * r - 0.331 * g + 0.500 * b + 128;
-                            double v = 0.500 * r - 0.419 * g - 0.081 * b + 128;
+                            // TS rgbToYuv rounds and clamps u/v per pixel BEFORE weighting
+                            int u = Clamp(JsRound(-0.169 * r - 0.331 * g + 0.500 * b + 128), 0, 255);
+                            int v = Clamp(JsRound(0.500 * r - 0.419 * g - 0.081 * b + 128), 0, 255);
 
                             // Weight by luminance: darker pixels contribute less to chroma
                             double weight = yVal + 16;
@@ -185,8 +186,9 @@ public static class ColorConversion
                         byte b = pixels[idx + 2];
 
                         double yVal = yPlane[py * width + srcX];
-                        double u = -0.169 * r - 0.331 * g + 0.500 * b + 128;
-                        double v = 0.500 * r - 0.419 * g - 0.081 * b + 128;
+                        // TS rgbToYuv rounds and clamps u/v per pixel BEFORE weighting
+                        int u = Clamp(JsRound(-0.169 * r - 0.331 * g + 0.500 * b + 128), 0, 255);
+                        int v = Clamp(JsRound(0.500 * r - 0.419 * g - 0.081 * b + 128), 0, 255);
                         double weight = yVal + 16;
 
                         uSum += u * weight;
