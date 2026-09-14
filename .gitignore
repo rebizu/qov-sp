@@ -590,3 +590,9 @@ qov-analysis-tools/tscli.cjs
 
 # C conformance CLI build output
 qov-analysis-tools/.build/
+
+# Phase 0 scoreboard artifacts (large local-only)
+qov-analysis-tools/corpus-real/
+qov-analysis-tools/scoreboard-work/
+qov-analysis-tools/smoke_src.mp4
+c/bench.exe
