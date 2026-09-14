@@ -4,6 +4,11 @@ A native VLC media player plugin for the QOV (Quite OK Video) format: full
 playback (video + QOA audio), seeking, remuxing, and transcoding to QOV —
 built directly on the `qov.h` single-header codec.
 
+**Modifying the plugin?** Read [DEVELOPER.md](DEVELOPER.md) first — it
+catalogs the VLC API traps (capability strings, decoder/muxer lifetime
+rules, Windows module-loading pitfalls, build quirks) that each cost real
+debugging time, plus the verification checklist for any change.
+
 ## Modules (one DLL, five VLC modules)
 
 | Module        | Capability      | What it does                                                        |
