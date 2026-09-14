@@ -625,13 +625,13 @@
     "audio_samples": 0
    },
    "decode_streaming": {
-    "supported": false,
+    "supported": true,
     "frames": 5,
     "frame_sha256": [
      "c372948bd7982e5f1cf65d8f63203763dc307cacf5ee42669b5eddc90277668c",
-     "31e387dee2c81cb698647a1003eb49a56b1aae5e4efa4e92485fc1d8b2e83e7b",
+     "47cda46b05d89f7149f7c3b5f764f45173a76277124043b08a6413e3c2a22fcd",
      "cd5e366ca64a5fc2b9df96d3821de57d1d5d99113fbe8f2eb49b77f5d2bdc6cc",
-     "20a93d95c59f6f177ec6998b30c48d0aaa61d238c59457c84db542daae9b5854",
+     "05f621ecf080955673391c8385b92454e2186e9e6946ddabaa41c5193f67e2f7",
      "f274f2ff60edbf4a4826938ca10040b63814a0d62cae6d65a7fa01ae1031e70a"
     ]
    },
@@ -697,13 +697,13 @@
     "audio_samples": 0
    },
    "decode_streaming": {
-    "supported": false,
+    "supported": true,
     "frames": 5,
     "frame_sha256": [
      "c372948bd7982e5f1cf65d8f63203763dc307cacf5ee42669b5eddc90277668c",
-     "31e387dee2c81cb698647a1003eb49a56b1aae5e4efa4e92485fc1d8b2e83e7b",
+     "47cda46b05d89f7149f7c3b5f764f45173a76277124043b08a6413e3c2a22fcd",
      "cd5e366ca64a5fc2b9df96d3821de57d1d5d99113fbe8f2eb49b77f5d2bdc6cc",
-     "20a93d95c59f6f177ec6998b30c48d0aaa61d238c59457c84db542daae9b5854",
+     "05f621ecf080955673391c8385b92454e2186e9e6946ddabaa41c5193f67e2f7",
      "f274f2ff60edbf4a4826938ca10040b63814a0d62cae6d65a7fa01ae1031e70a"
     ]
    },
@@ -770,13 +770,13 @@
     "audio_samples": 0
    },
    "decode_streaming": {
-    "supported": false,
+    "supported": true,
     "frames": 5,
     "frame_sha256": [
      "9a392abbf63b4a7502f53e82b830e76c5db4157e2a0a9fa2e75ec71da8231344",
-     "ee5a8085a3fa32f713a6d589c4d5faf42a26aef8570584883af0c0decba2ad37",
+     "6f0f5bc8cddf576127ef60a290ccc79f3010aaefa307f3721db5fbbe4411ab4d",
      "125fa68b29edbebf80ac69fc9902216e4fb5fde6b50c41c00cb3ab2e0bf94a8f",
-     "20bf93a2967922dadc42b0215565893e7b7275bc6be74c6c4d1d872a39d43d12",
+     "040af239440c4991d8b265668afb23f9d236133d1a00c15ac678b091c39ae09e",
      "dfa26b237d93c4a9cc1db76ec7c72d0c4d9312a07f9f6f326d2ab401361448fe"
     ]
    },
@@ -842,13 +842,13 @@
     "audio_samples": 0
    },
    "decode_streaming": {
-    "supported": false,
+    "supported": true,
     "frames": 5,
     "frame_sha256": [
      "0b29aa2b19f05b6adf309c981bcf3c204a72639405addad383e6986216531f2c",
-     "a45244e7ce9c79d66018391c0b1daf8f5a80e0b863ed92af4aac0ceff04c4fc9",
+     "1e656c60ab50d9874033d05de3814e4240f582f3628ec4286df3e0c7342d9bf0",
      "5d7fd4b7d125acb31adfaea23f4e8e14dfe754f489e30677e3b0d21a88915a8a",
-     "340c57d49a5ca144a3097379c4f4a1b2f527671c8f5424142f64cccc8bb70725",
+     "1338f4d4f36853816e3dbac4df8945aea2446d7d23d3947cb5b06e6edb08fd22",
      "83b67fb26efcf16661872d72ca0e9c24d0c420c4a663e60bbbc4052aa8e05250"
     ]
    },
@@ -914,13 +914,13 @@
     "audio_samples": 0
    },
    "decode_streaming": {
-    "supported": false,
+    "supported": true,
     "frames": 5,
     "frame_sha256": [
      "b883f600de0f65f883781805bca3061c395bd56bdde4cfea83c349c6dee4188a",
-     "0655f6d2fdb57e4894ef42c63af774858f03f9920c097ae2905d8bbbab268aff",
+     "08b5a286b6abbea8fec78cb91e59c1383233852bc50b6d51dae6950155baf035",
      "4c2ad38f2cf1f85809289ffb8b40c5ca3e7075a4a2e7725c1edce5ae818f6066",
-     "360b0b2527cb4764b05816f9b553c178a646ff8274f5a3559c156fd3c8f48e3a",
+     "0c4c098a99bd5897215529244e272ad85027a720cb50b8bfe804c12b839a1d6a",
      "91dc098e3e310ad7d1a2a0b7339a315d2efb2af47b602f34723fce2478718021"
     ]
    },
@@ -990,13 +990,13 @@
     "audio_samples": 0
    },
    "decode_streaming": {
-    "supported": false,
+    "supported": true,
     "frames": 5,
     "frame_sha256": [
      "6b76dad3ce11e2376b31991fab0fab2f5fc1a781f4e884e79048c54127fb7221",
-     "27ba32122f30c227cae3216d65908212f824790dc662d3278ddcd1e3ddf3bb8f",
+     "37a89888cadc12ac567be3d47c9261cafea378614bc81854a94ade7f4cf4f749",
      "1bdfb314e444068af852221c6170ee35de5cabe496a30463f70d09a2ca2f8feb",
-     "964740ccd8758a5601637ec8ccb60d4abf51d65c7f0793f9b0d1a791c01e472f",
+     "45a1da5b51d3c3907d63b7a5d661b95c634b5b31510c6c45bfe3936a74041dbe",
      "e1e2522376daa82411d28edb37bd662c4ce20e0c48f7944c12931adfabd345ff"
     ]
    },
@@ -1062,7 +1062,7 @@
     "audio_samples": 0
    },
    "decode_streaming": {
-    "supported": false,
+    "supported": true,
     "frames": 5,
     "frame_sha256": [
      "47c9917f591f48dee1139011f588ec0420eb11134eb8607de8fcea4588f86ec6",
@@ -1289,15 +1289,15 @@
     "audio_samples": 0
    },
    "decode_streaming": {
-    "supported": false,
+    "supported": true,
     "frames": 6,
     "frame_sha256": [
      "f7d0f52d8a4b2468249f80c5525bbd84846a03aac2ae3bfcc2a7cb225353de38",
-     "bcbdb858c3b1801d75931bc623bc694d1ca44623542b75a82d1e9af12cc812e0",
+     "01ee3f2d9889ef8c2119a6fc0cff6e9c46233a59a8bb3af2bc96e7ed57dc23e1",
      "9e212cd6675f50ef73591930ad56ec3165c85c8c84659f63afebf5a9f2ab1b80",
-     "ea9d41800790f5fe77be8bc01db2f84df5155af4145d140659ede831bc0d2aa3",
+     "d653873927d9e24131eae5b284c83dd13f46e5fe61e16ccc77893db400a6d03d",
      "1d1b871d74c9577dd2b6b11f1d35148fa6ba8a1a4d2fc19801c3bbe862b9af58",
-     "4d5bbcb72b01b44634ce1cea86d7fb0100ded2783b975da09e12e851ac9159c8"
+     "06cf54c7e0fdd086397e69ea8865f38d7450abc1736b9baec7dd4298202ecf9e"
     ]
    },
    "expect": {},

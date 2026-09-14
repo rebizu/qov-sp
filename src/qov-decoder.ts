@@ -26,8 +26,6 @@ import {
   QOV_VERSION_LOSSY,
   QOV_OP_DCT_Y,
   QOV_OP_DCT_UV,
-  QOV_OP_DCT_SKIP,
-  QOV_OP_DCT_ZERO,
   QOV_OP_SKIP_SIMILAR,
   QOV_OP_SKIP_SIMILAR_LONG,
   QOV_CHUNK_FLAG_DCT_BLOCKS,
@@ -38,11 +36,11 @@ import {
 } from './qov-types';
 
 import {
-  inverseDCTRaw,
   DEFAULT_QUANT_LUMA,
   DEFAULT_QUANT_CHROMA,
-  ZIGZAG
 } from './dct';
+
+import { decodePlaneDctInto } from './dct-decode';
 
 import { lz4Decompress } from './lz4';
 
@@ -1055,77 +1053,6 @@ export class QovDecoder {
     return true;
   }
 
-  // Helper for DCT block decoding
-  private decodeDctBlock(quantTable: number[], qpBase: number, out: Float32Array): number {
-    // 1. QP delta (1 byte: | 0 | delta (7 bits, bias 64) | )
-    const qpByte = this.readU8();
-    // const zeroBit = (qpByte & 0x80) !== 0; // Should be 0
-    const qpDelta = (qpByte & 0x7F) - 64;
-    const finalQp = Math.max(0, Math.min(100, qpBase + qpDelta)); // Heuristic clamping
-
-    // Derive scale factor from QP (approximate standard scaling)
-    // Scale = 2^(qp/10) ?? Or linear?
-    // Using simple linear scaling for now: scale = 0.5 + qp/10
-    const scale = 0.1 + (finalQp * 0.1);
-
-    // 2. DC Coeff (2 bytes, signed 16-bit)
-    const dcRaw = this.readU16();
-    const dc = (dcRaw & 0x8000) ? dcRaw - 65536 : dcRaw;
-
-    const coeffs = new Float32Array(64);
-    coeffs[0] = dc * quantTable[0] * scale;
-
-    // 3. AC Coeffs (Run-Level)
-    let k = 1;
-    while (k < 64) {
-      const b1 = this.readU8();
-
-      if (b1 === 0x00) {
-        // EOB
-        break;
-      }
-      if (b1 === 0xF0) {
-        // Zero run of 16
-        k += 16;
-        continue;
-      }
-
-      const run = (b1 >> 4) & 0x0F;
-      const size = b1 & 0x0F;
-
-      k += run;
-      if (k >= 64) break;
-
-      // Read level
-      let level = 0;
-      if (size > 0) {
-        // Read 'size' bytes? Spec says "level (1-4 bytes)?" or standard JPEG Huffman sizing?
-        // Spec 3.4.2 says: "pair: | run (4b) | level_size (4b) | + level (1-4 bytes)"
-        // Assuming level_size is literally bytes.
-        let rawLevel = 0;
-        for (let i = 0; i < size; i++) {
-          rawLevel = (rawLevel << 8) | this.readU8();
-        }
-
-        // Handle sign - if MSB of generic logic?
-        // Let's assume standard integer mapping or 2's complement
-        // For simplicity: it's signed int of 'size' bytes.
-        // If size=1, int8. Size=2, int16.
-        if (size === 1) level = (rawLevel & 0x80) ? rawLevel - 256 : rawLevel;
-        else if (size === 2) level = (rawLevel & 0x8000) ? rawLevel - 65536 : rawLevel;
-        else if (size === 3) level = (rawLevel & 0x800000) ? rawLevel - 16777216 : rawLevel;
-        else level = rawLevel; // size 4: JS bitwise ops already produce a signed int32
-      }
-
-      coeffs[ZIGZAG[k]] = level * quantTable[ZIGZAG[k]] * scale;
-      k++;
-    }
-
-    // IDCT
-    inverseDCTRaw(coeffs, out);
-    return k;
-  }
-
   private decodeYuvPFrameDataDct(chunkSize: number, hasMotion: boolean): boolean {
     const dataEnd = this.pos + chunkSize;
     const mv = hasMotion ? parseMvBlock(this.readU8.bind(this), this.header.width, this.header.height) : null;
@@ -1191,56 +1118,7 @@ export class QovDecoder {
 
   private decodePlaneDct(plane: Uint8Array, w: number, h: number, quant: number[], opType: number, blockBuf: Float32Array): void {
     const qpBase = this.header.dctQpBase || 20; // Default
-    const blocksX = Math.ceil(w / 8);
-    const blocksY = Math.ceil(h / 8);
-
-    for (let by = 0; by < blocksY; by++) {
-      for (let bx = 0; bx < blocksX; bx++) {
-        // Read opcode
-        // Wait, is it one opcode per block?
-        // Or can one opcode skip multiple blocks?
-        // "0x52 QOV_OP_DCT_SKIP ... count"
-        // So we need a loop that fills blocks
-        // This loop structure handles one block at a time, but needs to respect skips
-        // We can't use simple for loops here, need linear block index
-      }
-    }
-
-    // Linear block loop
-    let blockIdx = 0;
-    const totalBlocks = blocksX * blocksY;
-
-    while (blockIdx < totalBlocks) {
-      const b1 = this.readU8();
-      if (b1 === QOV_OP_DCT_SKIP) {
-        const count = this.readU8(); // Or U16? Spec says "count". Assuming U8 for now unless U16 specified? Spec 3.3 says SKIP_LONG is U16. 3.4.2 says "count". Usually 1 byte.
-        blockIdx += count;
-      } else if (b1 === QOV_OP_DCT_ZERO) {
-        const count = this.readU8();
-        // Zero residual = copy ref (already done by init copy)
-        blockIdx += count;
-      } else if (b1 === opType) {
-        // Decode block
-        this.decodeDctBlock(quant, qpBase, blockBuf);
-        // Add residual to plane
-        const bx = (blockIdx % blocksX) * 8;
-        const by = Math.floor(blockIdx / blocksX) * 8;
-
-        for (let y = 0; y < 8; y++) {
-          if (by + y >= h) break;
-          for (let x = 0; x < 8; x++) {
-            if (bx + x >= w) break;
-            const idx = (by + y) * w + (bx + x);
-            const res = blockBuf[y * 8 + x];
-            plane[idx] = Math.max(0, Math.min(255, plane[idx] + res));
-          }
-        }
-        blockIdx++;
-      } else {
-        console.warn(`Unexpected opcode 0x${b1.toString(16)} in DCT block stream at block ${blockIdx}`);
-        blockIdx++;
-      }
-    }
+    decodePlaneDctInto(this.readU8.bind(this), plane, w, h, quant, opType, qpBase, blockBuf);
   }
 
   *decodeFrames(): Generator<QovFrame | QovAudioFrame> {

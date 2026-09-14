@@ -63,14 +63,14 @@ def encode_case(node: str, bundle: Path, case: dict, out: Path, tmp: Path) -> di
         raise RuntimeError(f"case {case['id']}: encoder is not deterministic")
 
     # structural walk + decode with both TS decoders.
-    # The streaming decoder has no DCT path (the player routes lossy files to
-    # the regular decoder), so full==streaming is only required for lossless cases.
+    # The streaming decoder handles lossless opcodes AND lossy DCT blocks;
+    # full==streaming equality is required for every case.
     from analyze_qov import walk_file  # noqa: E402 - repo-local module
     walk = walk_file(out_a)
 
     dec_full = json.loads(run([node, str(bundle), "-q", "decode", str(out_a)]))
     dec_stream = json.loads(run([node, str(bundle), "-q", "decode", str(out_a), "--streaming"]))
-    stream_supported = case.get("quality") is None
+    stream_supported = True
 
     if stream_supported and dec_full["frameSha256"] != dec_stream["frameSha256"]:
         raise RuntimeError(f"case {case['id']}: full and streaming decoders disagree")

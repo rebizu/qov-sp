@@ -1,13 +1,4 @@
 {
  "comment": "Expected failures for conformance.py. Key format: '<step>:<case_id>' where step is one of integrity|structure|ts_full|ts_stream|cs_decode|cs_encode. A step listed here may fail; if it unexpectedly passes the runner warns about a stale entry. Adjust only with a measured reason.",
- "entries": {
-  "ts_stream:yuv420_lossy_dct_lz4": "streaming decoder has no DCT path (player routes lossy files to the regular decoder)",
-  "ts_stream:yuv420_lossy_dct_nolz4": "streaming decoder has no DCT path (player routes lossy files to the regular decoder)",
-  "ts_stream:yuv422_lossy_dct": "streaming decoder has no DCT path (player routes lossy files to the regular decoder)",
-  "ts_stream:yuv444_lossy_dct": "streaming decoder has no DCT path (player routes lossy files to the regular decoder)",
-  "ts_stream:yuva420_lossy_dct": "streaming decoder has no DCT path (player routes lossy files to the regular decoder)",
-  "ts_stream:yuv420_nearlossless": "streaming decoder has no DCT path (player routes lossy files to the regular decoder)",
-  "ts_stream:rgb_lossy_quant": "streaming decoder has no DCT path (player routes lossy files to the regular decoder)",
-  "ts_stream:motion_yuv420_lossy_dct": "streaming decoder has no DCT path (player routes lossy files to the regular decoder)"
- }
+ "entries": {}
 }

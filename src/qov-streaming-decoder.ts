@@ -15,6 +15,9 @@ import {
   QOV_COLORSPACE_YUVA420,
   QOV_CHUNK_FLAG_COMPRESSED,
   QOV_CHUNK_FLAG_MOTION,
+  QOV_CHUNK_FLAG_DCT_BLOCKS,
+  QOV_OP_DCT_Y,
+  QOV_OP_DCT_UV,
   QOV_FLAG_HAS_ALPHA,
   QOV_VERSION_LOSSY,
   QOV_OP_SKIP_SIMILAR,
@@ -35,6 +38,9 @@ import {
 
 import { QoaDecoder } from './qoa';
 import { QOV_CHUNK_AUDIO } from './qov-types';
+
+import { DEFAULT_QUANT_LUMA, DEFAULT_QUANT_CHROMA } from './dct';
+import { decodePlaneDctInto } from './dct-decode';
 
 import {
   parseMvBlock,
@@ -611,7 +617,8 @@ export class QovStreamingDecoder {
       }
     } else if (chunk.type === QOV_CHUNK_PFRAME) {
       if (isYuvChunk || this.isYuvMode) {
-        this.decodeYuvPFrameFromData(chunkData, hasMotion);
+        const isDct = (chunk.flags & QOV_CHUNK_FLAG_DCT_BLOCKS) !== 0;
+        this.decodeYuvPFrameFromData(chunkData, hasMotion, isDct);
       } else {
         this.decodeRgbPFrameFromData(chunkData, hasMotion);
       }
@@ -854,7 +861,7 @@ export class QovStreamingDecoder {
   }
 
   // YUV P-frame decoding
-  private decodeYuvPFrameFromData(data: Uint8Array, hasMotion: boolean): void {
+  private decodeYuvPFrameFromData(data: Uint8Array, hasMotion: boolean, isDct: boolean): void {
     this.activeData = data;
     this.activePos = 0;
 
@@ -883,12 +890,26 @@ export class QovStreamingDecoder {
       }
     }
 
-    this.decodeYuvPlane(this.currYPlane!, ySize, true);
-    this.decodeYuvPlane(this.currUPlane!, uvSize, true);
-    this.decodeYuvPlane(this.currVPlane!, uvSize, true);
+    if (isDct) {
+      // Lossy DCT blocks (spec §3.4.2): residuals against the (compensated)
+      // reference planes, alpha uses luma dimensions + luma quant table.
+      const qpBase = this.header!.dctQpBase || 20;
+      const blockBuf = new Float32Array(64);
+      const readU8 = this.readU8.bind(this);
+      decodePlaneDctInto(readU8, this.currYPlane!, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, qpBase, blockBuf);
+      decodePlaneDctInto(readU8, this.currUPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, qpBase, blockBuf);
+      decodePlaneDctInto(readU8, this.currVPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, qpBase, blockBuf);
+      if (this.hasYuvAlpha && this.currAPlane) {
+        decodePlaneDctInto(readU8, this.currAPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, qpBase, blockBuf);
+      }
+    } else {
+      this.decodeYuvPlane(this.currYPlane!, ySize, true);
+      this.decodeYuvPlane(this.currUPlane!, uvSize, true);
+      this.decodeYuvPlane(this.currVPlane!, uvSize, true);
 
-    if (this.hasYuvAlpha && this.currAPlane && this.prevAPlane) {
-      this.decodeYuvPlane(this.currAPlane, ySize, true);
+      if (this.hasYuvAlpha && this.currAPlane && this.prevAPlane) {
+        this.decodeYuvPlane(this.currAPlane, ySize, true);
+      }
     }
 
     this.yuvPlanesToRgba();
