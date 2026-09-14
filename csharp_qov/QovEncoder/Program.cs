@@ -145,6 +145,10 @@ class Program
                         g = LcgByte(ref s);
                         b = LcgByte(ref s);
                         break;
+                    case "checker":
+                        int v = (x + y + n) % 2 == 0 ? 255 : 0;
+                        r = v; g = v; b = v;
+                        break;
                     default:
                         throw new ArgumentException($"unknown pattern {pattern}");
                 }

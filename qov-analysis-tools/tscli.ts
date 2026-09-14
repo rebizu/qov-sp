@@ -35,7 +35,7 @@ interface Case {
   flags?: string[];            // subset of index|alpha|motion
   quality?: number;            // undefined = lossless
   compression?: boolean;       // default true
-  pattern: string;             // gradient|stripes|scroll16|noise
+  pattern: string;             // gradient|stripes|scroll16|noise|checker
   keyframeInterval?: number;   // default 2
   audio?: { channels: number; rate: number } | null;
 }
@@ -66,6 +66,11 @@ function makeFrame(c: Case, n: number): Uint8ClampedArray {
         [s, r] = lcgByte(s);
         [s, g] = lcgByte(s);
         [s, b] = lcgByte(s);
+      } else if (c.pattern === 'checker') {
+        // phase flips every frame: keyframes alternate extreme Y per pixel
+        // (INDEX reuse + INDEX slot 0), P-frames see max delta (INDEX/TDIFF mix)
+        const v = (x + y + n) % 2 === 0 ? 255 : 0;
+        r = v; g = v; b = v;
       } else {
         throw new Error(`unknown pattern ${c.pattern}`);
       }

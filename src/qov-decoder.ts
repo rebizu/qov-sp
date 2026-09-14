@@ -451,7 +451,9 @@ export class QovDecoder {
           prevVal = 128; // Use neutral value (128 is neutral for YUV, 0 causes black artifacts)
         }
         plane[px++] = prevVal;
-        // BUG FIX: Update index table after using INDEX, to match encoder behavior
+        // Write-back is a no-op on valid streams (prevVal was just read from
+        // this slot); it only matters for the uninit fallback above. Kept for
+        // parity with qov.h qov__dec_yuv_plane_keyframe.
         index[idx] = prevVal;
       } else if ((b1 & 0xc0) === 0x40) {
         // DIFF: small difference (4-bit)

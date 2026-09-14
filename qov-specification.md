@@ -197,6 +197,17 @@ Byte Range   Name            Structure
 **CRITICAL Implementation Note:**
 The 64-entry index cache MUST be initialized to **-1** (not 0) at the start of each keyframe in YUV mode. This prevents conflict with the value 0.
 
+**Index cache semantics (normative):**
+- `INDEX` is pure retrieval: the cache is updated **only** by `DIFF`/`LUMA`/`FULL`
+  (each writes `cache[(value * 3) % 64] = value`). A conforming encoder never
+  emits `INDEX` for a slot it did not populate first, and a cached value is
+  never invalidated by being read. Reference decoders re-store the retrieved
+  value after `INDEX`; this is a no-op on valid streams and only pins the
+  behavior of the uninitialized-slot fallback (emit neutral 128).
+- Unlike the YUV P-frame coder (§3.3), the keyframe coder has no `SKIP_LONG`
+  opcode, so byte `0x00` = `INDEX[0]` is **valid** here. Since the hash of
+  value 0 is slot 0, keyframe `INDEX[0]` always refers to the value 0.
+
 ### 3.3 Temporal Opcodes (P-frames)
 
 **RGB P-frames (No Motion Vectors):**

@@ -173,6 +173,16 @@ qov_result qov_encoder_take_chunks(qov_encoder *e, uint8_t **data_out, size_t *s
 qov_result qov_encode_finish(qov_encoder *e, uint8_t **data_out, size_t *size_out);
 void qov_encoder_free(qov_encoder *e);
 
+/* Encoder decision tallies (scoreboard): per-frame counts plus the 8x8
+   block decisions taken in the DCT plane encoders. Snapshot copy out. */
+typedef struct {
+    uint64_t frames_key;   /* keyframes encoded */
+    uint64_t frames_p;     /* P-frames encoded (not counting keyframe fallback) */
+    uint64_t blocks_skip;  /* 8x8 blocks below the skip threshold */
+    uint64_t blocks_coded; /* 8x8 DCT blocks written */
+} qov_encode_stats;
+void qov_encode_get_stats(const qov_encoder *e, qov_encode_stats *out);
+
 /* ---- custom allocation ---- */
 /* Optional: install custom allocators before any qov_* call (default: libc).
    qov_free must be provided whenever mem_alloc is. */
@@ -1288,7 +1298,7 @@ static void qov__dec_yuv_plane_keyframe(const uint8_t *payload, size_t payload_l
             if (v == -1) v = 128; /* neutral fallback for uninitialized slot */
             prev_val = (uint8_t)v;
             plane[px++] = prev_val;
-            index[idx] = prev_val; /* TS parity: update after use */
+            index[idx] = prev_val; /* no-op on valid streams; uninit-fallback parity with TS */
         } else if ((b1 & 0xC0) == 0x40) {
             int dv = (b1 & 0x0f) - 8;
             prev_val = (uint8_t)((prev_val + dv) & 0xff);
@@ -1970,6 +1980,7 @@ struct qov_encoder {
     size_t n_keyframes, key_cap;
     qov__qoa_lms qoa_lms[8];
     int has_audio;
+    qov_encode_stats stats;
 };
 
 static void qov__enc_write_sync(qov_encoder *e, uint32_t frame, uint32_t ts)
@@ -2397,6 +2408,7 @@ static void qov__enc_plane_dct(qov_encoder *e, const uint8_t *curr, const uint8_
                 skip++;
                 continue;
             }
+            e->stats.blocks_skip += (uint64_t)skip;
             while (skip > 0) {
                 uint8_t n = (uint8_t)(skip > 255 ? 255 : skip);
                 qov__buf_u8(&e->fb, 0x52); qov__buf_u8(&e->fb, n);
@@ -2405,6 +2417,7 @@ static void qov__enc_plane_dct(qov_encoder *e, const uint8_t *curr, const uint8_
             float coeffs[64], rec[64];
             qov_forward_dct(res, coeffs);
             qov__buf_u8(&e->fb, op);
+            e->stats.blocks_coded++;
             qov__buf_u8(&e->fb, 0x40);
             int dc = qov_round((double)coeffs[0] * scale / quant[0]);
             qov__buf_u16(&e->fb, (uint16_t)((uint16_t)dc & 0xffff));
@@ -2439,6 +2452,7 @@ static void qov__enc_plane_dct(qov_encoder *e, const uint8_t *curr, const uint8_
                 }
         }
     }
+    e->stats.blocks_skip += (uint64_t)skip;
     while (skip > 0) {
         uint8_t n = (uint8_t)(skip > 255 ? 255 : skip);
         qov__buf_u8(&e->fb, 0x52); qov__buf_u8(&e->fb, n);
@@ -2628,6 +2642,7 @@ static qov_result qov__kf_record(qov_encoder *e, uint32_t frame, uint32_t ts)
 qov_result qov_encode_keyframe(qov_encoder *e, const uint8_t *rgba, uint64_t timestamp_us)
 {
     if (!e || !rgba) return QOV_ERR_PARAM;
+    e->stats.frames_key++;
     uint32_t ts = (uint32_t)timestamp_us;
     uint32_t frame = e->frame_count++;
     qov_result r = qov__kf_record(e, frame, ts);
@@ -2643,6 +2658,7 @@ qov_result qov_encode_pframe(qov_encoder *e, const uint8_t *rgba, uint64_t times
 {
     if (!e || !rgba) return QOV_ERR_PARAM;
     if (!e->has_prev_frame) return qov_encode_keyframe(e, rgba, timestamp_us);
+    e->stats.frames_p++;
     uint32_t ts = (uint32_t)timestamp_us;
     e->frame_count++;
     if (e->is_yuv) qov__enc_yuv_pframe(e, rgba, ts);
@@ -2733,6 +2749,14 @@ qov_result qov_encode_finish(qov_encoder *e, uint8_t **data_out, size_t *size_ou
     e->out.cap = 0;
     qov_encoder_free(e);
     return QOV_OK;
+}
+
+void qov_encode_get_stats(const qov_encoder *e, qov_encode_stats *out)
+{
+    if (!out) return;
+    if (e) { *out = e->stats; return; }
+    out->frames_key = 0; out->frames_p = 0;
+    out->blocks_skip = 0; out->blocks_coded = 0;
 }
 
 void qov_encoder_free(qov_encoder *e)

@@ -224,6 +224,9 @@ static void make_frame(uint8_t *px, int w, int h, const char *pattern, int n, in
                 s = lcg_next(s); r = (int)((s >> 16) & 0xff);
                 s = lcg_next(s); g = (int)((s >> 16) & 0xff);
                 s = lcg_next(s); b = (int)((s >> 16) & 0xff);
+            } else if (strcmp(pattern, "checker") == 0) {
+                int v = (x + y + n) % 2 == 0 ? 255 : 0;
+                r = v; g = v; b = v;
             } else {
                 fprintf(stderr, "qov_cli ERROR: unknown pattern %s\n", pattern);
                 exit(2);

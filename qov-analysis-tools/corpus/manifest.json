@@ -1397,6 +1397,154 @@
     }
    }
   },
+  "index_reuse_yuv420_lossless": {
+   "file_sha256": "8b4f827b407f0772043ff86b84664cdd252b022941fa375758b78ebdc2444efe",
+   "file_size": 31211,
+   "header": {
+    "version": 2,
+    "colorspace": 16,
+    "flags": 4,
+    "width": 64,
+    "height": 64,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 0,
+    "dct_chunks": 0,
+    "compressed_chunks": 0,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "bf30e8365e021ff4061ed9db12baa2c89b3222bbbb2715870965d7692e8c6fd1",
+     "ccdd5da6310e9af6e90b94cccdc928a5289e4719e4af91126191ced34a853e8b",
+     "bf30e8365e021ff4061ed9db12baa2c89b3222bbbb2715870965d7692e8c6fd1",
+     "ccdd5da6310e9af6e90b94cccdc928a5289e4719e4af91126191ced34a853e8b",
+     "bf30e8365e021ff4061ed9db12baa2c89b3222bbbb2715870965d7692e8c6fd1",
+     "ccdd5da6310e9af6e90b94cccdc928a5289e4719e4af91126191ced34a853e8b"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "bf30e8365e021ff4061ed9db12baa2c89b3222bbbb2715870965d7692e8c6fd1",
+     "ccdd5da6310e9af6e90b94cccdc928a5289e4719e4af91126191ced34a853e8b",
+     "bf30e8365e021ff4061ed9db12baa2c89b3222bbbb2715870965d7692e8c6fd1",
+     "ccdd5da6310e9af6e90b94cccdc928a5289e4719e4af91126191ced34a853e8b",
+     "bf30e8365e021ff4061ed9db12baa2c89b3222bbbb2715870965d7692e8c6fd1",
+     "ccdd5da6310e9af6e90b94cccdc928a5289e4719e4af91126191ced34a853e8b"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "index_reuse_yuv420_lossless",
+     "width": 64,
+     "height": 64,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "compression": false,
+     "pattern": "checker"
+    }
+   }
+  },
+  "index_reuse_rgb_lossless": {
+   "file_sha256": "ba2382b4cf7bce7e14ec54390ee2f4e98aca991ba077bbf59bbafb5e3cf6d47e",
+   "file_size": 61724,
+   "header": {
+    "version": 2,
+    "colorspace": 0,
+    "flags": 4,
+    "width": 64,
+    "height": 64,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 0,
+    "dct_chunks": 0,
+    "compressed_chunks": 0,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "bf30e8365e021ff4061ed9db12baa2c89b3222bbbb2715870965d7692e8c6fd1",
+     "ccdd5da6310e9af6e90b94cccdc928a5289e4719e4af91126191ced34a853e8b",
+     "bf30e8365e021ff4061ed9db12baa2c89b3222bbbb2715870965d7692e8c6fd1",
+     "ccdd5da6310e9af6e90b94cccdc928a5289e4719e4af91126191ced34a853e8b",
+     "bf30e8365e021ff4061ed9db12baa2c89b3222bbbb2715870965d7692e8c6fd1",
+     "ccdd5da6310e9af6e90b94cccdc928a5289e4719e4af91126191ced34a853e8b"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "bf30e8365e021ff4061ed9db12baa2c89b3222bbbb2715870965d7692e8c6fd1",
+     "ccdd5da6310e9af6e90b94cccdc928a5289e4719e4af91126191ced34a853e8b",
+     "bf30e8365e021ff4061ed9db12baa2c89b3222bbbb2715870965d7692e8c6fd1",
+     "ccdd5da6310e9af6e90b94cccdc928a5289e4719e4af91126191ced34a853e8b",
+     "bf30e8365e021ff4061ed9db12baa2c89b3222bbbb2715870965d7692e8c6fd1",
+     "ccdd5da6310e9af6e90b94cccdc928a5289e4719e4af91126191ced34a853e8b"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "index_reuse_rgb_lossless",
+     "width": 64,
+     "height": 64,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "srgb",
+     "compression": false,
+     "pattern": "checker"
+    }
+   }
+  },
   "audio_srgb_lossless": {
    "file_sha256": "49c291052af3513e5ac36339012cf3803b3c15540d7643ea014f6168d7bfa050",
    "file_size": 1385,
