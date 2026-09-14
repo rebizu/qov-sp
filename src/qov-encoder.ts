@@ -484,10 +484,6 @@ export class QovEncoder {
 
     if (colorspace === QOV_COLORSPACE_YUV420 || colorspace === QOV_COLORSPACE_YUVA420) {
       planes = rgbaToYuv420Planes(pixels, width, height, this.hasAlpha);
-      console.log(`[Encoder] YUV420 keyframe ${frameNumber}: width=${width}, height=${height}`);
-      console.log(`[Encoder] Plane sizes: Y=${planes.yPlane.length}, U=${planes.uPlane.length}, V=${planes.vPlane.length}`);
-      console.log(`[Encoder] U plane first 10:`, Array.from(planes.uPlane.slice(0, 10)));
-      console.log(`[Encoder] V plane first 10:`, Array.from(planes.vPlane.slice(0, 10)));
     } else if (colorspace === QOV_COLORSPACE_YUV422) {
       planes = rgbaToYuv422Planes(pixels, width, height, this.hasAlpha);
     } else {
@@ -1008,11 +1004,9 @@ export class QovEncoder {
 
   encodeKeyframe(pixels: Uint8ClampedArray, timestamp: number): void {
     if (this.isYuvMode) {
-      console.log(`[Encoder] Encoding YUV keyframe ${this.frameCount}`);
       this.encodeYuvKeyframe(pixels, timestamp);
       return;
     }
-    console.log(`[Encoder] Encoding RGB keyframe ${this.frameCount}`);
 
     // RGB mode encoding
     const frameNumber = this.frameCount++;

@@ -808,10 +808,6 @@ export class QovDecoder {
     let px = 0;
     let indexOpcodeCount = 0; // Track unexpected INDEX opcodes
 
-    // Debug: track opcode counts and suspicious pixels
-    let skipCount = 0, skipLongCount = 0, tdiffCount = 0, tlumaCount = 0, rgbCount = 0, rgbaCount = 0;
-    let darkPixels: { px: number; r: number; g: number; b: number; opcode: string }[] = [];
-
     while (px < pixelCount && this.pos < dataEnd) {
       const b1 = this.readU8();
 
@@ -819,12 +815,10 @@ export class QovDecoder {
         // QOV_OP_SKIP_LONG
         const skip = this.readU16();
         px += skip;
-        skipLongCount++;
       } else if ((b1 & 0xc0) === 0xc0 && b1 < 0xfe) {
         // QOV_OP_SKIP
         const skip = (b1 & 0x3f) + 1;
         px += skip;
-        skipCount++;
       } else if (b1 === QOV_OP_SKIP_SIMILAR || b1 === QOV_OP_SKIP_SIMILAR_LONG) {
         // Lossy similarity skip (spec §3.4.1): pixels are close enough to the
         // reference frame, so the decoder copies them from prevFrame
@@ -838,7 +832,6 @@ export class QovDecoder {
           this.currFrame![offset + 3] = this.prevFrame![offset + 3];
           px++;
         }
-        skipCount++;
       } else if ((b1 & 0xc0) === 0x40) {
         // QOV_OP_TDIFF
         const offset = px * 4;
@@ -852,12 +845,7 @@ export class QovDecoder {
           b: this.currFrame![offset + 2],
           a: this.currFrame![offset + 3],
         };
-        // Track dark pixels (potential artifacts)
-        if (c.r < 20 && c.g < 20 && c.b < 20 && darkPixels.length < 10) {
-          darkPixels.push({ px, r: c.r, g: c.g, b: c.b, opcode: 'TDIFF' });
-        }
         this.index[this.colorHash(c)] = c;
-        tdiffCount++;
         px++;
       } else if ((b1 & 0xc0) === 0x80) {
         // QOV_OP_TLUMA
@@ -877,12 +865,7 @@ export class QovDecoder {
           b: this.currFrame![offset + 2],
           a: this.currFrame![offset + 3],
         };
-        // Track dark pixels (potential artifacts)
-        if (c.r < 20 && c.g < 20 && c.b < 20 && darkPixels.length < 10) {
-          darkPixels.push({ px, r: c.r, g: c.g, b: c.b, opcode: 'TLUMA' });
-        }
         this.index[this.colorHash(c)] = c;
-        tlumaCount++;
         px++;
       } else if ((b1 & 0xc0) === 0x00) {
         // QOV_OP_INDEX - NOTE: encoder never writes this in P-frames!
@@ -894,10 +877,6 @@ export class QovDecoder {
         this.currFrame![offset + 1] = c.g;
         this.currFrame![offset + 2] = c.b;
         this.currFrame![offset + 3] = c.a;
-        // Track dark pixels from INDEX (potential artifacts)
-        if (c.r < 20 && c.g < 20 && c.b < 20 && darkPixels.length < 10) {
-          darkPixels.push({ px, r: c.r, g: c.g, b: c.b, opcode: `INDEX[${idx}]` });
-        }
         indexOpcodeCount++;
         px++;
       } else if (b1 === 0xfe) {
@@ -913,12 +892,7 @@ export class QovDecoder {
           b: this.currFrame![offset + 2],
           a: this.currFrame![offset + 3],
         };
-        // Track dark pixels (potential artifacts)
-        if (c.r < 20 && c.g < 20 && c.b < 20 && darkPixels.length < 10) {
-          darkPixels.push({ px, r: c.r, g: c.g, b: c.b, opcode: 'RGB' });
-        }
         this.index[this.colorHash(c)] = c;
-        rgbCount++;
         px++;
       } else if (b1 === 0xff) {
         // QOV_OP_RGBA
@@ -934,22 +908,8 @@ export class QovDecoder {
           b: this.currFrame![offset + 2],
           a: this.currFrame![offset + 3],
         };
-        // Track dark pixels (potential artifacts)
-        if (c.r < 20 && c.g < 20 && c.b < 20 && darkPixels.length < 10) {
-          darkPixels.push({ px, r: c.r, g: c.g, b: c.b, opcode: 'RGBA' });
-        }
         this.index[this.colorHash(c)] = c;
-        rgbaCount++;
         px++;
-      }
-    }
-
-    // Debug: log P-frame statistics for first few frames
-    const frameNum = this.frameCount || 0;
-    if (frameNum < 5) {
-      console.log(`[Decoder] P-frame ${frameNum}: SKIP=${skipCount}, SKIP_LONG=${skipLongCount}, TDIFF=${tdiffCount}, TLUMA=${tlumaCount}, RGB=${rgbCount}, RGBA=${rgbaCount}, INDEX=${indexOpcodeCount}`);
-      if (darkPixels.length > 0) {
-        console.warn(`[Decoder] P-frame ${frameNum} dark pixels:`, darkPixels);
       }
     }
 
