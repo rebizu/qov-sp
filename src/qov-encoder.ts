@@ -11,6 +11,7 @@ import {
   QOV_FLAG_HAS_INDEX,
   QOV_FLAG_HAS_ALPHA,
   QOV_FLAG_LOSSY_MODE,
+  QOV_FLAG_INTRA_DCT_KF,
   QOV_VERSION_EXTENDED,
   QOV_VERSION_LOSSY,
   QOV_CHUNK_SYNC,
@@ -39,6 +40,10 @@ import {
   DEFAULT_QUANT_CHROMA,
   ZIGZAG,
 } from './dct';
+
+import {
+  intraPred,
+} from './dct-decode';
 
 import {
   QOV_OP_DCT_Y,
@@ -166,6 +171,7 @@ export class QovEncoder {
   private lossyParams: LossyParams | null = null;
 
   private motionEnabled = false;
+  private intraDctKeyframes = false;
 
   private qoaEncoder: QoaEncoder | null = null;
 
@@ -224,6 +230,7 @@ export class QovEncoder {
     this.hasAlpha = (flags & QOV_FLAG_HAS_ALPHA) !== 0 ||
       colorspace === QOV_COLORSPACE_YUVA420;
     this.motionEnabled = (flags & QOV_FLAG_HAS_MOTION) !== 0;
+    this.intraDctKeyframes = (flags & QOV_FLAG_INTRA_DCT_KF) !== 0;
 
     console.log(`[Encoder] Created with colorspace: 0x${colorspace.toString(16)}, YUV mode: ${this.isYuvMode}, hasAlpha: ${this.hasAlpha}, compression: ${compressionEnabled}, lossy: ${this.lossyMode}, quality: ${this.quality}`);
 
@@ -490,8 +497,9 @@ export class QovEncoder {
       planes = rgbaToYuv444Planes(pixels, width, height, this.hasAlpha);
     }
 
-    // Apply lossy quantization if enabled
-    if (this.lossyMode && this.lossyParams) {
+    // Apply lossy quantization when NOT using intra DCT keyframes (those
+    // quantize coefficients instead of pixel values)
+    if (this.lossyMode && !this.intraDctKeyframes && this.lossyParams) {
       planes.yPlane = this.quantizePlane(planes.yPlane, this.lossyParams.yQuant);
       planes.uPlane = this.quantizePlane(planes.uPlane, this.lossyParams.uvQuant);
       planes.vPlane = this.quantizePlane(planes.vPlane, this.lossyParams.uvQuant);
@@ -501,36 +509,60 @@ export class QovEncoder {
       }
     }
 
+    const kfFlags = this.lossyMode && this.intraDctKeyframes
+      ? QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS
+      : QOV_CHUNK_FLAG_YUV;
+
     if (this.compressionEnabled) {
       // Compression mode: encode to temp buffer, then compress
       this.startFrameData();
 
       // Encode planes to frame buffer
-      this.encodeYuvPlaneKeyframe(planes.yPlane);
-      this.encodeYuvPlaneKeyframe(planes.uPlane);
-      this.encodeYuvPlaneKeyframe(planes.vPlane);
-      if (planes.aPlane) {
-        this.encodeYuvPlaneKeyframe(planes.aPlane);
+      if (this.lossyMode && this.intraDctKeyframes) {
+        const { w: uvW, h: uvH } = chromaPlaneDims(colorspace, width, height);
+        this.encodeIntraPlaneDct(planes.yPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y);
+        this.encodeIntraPlaneDct(planes.uPlane, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV);
+        this.encodeIntraPlaneDct(planes.vPlane, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV);
+        if (planes.aPlane) {
+          this.encodeIntraPlaneDct(planes.aPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y);
+        }
+      } else {
+        this.encodeYuvPlaneKeyframe(planes.yPlane);
+        this.encodeYuvPlaneKeyframe(planes.uPlane);
+        this.encodeYuvPlaneKeyframe(planes.vPlane);
+        if (planes.aPlane) {
+          this.encodeYuvPlaneKeyframe(planes.aPlane);
+        }
       }
       this.writeEndMarker();
 
       // Compress and write to main buffer
-      this.finishFrameData(QOV_CHUNK_KEYFRAME, QOV_CHUNK_FLAG_YUV, timestamp);
+      this.finishFrameData(QOV_CHUNK_KEYFRAME, kfFlags, timestamp);
     } else {
       // No compression: write directly
       const headerPos = this.buffer.getSize();
       this.writeU8(QOV_CHUNK_KEYFRAME);
-      this.writeU8(QOV_CHUNK_FLAG_YUV);
+      this.writeU8(kfFlags);
       this.writeU32(0); // size placeholder
       this.writeU32(timestamp);
 
       const dataStart = this.buffer.getSize();
 
-      this.encodeYuvPlaneKeyframe(planes.yPlane);
-      this.encodeYuvPlaneKeyframe(planes.uPlane);
-      this.encodeYuvPlaneKeyframe(planes.vPlane);
-      if (planes.aPlane) {
-        this.encodeYuvPlaneKeyframe(planes.aPlane);
+      if (this.lossyMode && this.intraDctKeyframes) {
+        const { w: uvW, h: uvH } = chromaPlaneDims(colorspace, width, height);
+        this.encodeIntraPlaneDct(planes.yPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y);
+        this.encodeIntraPlaneDct(planes.uPlane, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV);
+        this.encodeIntraPlaneDct(planes.vPlane, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV);
+        if (planes.aPlane) {
+          this.encodeIntraPlaneDct(planes.aPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y);
+        }
+      } else {
+        this.encodeYuvPlaneKeyframe(planes.yPlane);
+        this.encodeYuvPlaneKeyframe(planes.uPlane);
+        this.encodeYuvPlaneKeyframe(planes.vPlane);
+        if (planes.aPlane) {
+          this.encodeYuvPlaneKeyframe(planes.aPlane);
+        }
       }
       this.writeEndMarker();
 
@@ -678,6 +710,126 @@ export class QovEncoder {
   }
 
   // Encode P-frame in YUV mode
+
+  // Intra DCT plane coding (spec §3.4.3): DC-predicted 8x8 blocks. `plane`
+  // doubles as the reconstruction buffer and ends up holding the decoded
+  // values, so the caller can use it directly as the P-frame reference.
+  private encodeIntraPlaneDct(plane: Uint8Array, w: number, h: number, quant: number[], opType: number): void {
+    const qpBase = this.lossyParams?.dctQp ?? 20;
+    const scale = 1.0 / (0.1 + qpBase * 0.1);
+    const blocksX = Math.ceil(w / 8);
+    const blocksY = Math.ceil(h / 8);
+    let skipCount = 0;
+
+    for (let by = 0; by < blocksY; by++) {
+      for (let bx = 0; bx < blocksX; bx++) {
+        const x0 = bx * 8;
+        const y0 = by * 8;
+        const pred = intraPred(plane, w, h, x0, y0);
+
+        const blockBuf = new Float32Array(64);
+        let diffSum = 0;
+        for (let y = 0; y < 8; y++) {
+          for (let x = 0; x < 8; x++) {
+            const px = x0 + x;
+            const py = y0 + y;
+            if (px >= w || py >= h) { blockBuf[y * 8 + x] = 0; continue; }
+            const res = plane[py * w + px] - pred;
+            blockBuf[y * 8 + x] = res;
+            diffSum += Math.abs(res);
+          }
+        }
+
+        if (diffSum < 32 + qpBase * 8) {
+          // prediction-only block: store pred as the reconstruction
+          for (let y = 0; y < 8; y++) {
+            if (y0 + y >= h) break;
+            for (let x = 0; x < 8; x++) {
+              if (x0 + x >= w) break;
+              plane[(y0 + y) * w + x0 + x] = pred;
+            }
+          }
+          skipCount++;
+          continue;
+        }
+
+        // Flush skips
+        while (skipCount > 0) {
+          this.writeU8(QOV_OP_DCT_SKIP);
+          const count = Math.min(skipCount, 255);
+          this.writeU8(count);
+          skipCount -= count;
+        }
+
+        const coeffs = new Float32Array(64);
+        forwardDCT(blockBuf, coeffs);
+
+        this.writeU8(opType);
+        this.writeU8(0x40); // qp delta 0
+
+        const dcVal = Math.round(coeffs[0] * scale / quant[0]);
+        this.writeU16(dcVal & 0xffff);
+
+        let zeroRun = 0;
+        for (let k = 1; k < 64; k++) {
+          const zigzagIdx = ZIGZAG[k];
+          const coeff = coeffs[zigzagIdx];
+          const prod = coeff * scale / quant[zigzagIdx];
+          const qVal = prod > -0.75 && prod < 0.75 ? 0 : Math.round(prod);
+
+          if (qVal === 0) {
+            zeroRun++;
+          } else {
+            while (zeroRun >= 16) {
+              this.writeU8(0xF0);
+              zeroRun -= 16;
+            }
+
+            let size = 0;
+            if (qVal >= -128 && qVal <= 127) size = 1;
+            else if (qVal >= -32768 && qVal <= 32767) size = 2;
+            else if (qVal >= -8388608 && qVal <= 8388607) size = 3;
+            else size = 4;
+
+            this.writeU8((zeroRun << 4) | size);
+            for (let sh = size - 1; sh >= 0; sh--) {
+              this.writeU8((qVal >> (8 * sh)) & 0xff);
+            }
+            zeroRun = 0;
+          }
+        }
+        this.writeU8(0x00); // EOB
+
+        // Reconstruct into the plane (mirrors the decoder exactly)
+        const recCoeffs = new Float32Array(64);
+        recCoeffs[0] = dcVal * quant[0] / scale;
+        for (let k = 1; k < 64; k++) {
+          const z = ZIGZAG[k];
+          const prod = coeffs[z] * scale / quant[z];
+          const qVal = prod > -0.75 && prod < 0.75 ? 0 : Math.round(prod);
+          recCoeffs[z] = qVal * quant[z] / scale;
+        }
+        inverseDCTRaw(recCoeffs, blockBuf);
+        for (let y = 0; y < 8; y++) {
+          if (y0 + y >= h) break;
+          for (let x = 0; x < 8; x++) {
+            if (x0 + x >= w) break;
+            const idx = (y0 + y) * w + x0 + x;
+            const res = blockBuf[y * 8 + x];
+            plane[idx] = Math.max(0, Math.min(255, pred + res));
+          }
+        }
+      }
+    }
+
+    // Flush final skips
+    while (skipCount > 0) {
+      this.writeU8(QOV_OP_DCT_SKIP);
+      const count = Math.min(skipCount, 255);
+      this.writeU8(count);
+      skipCount -= count;
+    }
+  }
 
   private encodePlaneDct(curr: Uint8Array, prev: Uint8Array, next: Uint8Array, w: number, h: number, quant: number[], opType: number, blockBuf: Float32Array): void {
     const qpBase = this.lossyParams?.dctQp ?? 20;

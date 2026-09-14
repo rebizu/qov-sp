@@ -40,7 +40,7 @@ import { QoaDecoder } from './qoa';
 import { QOV_CHUNK_AUDIO } from './qov-types';
 
 import { DEFAULT_QUANT_LUMA, DEFAULT_QUANT_CHROMA } from './dct';
-import { decodePlaneDctInto } from './dct-decode';
+import { decodePlaneDctInto, decodeIntraPlaneDctInto } from './dct-decode';
 
 import {
   parseMvBlock,
@@ -611,7 +611,8 @@ export class QovStreamingDecoder {
     // Decode based on chunk type
     if (chunk.type === QOV_CHUNK_KEYFRAME) {
       if (isYuvChunk || this.isYuvMode) {
-        this.decodeYuvKeyframeFromData(chunkData);
+        const isDctKeyframe = (chunk.flags & QOV_CHUNK_FLAG_DCT_BLOCKS) !== 0;
+        this.decodeYuvKeyframeFromData(chunkData, isDctKeyframe);
       } else {
         this.decodeRgbKeyframeFromData(chunkData);
       }
@@ -822,7 +823,7 @@ export class QovStreamingDecoder {
   }
 
   // YUV keyframe decoding
-  private decodeYuvKeyframeFromData(data: Uint8Array): void {
+  private decodeYuvKeyframeFromData(data: Uint8Array, isDct: boolean): void {
     this.activeData = data;
     this.activePos = 0;
 
@@ -838,12 +839,26 @@ export class QovStreamingDecoder {
       uvSize = ySize;
     }
 
-    this.decodeYuvPlane(this.currYPlane!, ySize, false);
-    this.decodeYuvPlane(this.currUPlane!, uvSize, false);
-    this.decodeYuvPlane(this.currVPlane!, uvSize, false);
+    if (isDct) {
+      // Intra DCT keyframe (spec §3.4.3)
+      const { w: uvW, h: uvH } = chromaPlaneDims(colorspace, width, height);
+      const qpBase = this.header!.dctQpBase || 20;
+      const readU8 = this.readU8.bind(this);
+      const blockBuf = new Float32Array(64);
+      decodeIntraPlaneDctInto(readU8, this.currYPlane!, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, qpBase, blockBuf);
+      decodeIntraPlaneDctInto(readU8, this.currUPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, qpBase, blockBuf);
+      decodeIntraPlaneDctInto(readU8, this.currVPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, qpBase, blockBuf);
+      if (this.hasYuvAlpha && this.currAPlane) {
+        decodeIntraPlaneDctInto(readU8, this.currAPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, qpBase, blockBuf);
+      }
+    } else {
+      this.decodeYuvPlane(this.currYPlane!, ySize, false);
+      this.decodeYuvPlane(this.currUPlane!, uvSize, false);
+      this.decodeYuvPlane(this.currVPlane!, uvSize, false);
 
-    if (this.hasYuvAlpha && this.currAPlane) {
-      this.decodeYuvPlane(this.currAPlane, ySize, false);
+      if (this.hasYuvAlpha && this.currAPlane) {
+        this.decodeYuvPlane(this.currAPlane, ySize, false);
+      }
     }
 
     this.yuvPlanesToRgba();

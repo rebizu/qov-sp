@@ -126,6 +126,7 @@ static int cmd_encode(int argc, char **argv)
     p.fps_den = 1;
     p.colorspace = strcmp(cs_name, "srgb") == 0 ? QOV_CS_SRGB : QOV_CS_YUV420;
     p.motion = arg_flag(argc, argv, "--motion");
+    p.intra_dct_keyframes = arg_flag(argc, argv, "--ikf");
     p.lz4 = arg_flag(argc, argv, "--lz4");
     p.quality = quality;
 

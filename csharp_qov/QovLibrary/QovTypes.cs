@@ -18,6 +18,7 @@ public static partial class QovTypes
     public const byte FlagEnhancedComp = 0x10;
     public const byte FlagLossyMode = 0x20;
     public const byte FlagDctEnabled = 0x40;
+    public const byte FlagIntraDctKf = 0x80;
 
 
     public const byte ChunkTypeSync = 0x00;

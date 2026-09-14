@@ -1,0 +1,63 @@
+{
+  "rows": [
+    {
+      "name": "screen720-pr3",
+      "codec": "qov",
+      "setting": "quality=40",
+      "colorspace": "yuv420",
+      "motion": true,
+      "lz4": true,
+      "frames": 1800,
+      "size_bytes": 17236286,
+      "bitrate_kbps": 2298.2,
+      "ssim_all": 0.932729,
+      "enc_ms_per_frame": 50.776,
+      "dec_ms_per_frame": 21.89,
+      "blocks_skip": 28566281,
+      "blocks_coded": 10405931
+    },
+    {
+      "name": "screen720-pr3",
+      "codec": "qov",
+      "setting": "quality=60",
+      "colorspace": "yuv420",
+      "motion": true,
+      "lz4": true,
+      "frames": 1800,
+      "size_bytes": 22521119,
+      "bitrate_kbps": 3002.8,
+      "ssim_all": 0.94279,
+      "enc_ms_per_frame": 61.415,
+      "dec_ms_per_frame": 24.641,
+      "blocks_skip": 27536647,
+      "blocks_coded": 11431724
+    },
+    {
+      "name": "screen720-pr3",
+      "codec": "x264-ultrafast",
+      "setting": "crf=32",
+      "frames": 1800,
+      "size_bytes": 1550988,
+      "bitrate_kbps": 206.8,
+      "ssim_all": 0.990008,
+      "enc_ms_per_frame": 3.19,
+      "dec_ms_per_frame": 2.15
+    }
+  ],
+  "meta": {
+    "lines": {
+      "qov.h": 2957,
+      "src/qov-types.ts": 204,
+      "src/qov-encoder.ts": 1572,
+      "src/qov-decoder.ts": 1435,
+      "src/qov-streaming-decoder.ts": 1085,
+      "src/dct.ts": 127,
+      "src/motion.ts": 223,
+      "src/lz4.ts": 248,
+      "src/color-utils.ts": 374,
+      "src/qoa.ts": 401,
+      "ts_codec_total": 5669
+    },
+    "generated": "2026-09-14T13:04:23"
+  }
+}

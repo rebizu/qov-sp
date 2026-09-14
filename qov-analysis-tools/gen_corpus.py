@@ -41,7 +41,11 @@ def run(cmd: list, **kw) -> str:
 def ensure_bundle(node: str, force: bool) -> Path:
     bundle = TOOLS / "tscli.cjs"
     src = TOOLS / "tscli.ts"
-    if force or not bundle.exists() or bundle.stat().st_mtime < src.stat().st_mtime:
+    # the bundle pulls in all of src/, so a stale check must cover every
+    # imported module, not just the entry point
+    deps = [src] + list((Path(__file__).resolve().parent.parent / "src").glob("*.ts"))
+    newest = max(p.stat().st_mtime for p in deps)
+    if force or not bundle.exists() or bundle.stat().st_mtime < newest:
         run([node, str(NODE_ESBUILD), str(src),
              "--bundle", "--platform=node", "--format=cjs",
              f"--outfile={bundle}", "--log-level=warning"])

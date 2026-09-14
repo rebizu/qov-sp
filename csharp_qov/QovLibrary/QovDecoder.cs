@@ -334,6 +334,79 @@ public class QovDecoder
     }
 
     // Chroma plane dims per header colorspace (spec: 444→w×h, 422→⌈w/2⌉×h, else ⌈w/2⌉×⌈h/2⌉)
+    // Intra DCT plane decoder (spec 3.4.3): raster-order reconstruction.
+    // Skip opcodes fill the block with the DC prediction; coded blocks add
+    // the residual to it.
+    private int DecodeIntraPlaneDct(byte[] data, int startPos, byte[] plane, int w, int h, int[] quantTable, byte opType, int qpBase, float[] blockBuf)
+    {
+        int pos = startPos;
+        int blocksX = (int)Math.Ceiling(w / 8.0);
+        int blocksY = (int)Math.Ceiling(h / 8.0);
+        int totalBlocks = blocksX * blocksY;
+        int blockIdx = 0;
+
+        while (blockIdx < totalBlocks && pos < data.Length)
+        {
+            byte b1 = data[pos++];
+            int bx = (blockIdx % blocksX) * 8;
+            int by = (blockIdx / blocksX) * 8;
+            if (b1 == QovTypes.OpDctSkip || b1 == QovTypes.OpDctZero)
+            {
+                byte count = data[pos++];
+                for (int n = 0; n < count && blockIdx < totalBlocks; n++, blockIdx++)
+                {
+                    int sbx = (blockIdx % blocksX) * 8;
+                    int sby = (blockIdx / blocksX) * 8;
+                    int pred = IntraPred(plane, w, h, sbx, sby);
+                    for (int y = 0; y < 8 && sby + y < h; y++)
+                        for (int x = 0; x < 8 && sbx + x < w; x++)
+                            plane[(sby + y) * w + sbx + x] = (byte)pred;
+                }
+            }
+            else if (b1 == opType)
+            {
+                int pred = IntraPred(plane, w, h, bx, by);
+                DecodeDctBlock(data, ref pos, quantTable, (byte)qpBase, blockBuf);
+                for (int y = 0; y < 8 && by + y < h; y++)
+                {
+                    for (int x = 0; x < 8 && bx + x < w; x++)
+                    {
+                        int idx = (by + y) * w + bx + x;
+                        int val = (int)(pred + blockBuf[y * 8 + x]);
+                        plane[idx] = (byte)Math.Clamp(val, 0, 255);
+                    }
+                }
+                blockIdx++;
+            }
+            else
+            {
+                blockIdx++;
+            }
+        }
+        return pos;
+    }
+
+    // Intra DC prediction (spec 3.4.3): mean of the reconstructed left
+    // column / top row; integer round-half-up; 128 with no neighbor.
+    private static int IntraPred(byte[] plane, int w, int h, int x0, int y0)
+    {
+        long lsum = 0, tsum = 0;
+        int lcount = 0, tcount = 0;
+        if (x0 > 0)
+            for (int yy = 0; yy < 8 && y0 + yy < h; yy++) { lsum += plane[(y0 + yy) * w + x0 - 1]; lcount++; }
+        if (y0 > 0)
+            for (int xx = 0; xx < 8 && x0 + xx < w; xx++) { tsum += plane[(y0 - 1) * w + x0 + xx]; tcount++; }
+        if (lcount > 0 && tcount > 0)
+        {
+            int lm = (int)((2 * lsum + lcount) / (2 * lcount));
+            int tm = (int)((2 * tsum + tcount) / (2 * tcount));
+            return (lm + tm + 1) / 2;
+        }
+        if (lcount > 0) return (int)((2 * lsum + lcount) / (2 * lcount));
+        if (tcount > 0) return (int)((2 * tsum + tcount) / (2 * tcount));
+        return 128;
+    }
+
     private (int W, int H) ChromaDims()
     {
         return _header.Colorspace switch
@@ -368,6 +441,7 @@ public class QovDecoder
     {
         bool isYuvChunk = (chunkFlags & QovTypes.ChunkFlagYuv) != 0;
         bool isCompressed = (chunkFlags & QovTypes.ChunkFlagCompressed) != 0;
+        bool isDctKeyframe = (chunkFlags & QovTypes.ChunkFlagDctBlocks) != 0;
 
         byte[] chunkData = ReadBytes((int)chunkSize);
         byte[] frameData = chunkData;
@@ -381,12 +455,29 @@ public class QovDecoder
 
         if (isYuvChunk)
         {
-            int yEnd = DecodeYuvPlane(frameData, 0, _currYPlane);
-            int uEnd = DecodeYuvPlane(frameData, yEnd, _currUPlane);
-            int vEnd = DecodeYuvPlane(frameData, uEnd, _currVPlane);
-            if (_hasYuvAlpha && _currAPlane != null)
+            if (isDctKeyframe)
             {
-                DecodeYuvPlane(frameData, vEnd, _currAPlane);
+                // Intra DCT keyframe (spec 3.4.3)
+                int qpBase = _header.DctQpBase != 0 ? (int)_header.DctQpBase : 20;
+                (int uvW, int uvH) = ChromaDims();
+                float[] blockBuf = new float[64];
+                int p = DecodeIntraPlaneDct(frameData, 0, _currYPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, qpBase, blockBuf);
+                p = DecodeIntraPlaneDct(frameData, p, _currUPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, qpBase, blockBuf);
+                p = DecodeIntraPlaneDct(frameData, p, _currVPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, qpBase, blockBuf);
+                if (_hasYuvAlpha && _currAPlane != null)
+                {
+                    DecodeIntraPlaneDct(frameData, p, _currAPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, qpBase, blockBuf);
+                }
+            }
+            else
+            {
+                int yEnd = DecodeYuvPlane(frameData, 0, _currYPlane);
+                int uEnd = DecodeYuvPlane(frameData, yEnd, _currUPlane);
+                int vEnd = DecodeYuvPlane(frameData, uEnd, _currVPlane);
+                if (_hasYuvAlpha && _currAPlane != null)
+                {
+                    DecodeYuvPlane(frameData, vEnd, _currAPlane);
+                }
             }
 
             ConvertCurrYuvPlanesToRgba();

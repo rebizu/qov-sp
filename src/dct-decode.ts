@@ -6,6 +6,30 @@ import { ZIGZAG, inverseDCTRaw } from './dct';
 import { QOV_OP_DCT_SKIP, QOV_OP_DCT_ZERO } from './qov-types';
 
 /**
+ * Intra DC prediction (spec §3.4.3): mean of the reconstructed left column /
+ * top row, integer round-half-up throughout, 128 with no neighbor. Pure
+ * integer math = bit-exact across implementations.
+ */
+export function intraPred(plane: Uint8Array, w: number, h: number, x0: number, y0: number): number {
+  let lsum = 0, tsum = 0;
+  let lcount = 0, tcount = 0;
+  if (x0 > 0) {
+    for (let yy = 0; yy < 8 && y0 + yy < h; yy++) { lsum += plane[(y0 + yy) * w + x0 - 1]; lcount++; }
+  }
+  if (y0 > 0) {
+    for (let xx = 0; xx < 8 && x0 + xx < w; xx++) { tsum += plane[(y0 - 1) * w + x0 + xx]; tcount++; }
+  }
+  if (lcount && tcount) {
+    const lm = Math.floor((2 * lsum + lcount) / (2 * lcount));
+    const tm = Math.floor((2 * tsum + tcount) / (2 * tcount));
+    return (lm + tm + 1) >> 1;
+  }
+  if (lcount) return Math.floor((2 * lsum + lcount) / (2 * lcount));
+  if (tcount) return Math.floor((2 * tsum + tcount) / (2 * tcount));
+  return 128;
+}
+
+/**
  * Decodes one DCT block (QP delta + DC + run-level AC pairs) and writes the
  * dequantized, inverse-transformed residual into `out` (64 floats).
  */
@@ -115,6 +139,64 @@ export function decodePlaneDctInto(
       blockIdx++;
     } else {
       console.warn(`Unexpected opcode 0x${b1.toString(16)} in DCT block stream at block ${blockIdx}`);
+      blockIdx++;
+    }
+  }
+}
+
+/**
+ * Intra DCT plane decoder (spec §3.4.3): raster-order reconstruction. The
+ * skip opcodes fill the block with the DC prediction; coded blocks add the
+ * residual to it. `plane` must be writable scratch (fully overwritten).
+ */
+export function decodeIntraPlaneDctInto(
+  readU8: () => number,
+  plane: Uint8Array,
+  w: number,
+  h: number,
+  quant: number[],
+  opType: number,
+  qpBase: number,
+  blockBuf: Float32Array,
+): void {
+  const blocksX = Math.ceil(w / 8);
+  const blocksY = Math.ceil(h / 8);
+  let blockIdx = 0;
+  const totalBlocks = blocksX * blocksY;
+
+  while (blockIdx < totalBlocks) {
+    const b1 = readU8();
+    if (b1 === QOV_OP_DCT_SKIP || b1 === QOV_OP_DCT_ZERO) {
+      const count = readU8();
+      for (let n = 0; n < count && blockIdx < totalBlocks; n++, blockIdx++) {
+        const bx = (blockIdx % blocksX) * 8;
+        const by = Math.floor(blockIdx / blocksX) * 8;
+        const pred = intraPred(plane, w, h, bx, by);
+        for (let y = 0; y < 8; y++) {
+          if (by + y >= h) break;
+          for (let x = 0; x < 8; x++) {
+            if (bx + x >= w) break;
+            plane[(by + y) * w + bx + x] = pred;
+          }
+        }
+      }
+    } else if (b1 === opType) {
+      const bx = (blockIdx % blocksX) * 8;
+      const by = Math.floor(blockIdx / blocksX) * 8;
+      const pred = intraPred(plane, w, h, bx, by);
+      decodeDctBlockInto(readU8, quant, qpBase, blockBuf);
+      for (let y = 0; y < 8; y++) {
+        if (by + y >= h) break;
+        for (let x = 0; x < 8; x++) {
+          if (bx + x >= w) break;
+          const idx = (by + y) * w + bx + x;
+          // mirror TS decoder semantics: double-precision add, truncate
+          plane[idx] = Math.max(0, Math.min(255, pred + blockBuf[y * 8 + x]));
+        }
+      }
+      blockIdx++;
+    } else {
+      console.warn(`Unexpected opcode 0x${b1.toString(16)} in intra DCT block stream at block ${blockIdx}`);
       blockIdx++;
     }
   }

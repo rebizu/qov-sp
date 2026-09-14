@@ -579,12 +579,12 @@
    }
   },
   "yuv420_lossy_dct_lz4": {
-   "file_sha256": "4c5a1eea760aef1100518f61b154a319d3255e8348f6e5786bc1811346e09093",
-   "file_size": 66420,
+   "file_sha256": "acc8d027501dc0974ecff1728b0edaa36c2343442128de6aee3aa4374e3dcf6c",
+   "file_size": 22679,
    "header": {
     "version": 3,
     "colorspace": 16,
-    "flags": 100,
+    "flags": 228,
     "width": 128,
     "height": 96,
     "totalFrames": 5,
@@ -603,8 +603,8 @@
     "keyframes": 3,
     "pframes": 2,
     "motion_chunks": 0,
-    "dct_chunks": 2,
-    "compressed_chunks": 2,
+    "dct_chunks": 5,
+    "compressed_chunks": 5,
     "audio_chunks": 0,
     "has_end": true,
     "timestamp_regressions": 0,
@@ -614,11 +614,11 @@
    "decode_full": {
     "frames": 5,
     "frame_sha256": [
-     "c372948bd7982e5f1cf65d8f63203763dc307cacf5ee42669b5eddc90277668c",
-     "1dc33fadac8b3a12447af2ec0b1ce02defcdb7d432cf83fdcae81fdee50fcc33",
-     "cd5e366ca64a5fc2b9df96d3821de57d1d5d99113fbe8f2eb49b77f5d2bdc6cc",
-     "d8f0ce3cd21a1ce74c5a992dfc51528dc1cbf79493d76ba292818a2e6bce021c",
-     "f274f2ff60edbf4a4826938ca10040b63814a0d62cae6d65a7fa01ae1031e70a"
+     "d0c6b3777f22765119962060f5649d48e294be05f2831259f736bb9a877d3090",
+     "b4e4dc2fbb811bf84103e1b14b886e66e87ecbe7713a6379f78105b120d166e3",
+     "eabdda2e7c3471fe073e8aca53d0353d7a04eb0704d8e22ff9b261ac4394700a",
+     "adb54b5dfd91f3e8af39f7bf3b00d096bc34b34b6c87a219cd2d56c1b91efdff",
+     "289b6c99226a645533038eb7477865d9c5651074ea4f89113dc501bd14e3ab52"
     ],
     "audio_frames": 0,
     "audio_pcm_sha256": null,
@@ -628,11 +628,11 @@
     "supported": true,
     "frames": 5,
     "frame_sha256": [
-     "c372948bd7982e5f1cf65d8f63203763dc307cacf5ee42669b5eddc90277668c",
-     "1dc33fadac8b3a12447af2ec0b1ce02defcdb7d432cf83fdcae81fdee50fcc33",
-     "cd5e366ca64a5fc2b9df96d3821de57d1d5d99113fbe8f2eb49b77f5d2bdc6cc",
-     "d8f0ce3cd21a1ce74c5a992dfc51528dc1cbf79493d76ba292818a2e6bce021c",
-     "f274f2ff60edbf4a4826938ca10040b63814a0d62cae6d65a7fa01ae1031e70a"
+     "d0c6b3777f22765119962060f5649d48e294be05f2831259f736bb9a877d3090",
+     "b4e4dc2fbb811bf84103e1b14b886e66e87ecbe7713a6379f78105b120d166e3",
+     "eabdda2e7c3471fe073e8aca53d0353d7a04eb0704d8e22ff9b261ac4394700a",
+     "adb54b5dfd91f3e8af39f7bf3b00d096bc34b34b6c87a219cd2d56c1b91efdff",
+     "289b6c99226a645533038eb7477865d9c5651074ea4f89113dc501bd14e3ab52"
     ]
    },
    "expect": {},
@@ -646,7 +646,11 @@
      "fps": 30,
      "colorspace": "yuv420",
      "quality": 50,
-     "pattern": "noise"
+     "pattern": "noise",
+     "flags": [
+      "index",
+      "ikf"
+     ]
     }
    }
   },
@@ -868,12 +872,12 @@
    }
   },
   "yuva420_lossy_dct": {
-   "file_sha256": "707ec51a33f116b1a43c919c705a88f04430f3961fe0b67fc07c220ce85601fd",
-   "file_size": 63431,
+   "file_sha256": "ffc3e119e29929bbf7e4b12a88cd27feba199aa5ef38c768b177822e9f2202fe",
+   "file_size": 24201,
    "header": {
     "version": 3,
     "colorspace": 19,
-    "flags": 101,
+    "flags": 229,
     "width": 128,
     "height": 96,
     "totalFrames": 5,
@@ -892,7 +896,7 @@
     "keyframes": 3,
     "pframes": 2,
     "motion_chunks": 0,
-    "dct_chunks": 2,
+    "dct_chunks": 5,
     "compressed_chunks": 5,
     "audio_chunks": 0,
     "has_end": true,
@@ -903,11 +907,11 @@
    "decode_full": {
     "frames": 5,
     "frame_sha256": [
-     "b883f600de0f65f883781805bca3061c395bd56bdde4cfea83c349c6dee4188a",
-     "35db556ee073d512be26ce4b2ffed28826bec440a83844422904437ff0c48ee0",
-     "4c2ad38f2cf1f85809289ffb8b40c5ca3e7075a4a2e7725c1edce5ae818f6066",
-     "ef2d35b6f5038df95837d44f92ac1cb3e6db05437d0c8e6c58bf0a08f0906283",
-     "91dc098e3e310ad7d1a2a0b7339a315d2efb2af47b602f34723fce2478718021"
+     "8463a4baaa80b81ef0440534ca7fed273fe55da454cb244e1db7600563476e6d",
+     "21835478ffc66cd5ebc48334a813230db01c88e61265262f35f6980b0a70e7b3",
+     "aae299c067f3fb0a9c8aa78c1b5b3d0673c38bee7d10107cb989a2c0b74cfd59",
+     "42ec8a98c8f5c8a2c1d395a3e2d4e2dd4ee077d140d098065b609a2b6f7ce909",
+     "186da029730a440d40c85e1577507c278a48f2fd2f9fb27d2a65d80bc7203451"
     ],
     "audio_frames": 0,
     "audio_pcm_sha256": null,
@@ -917,11 +921,11 @@
     "supported": true,
     "frames": 5,
     "frame_sha256": [
-     "b883f600de0f65f883781805bca3061c395bd56bdde4cfea83c349c6dee4188a",
-     "35db556ee073d512be26ce4b2ffed28826bec440a83844422904437ff0c48ee0",
-     "4c2ad38f2cf1f85809289ffb8b40c5ca3e7075a4a2e7725c1edce5ae818f6066",
-     "ef2d35b6f5038df95837d44f92ac1cb3e6db05437d0c8e6c58bf0a08f0906283",
-     "91dc098e3e310ad7d1a2a0b7339a315d2efb2af47b602f34723fce2478718021"
+     "8463a4baaa80b81ef0440534ca7fed273fe55da454cb244e1db7600563476e6d",
+     "21835478ffc66cd5ebc48334a813230db01c88e61265262f35f6980b0a70e7b3",
+     "aae299c067f3fb0a9c8aa78c1b5b3d0673c38bee7d10107cb989a2c0b74cfd59",
+     "42ec8a98c8f5c8a2c1d395a3e2d4e2dd4ee077d140d098065b609a2b6f7ce909",
+     "186da029730a440d40c85e1577507c278a48f2fd2f9fb27d2a65d80bc7203451"
     ]
    },
    "expect": {},
@@ -936,7 +940,8 @@
      "colorspace": "yuva420",
      "flags": [
       "index",
-      "alpha"
+      "alpha",
+      "ikf"
      ],
      "quality": 50,
      "pattern": "noise"
@@ -1242,12 +1247,12 @@
    }
   },
   "motion_yuv420_lossy_dct": {
-   "file_sha256": "0b85fefacabcff4d18beecf42018c0a51053e960b0adc7e50dc0f9d68ff088c3",
-   "file_size": 29722,
+   "file_sha256": "1281c73b1c1343e3a1a671e7b465134298eb463ccbecdcf5212b23f51e523bf0",
+   "file_size": 10123,
    "header": {
     "version": 3,
     "colorspace": 16,
-    "flags": 102,
+    "flags": 230,
     "width": 128,
     "height": 96,
     "totalFrames": 6,
@@ -1266,7 +1271,7 @@
     "keyframes": 3,
     "pframes": 3,
     "motion_chunks": 3,
-    "dct_chunks": 3,
+    "dct_chunks": 6,
     "compressed_chunks": 6,
     "audio_chunks": 0,
     "has_end": true,
@@ -1277,12 +1282,12 @@
    "decode_full": {
     "frames": 6,
     "frame_sha256": [
-     "f7d0f52d8a4b2468249f80c5525bbd84846a03aac2ae3bfcc2a7cb225353de38",
-     "c0e53ed96750c902fb972b32c9ffba55fb2a934061dd734606764087d388b8c6",
-     "9e212cd6675f50ef73591930ad56ec3165c85c8c84659f63afebf5a9f2ab1b80",
-     "b1446d52630d137fc20d8af14a57691a76d319feeec87e07a60fc5986764c916",
-     "1d1b871d74c9577dd2b6b11f1d35148fa6ba8a1a4d2fc19801c3bbe862b9af58",
-     "261c31821d20b90a7b0e72b82c33100003db8a1dc72395ad76de6cedf81c8b93"
+     "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
+     "0b3bfd22d4b66d83f7896e76555f8ac161d365c618181eb8acea5b815fb188dc",
+     "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
+     "fbd9a1089a1d56709ff727ca9e0a1aaff20e4e49cfc7aede513df6227f80c9e0",
+     "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
+     "4b10a9f4df9c7cfe072858f19c438b07bd4c52cf7dd3993a33a92ace3b424bc2"
     ],
     "audio_frames": 0,
     "audio_pcm_sha256": null,
@@ -1292,12 +1297,12 @@
     "supported": true,
     "frames": 6,
     "frame_sha256": [
-     "f7d0f52d8a4b2468249f80c5525bbd84846a03aac2ae3bfcc2a7cb225353de38",
-     "c0e53ed96750c902fb972b32c9ffba55fb2a934061dd734606764087d388b8c6",
-     "9e212cd6675f50ef73591930ad56ec3165c85c8c84659f63afebf5a9f2ab1b80",
-     "b1446d52630d137fc20d8af14a57691a76d319feeec87e07a60fc5986764c916",
-     "1d1b871d74c9577dd2b6b11f1d35148fa6ba8a1a4d2fc19801c3bbe862b9af58",
-     "261c31821d20b90a7b0e72b82c33100003db8a1dc72395ad76de6cedf81c8b93"
+     "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
+     "0b3bfd22d4b66d83f7896e76555f8ac161d365c618181eb8acea5b815fb188dc",
+     "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
+     "fbd9a1089a1d56709ff727ca9e0a1aaff20e4e49cfc7aede513df6227f80c9e0",
+     "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
+     "4b10a9f4df9c7cfe072858f19c438b07bd4c52cf7dd3993a33a92ace3b424bc2"
     ]
    },
    "expect": {},
@@ -1312,7 +1317,8 @@
      "colorspace": "yuv420",
      "flags": [
       "index",
-      "motion"
+      "motion",
+      "ikf"
      ],
      "quality": 50,
      "pattern": "scroll16"
@@ -1616,6 +1622,85 @@
       "channels": 1,
       "rate": 48000
      }
+    }
+   }
+  },
+  "intra_kf_yuv420_lossy": {
+   "file_sha256": "3c273d90430c632312ec00f7e278218a72e37b8d60e184987c843be9e254ffd8",
+   "file_size": 9130,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 228,
+    "width": 64,
+    "height": 64,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 0,
+    "dct_chunks": 6,
+    "compressed_chunks": 0,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "5a651b362caa1ea5c2c6e87bd82fd08ef2721fa1d5af5a5c31470b0c3ae1a943",
+     "98e36dff39a18f1fa9f8f6a771211c284f1101f3a15ac1bb3e6b4364851e8621",
+     "5a651b362caa1ea5c2c6e87bd82fd08ef2721fa1d5af5a5c31470b0c3ae1a943",
+     "98e36dff39a18f1fa9f8f6a771211c284f1101f3a15ac1bb3e6b4364851e8621",
+     "5a651b362caa1ea5c2c6e87bd82fd08ef2721fa1d5af5a5c31470b0c3ae1a943",
+     "98e36dff39a18f1fa9f8f6a771211c284f1101f3a15ac1bb3e6b4364851e8621"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "5a651b362caa1ea5c2c6e87bd82fd08ef2721fa1d5af5a5c31470b0c3ae1a943",
+     "98e36dff39a18f1fa9f8f6a771211c284f1101f3a15ac1bb3e6b4364851e8621",
+     "5a651b362caa1ea5c2c6e87bd82fd08ef2721fa1d5af5a5c31470b0c3ae1a943",
+     "98e36dff39a18f1fa9f8f6a771211c284f1101f3a15ac1bb3e6b4364851e8621",
+     "5a651b362caa1ea5c2c6e87bd82fd08ef2721fa1d5af5a5c31470b0c3ae1a943",
+     "98e36dff39a18f1fa9f8f6a771211c284f1101f3a15ac1bb3e6b4364851e8621"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "intra_kf_yuv420_lossy",
+     "width": 64,
+     "height": 64,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "index",
+      "ikf"
+     ],
+     "quality": 50,
+     "compression": false,
+     "pattern": "checker"
     }
    }
   }

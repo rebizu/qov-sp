@@ -28,6 +28,7 @@ export const QOV_FLAG_HAS_BFRAMES = 0x08;
 export const QOV_FLAG_ENHANCED_COMP = 0x10;
 export const QOV_FLAG_LOSSY_MODE = 0x20;  // Lossy encoding enabled
 export const QOV_FLAG_DCT_ENABLED = 0x40; // DCT block encoding available
+export const QOV_FLAG_INTRA_DCT_KF = 0x80; // lossy keyframes use intra DCT blocks
 
 // Version constants
 export const QOV_VERSION_ORIGINAL = 0x01;    // 16-bit chunk sizes, lossless

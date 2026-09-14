@@ -281,6 +281,32 @@ Enabled via `DCT_BLOCKS` chunk flag. Operates on 8x8 blocks.
   and the luma quantizer.
 - `DCT_BLOCKS` and `COMPRESSED` (§2.2) are independent: a DCT chunk may
   be stored LZ4-compressed or raw.
+
+#### 3.4.3 Intra DCT Keyframes (lossy YUV mode)
+
+A **KEYFRAME** chunk with the `DCT_BLOCKS` flag set carries intra-coded
+DCT blocks instead of the §3.2 opcode stream. The payload is the plane
+block streams in **Y, U, V** (then A if present) order; alpha uses luma
+geometry and the luma quantizer. Decoders that do not implement this
+section MUST reject KEYFRAME chunks carrying `DCT_BLOCKS`.
+
+- Blocks are coded and reconstructed in raster order; the reconstruction
+  of earlier blocks is the prediction reference for later ones.
+- **DC prediction** (fixed rule, no mode bits): the predictor is the
+  mean of the reconstructed left column (`x0-1`, clipped to the plane)
+  and/or the reconstructed top row (`y0-1`, clipped); with both
+  neighbors it is the rounded average of the two means, with one
+  neighbor it is that mean alone, and with neither it is 128. All
+  averaging is integer round-half-up.
+- The block residual (source − predictor) is transformed, quantized and
+  coded with the §3.4.2 block format; the same QP-scaled skip rule
+  applies (skip fills the block with the predictor).
+- Reconstruction adds the dequantized residual to the predictor and
+  clamps to [0, 255]. The reconstructed planes are the reference for
+  subsequent P-frames.
+- The encoder-side normative rules of §3.4.2 (dead-zone, block skip)
+  apply here unchanged.
+
 - **Encoder-side normative rules** (required for the bit-exact
   multi-encoder parity the conformance suite enforces; decoders are
   unaffected by both):

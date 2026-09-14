@@ -22,6 +22,7 @@ public class QovEncoder
     private readonly bool _hasAlpha;
     private readonly bool _useCompression;
     private readonly bool _lossyMode;
+    private readonly bool _intraDctKeyframes;
     private readonly LossyParams _lossyParams;
     private readonly bool _motionEnabled;
     private readonly QoaEncoder? _qoaEncoder;
@@ -47,6 +48,7 @@ public class QovEncoder
         byte version = (flags & QovTypes.FlagLossyMode) != 0 ? QovTypes.Version3 : QovTypes.Version2;
         LossyParams lp = LossyParams.Derive(quality);
         _lossyMode = quality > 0 && quality < 100;
+        _intraDctKeyframes = (flags & QovTypes.FlagIntraDctKf) != 0;
         _lossyParams = _lossyMode ? lp : default;
         _motionEnabled = (flags & QovTypes.FlagHasMotion) != 0;
 
@@ -433,41 +435,52 @@ public class QovEncoder
 
         RgbaToYuvPlanes(pixels, width, height, out byte[] yPlane, out byte[] uPlane, out byte[] vPlane);
 
-        // Apply lossy quantization if enabled (reference = quantized planes)
-        if (_lossyMode)
-        {
-            yPlane = QuantizePlane(yPlane, _lossyParams.YQuant)!;
-            uPlane = QuantizePlane(uPlane, _lossyParams.UvQuant)!;
-            vPlane = QuantizePlane(vPlane, _lossyParams.UvQuant)!;
-        }
-
-        // Store planes for P-frame reference
-        yPlane.AsSpan().CopyTo(_prevYPlane.AsSpan()!);
-        uPlane.AsSpan().CopyTo(_prevUPlane.AsSpan()!);
-        vPlane.AsSpan().CopyTo(_prevVPlane.AsSpan()!);
-
+        // Alpha extraction for the P-frame reference / alpha plane coding
         if (_prevAPlane != null)
         {
-            // Extract alpha
             for (int i = 0; i < pixelCount; i++) _prevAPlane[i] = pixels[i * 4 + 3];
-            if (_lossyMode)
-            {
-                var quantizedA = QuantizePlane(_prevAPlane, _lossyParams.YQuant);
-                quantizedA?.AsSpan().CopyTo(_prevAPlane.AsSpan());
-            }
         }
 
         using var tempStream = new MemoryStream();
         using var tempWriter = new BinaryWriter(tempStream);
 
-        EncodeYuvPlane(yPlane, tempWriter);
-        EncodeYuvPlane(uPlane, tempWriter);
-        EncodeYuvPlane(vPlane, tempWriter);
-        
-        if (_prevAPlane != null)
+        byte chunkFlags = QovTypes.ChunkFlagYuv;
+        if (_lossyMode && _intraDctKeyframes)
         {
-            EncodeYuvPlane(_prevAPlane, tempWriter);
+            // PR3 intra DCT keyframe (spec 3.4.3): DC-predicted 8x8 blocks;
+            // the plane buffers end up holding the decoder-side reconstruction
+            chunkFlags |= QovTypes.ChunkFlagDctBlocks;
+            (int kfUvW, int kfUvH) = ChromaDims();
+            EncodeIntraPlaneDct(yPlane, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, tempWriter);
+            EncodeIntraPlaneDct(uPlane, kfUvW, kfUvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, tempWriter);
+            EncodeIntraPlaneDct(vPlane, kfUvW, kfUvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, tempWriter);
+            if (_prevAPlane != null)
+            {
+                EncodeIntraPlaneDct(_prevAPlane, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, tempWriter);
+            }
         }
+        else
+        {
+            if (_lossyMode)
+            {
+                yPlane = QuantizePlane(yPlane, _lossyParams.YQuant)!;
+                uPlane = QuantizePlane(uPlane, _lossyParams.UvQuant)!;
+                vPlane = QuantizePlane(vPlane, _lossyParams.UvQuant)!;
+            }
+            EncodeYuvPlane(yPlane, tempWriter);
+            EncodeYuvPlane(uPlane, tempWriter);
+            EncodeYuvPlane(vPlane, tempWriter);
+
+            if (_prevAPlane != null)
+            {
+                EncodeYuvPlane(_prevAPlane, tempWriter);
+            }
+        }
+
+        // Store planes for P-frame reference (reconstructed values when lossy)
+        yPlane.AsSpan().CopyTo(_prevYPlane.AsSpan()!);
+        uPlane.AsSpan().CopyTo(_prevUPlane.AsSpan()!);
+        vPlane.AsSpan().CopyTo(_prevVPlane.AsSpan()!);
 
         // Write end marker
         for (int i = 0; i < 7; i++) tempWriter.Write((byte)0);
@@ -475,7 +488,7 @@ public class QovEncoder
 
         tempWriter.Flush();
         byte[] frameData = tempStream.ToArray();
-        WriteChunk(QovTypes.ChunkTypeKeyframe, QovTypes.ChunkFlagYuv, timestamp, frameData, true);
+        WriteChunk(QovTypes.ChunkTypeKeyframe, chunkFlags, timestamp, frameData, true);
     }
 
     public void EncodePFrame(ReadOnlySpan<byte> pixels, uint timestamp)
@@ -1001,6 +1014,162 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
         }
     }
 
+
+    // Intra DCT plane coding (spec 3.4.3): DC-predicted 8x8 blocks. `plane`
+    // doubles as the reconstruction buffer and ends up holding the decoded
+    // values, so the caller can use it directly as the P-frame reference.
+    private void EncodeIntraPlaneDct(byte[] plane, int width, int height, int[] quant, byte opType, BinaryWriter writer)
+    {
+        int qpBase = _header.DctQpBase;
+        double scale = 1.0 / (0.1 + qpBase * 0.1);
+        int blocksX = (width + 7) / 8;
+        int blocksY = (height + 7) / 8;
+        int skipCount = 0;
+
+        for (int by = 0; by < blocksY; by++)
+        {
+            for (int bx = 0; bx < blocksX; bx++)
+            {
+                int x0 = bx * 8;
+                int y0 = by * 8;
+                int pred = IntraPred(plane, width, height, x0, y0);
+
+                float[] blockBuf = new float[64];
+                int diffSum = 0;
+                for (int y = 0; y < 8; y++)
+                {
+                    for (int x = 0; x < 8; x++)
+                    {
+                        int px = x0 + x;
+                        int py = y0 + y;
+                        if (px >= width || py >= height) { blockBuf[y * 8 + x] = 0; continue; }
+                        int res = plane[py * width + px] - pred;
+                        blockBuf[y * 8 + x] = res;
+                        diffSum += Math.Abs(res);
+                    }
+                }
+
+                if (diffSum < 32 + qpBase * 8)
+                {
+                    for (int y = 0; y < 8; y++)
+                    {
+                        if (y0 + y >= height) break;
+                        for (int x = 0; x < 8; x++)
+                        {
+                            if (x0 + x >= width) break;
+                            plane[(y0 + y) * width + x0 + x] = (byte)pred;
+                        }
+                    }
+                    skipCount++;
+                    continue;
+                }
+
+                while (skipCount > 0)
+                {
+                    writer.Write(QovTypes.OpDctSkip);
+                    byte count = (byte)Math.Min(skipCount, 255);
+                    writer.Write(count);
+                    skipCount -= count;
+                }
+
+                float[] coeffs = new float[64];
+                Dct.ForwardDct(blockBuf, coeffs);
+
+                writer.Write(opType);
+                writer.Write((byte)0x40); // qp delta 0
+
+                int dcVal = ColorConversion.JsRound(coeffs[0] * scale / quant[0]);
+                writer.Write((byte)((dcVal >> 8) & 0xff));
+                writer.Write((byte)(dcVal & 0xff));
+
+                int zeroRun = 0;
+                for (int k = 1; k < 64; k++)
+                {
+                    int zigzagIdx = Dct.ZigZag[k];
+                    double coeff = coeffs[zigzagIdx];
+                    double prod = coeff * scale / quant[zigzagIdx];
+                    int qVal = (prod > -0.75 && prod < 0.75) ? 0 : ColorConversion.JsRound(prod);
+
+                    if (qVal == 0)
+                    {
+                        zeroRun++;
+                    }
+                    else
+                    {
+                        while (zeroRun >= 16)
+                        {
+                            writer.Write((byte)0xF0);
+                            zeroRun -= 16;
+                        }
+
+                        int size = 0;
+                        if (qVal >= -128 && qVal <= 127) size = 1;
+                        else if (qVal >= -32768 && qVal <= 32767) size = 2;
+                        else if (qVal >= -8388608 && qVal <= 8388607) size = 3;
+                        else size = 4;
+
+                        writer.Write((byte)((zeroRun << 4) | size));
+                        for (int sh = size - 1; sh >= 0; sh--)
+                            writer.Write((byte)((qVal >> (8 * sh)) & 0xff));
+                        zeroRun = 0;
+                    }
+                }
+                writer.Write((byte)0x00); // EOB
+
+                // Reconstruct into the plane (mirrors the decoder exactly)
+                float[] recCoeffs = new float[64];
+                recCoeffs[0] = (float)(dcVal * quant[0] / scale);
+                for (int k = 1; k < 64; k++)
+                {
+                    int z = Dct.ZigZag[k];
+                    double prod = coeffs[z] * scale / quant[z];
+                    int qVal = (prod > -0.75 && prod < 0.75) ? 0 : ColorConversion.JsRound(prod);
+                    recCoeffs[z] = (float)(qVal * quant[z] / scale);
+                }
+                Dct.InverseDctRaw(recCoeffs, blockBuf);
+                for (int y = 0; y < 8; y++)
+                {
+                    if (y0 + y >= height) break;
+                    for (int x = 0; x < 8; x++)
+                    {
+                        if (x0 + x >= width) break;
+                        int idx = (y0 + y) * width + x0 + x;
+                        int val = (int)(pred + blockBuf[y * 8 + x]);
+                        plane[idx] = (byte)Math.Clamp(val, 0, 255);
+                    }
+                }
+            }
+        }
+
+        while (skipCount > 0)
+        {
+            writer.Write(QovTypes.OpDctSkip);
+            byte count = (byte)Math.Min(skipCount, 255);
+            writer.Write(count);
+            skipCount -= count;
+        }
+    }
+
+    // Intra DC prediction (spec 3.4.3): mean of the reconstructed left
+    // column / top row; integer round-half-up; 128 with no neighbor.
+    private static int IntraPred(byte[] plane, int w, int h, int x0, int y0)
+    {
+        long lsum = 0, tsum = 0;
+        int lcount = 0, tcount = 0;
+        if (x0 > 0)
+            for (int yy = 0; yy < 8 && y0 + yy < h; yy++) { lsum += plane[(y0 + yy) * w + x0 - 1]; lcount++; }
+        if (y0 > 0)
+            for (int xx = 0; xx < 8 && x0 + xx < w; xx++) { tsum += plane[(y0 - 1) * w + x0 + xx]; tcount++; }
+        if (lcount > 0 && tcount > 0)
+        {
+            int lm = (int)((2 * lsum + lcount) / (2 * lcount));
+            int tm = (int)((2 * tsum + tcount) / (2 * tcount));
+            return (lm + tm + 1) / 2;
+        }
+        if (lcount > 0) return (int)((2 * lsum + lcount) / (2 * lcount));
+        if (tcount > 0) return (int)((2 * tsum + tcount) / (2 * tcount));
+        return 128;
+    }
 
     private void EncodePlaneDct(ReadOnlySpan<byte> curr, ReadOnlySpan<byte> prev, Span<byte> next, int width, int height, int[] quant, byte opType, float[] blockBuf, BinaryWriter writer)
     {

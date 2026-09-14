@@ -40,7 +40,7 @@ import {
   DEFAULT_QUANT_CHROMA,
 } from './dct';
 
-import { decodePlaneDctInto } from './dct-decode';
+import { decodePlaneDctInto, decodeIntraPlaneDctInto } from './dct-decode';
 
 import { lz4Decompress } from './lz4';
 
@@ -1061,6 +1061,47 @@ export class QovDecoder {
     return true;
   }
 
+  private decodeYuvKeyframeDataDct(chunkSize: number): boolean {
+    const dataEnd = this.pos + chunkSize;
+    this.decodeYuvKeyframeDataDctCore();
+    this.pos = dataEnd;
+    return true;
+  }
+
+  private decodeYuvKeyframeDataDctFromBuffer(): boolean {
+    this.decodeYuvKeyframeDataDctCore();
+    return true;
+  }
+
+  // Intra DCT keyframe (spec §3.4.3): no reference, raster-order
+  // reconstruction with DC prediction
+  private decodeYuvKeyframeDataDctCore(): void {
+    const { width, height, colorspace } = this.header;
+    const { w: uvW, h: uvH } = chromaPlaneDims(colorspace, width, height);
+    const qpBase = this.header.dctQpBase || 20;
+    const readU8 = this.readU8.bind(this);
+    const blockBuf = new Float32Array(64);
+
+    decodeIntraPlaneDctInto(readU8, this.currYPlane!, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, qpBase, blockBuf);
+    decodeIntraPlaneDctInto(readU8, this.currUPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, qpBase, blockBuf);
+    decodeIntraPlaneDctInto(readU8, this.currVPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, qpBase, blockBuf);
+    if (this.hasYuvAlpha && this.currAPlane) {
+      decodeIntraPlaneDctInto(readU8, this.currAPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, qpBase, blockBuf);
+    }
+
+    this.yuvPlanesToRgba();
+    // Swap buffers
+    [this.prevYPlane, this.currYPlane] = [this.currYPlane, this.prevYPlane];
+    [this.prevUPlane, this.currUPlane] = [this.currUPlane, this.prevUPlane];
+    [this.prevVPlane, this.currVPlane] = [this.currVPlane, this.prevVPlane];
+    if (this.hasYuvAlpha) {
+      [this.prevAPlane, this.currAPlane] = [this.currAPlane, this.prevAPlane];
+    }
+    const tmp = this.prevFrame;
+    this.prevFrame = this.currFrame;
+    this.currFrame = tmp;
+  }
+
   private decodeYuvPFrameDataDctFromBuffer(_uncompressedSize: number, hasMotion: boolean): boolean {
     // Data is consumed through activeData via readU8(); the caller has already
     // advanced this.pos past the chunk, so no file-position fixup may run here.
@@ -1151,6 +1192,7 @@ export class QovDecoder {
         case QOV_CHUNK_KEYFRAME: {
           const isYuvChunk = (chunkHeader.chunkFlags & 0x01) !== 0;
           const isCompressed = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_COMPRESSED) !== 0;
+          const isDctKeyframe = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_DCT_BLOCKS) !== 0;
           // console.log(`[Decoder] Decoding keyframe ${frameNumber}, YUV: ${isYuvChunk}, Compressed: ${isCompressed}...`);
 
           // Determine the effective chunk size (excluding uncompressed_size if compressed)
@@ -1167,7 +1209,11 @@ export class QovDecoder {
             this.setActiveData(decompressedData);
 
             if (isYuvChunk || this.isYuvMode) {
-              this.decodeYuvKeyframeDataFromBuffer(chunkHeader.uncompressedSize!);
+              if (isDctKeyframe) {
+                this.decodeYuvKeyframeDataDctFromBuffer();
+              } else {
+                this.decodeYuvKeyframeDataFromBuffer(chunkHeader.uncompressedSize!);
+              }
             } else {
               this.decodeKeyframeDataFromBuffer(chunkHeader.uncompressedSize!);
             }
@@ -1175,7 +1221,11 @@ export class QovDecoder {
             this.setActiveData(null);
           } else {
             if (isYuvChunk || this.isYuvMode) {
-              this.decodeYuvKeyframeData(chunkHeader.chunkSize);
+              if (isDctKeyframe) {
+                this.decodeYuvKeyframeDataDct(chunkHeader.chunkSize);
+              } else {
+                this.decodeYuvKeyframeData(chunkHeader.chunkSize);
+              }
             } else {
               this.decodeKeyframeData(chunkHeader.chunkSize);
             }
