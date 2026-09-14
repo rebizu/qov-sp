@@ -1,4 +1,4 @@
-namespace QovLibrary;
+﻿namespace QovLibrary;
 
 /// <summary>
 /// QOV Decoder - decodes QOV files with sync markers, chunks, and opcode decoding.
@@ -522,13 +522,18 @@ public class QovDecoder
             // Decode temporal YUV planes using persistent previous buffer as reference
             int pos = 0;
 
+            // Refresh band byte leads the payload, before MV data (spec 3.4.4)
+            bool hasBand = (chunkFlags & QovTypes.ChunkFlagRefreshBand) != 0;
+            int band = hasBand ? frameData[pos++] : -1;
+            var cm = Motion.ChromaMotionParams(_header.Colorspace);
+            (int cW, int cH) = ChromaDims();
+            int rowsY = (_header.Height + 7) / 8;
+            int rowsC = (cH + 7) / 8;
+
             // A motion chunk's effective reference is the compensated previous plane
             MotionVectors? mv = hasMotion
                 ? Motion.ParseMvBlock(frameData, ref pos, _header.Width, _header.Height)
                 : null;
-            var cm = Motion.ChromaMotionParams(_header.Colorspace);
-            (int cW, int cH) = ChromaDims();
-
             byte[]? refY = _prevYPlane, refU = _prevUPlane, refV = _prevVPlane, refA = _prevAPlane;
             if (mv != null)
             {
@@ -560,13 +565,18 @@ public class QovDecoder
                 int uvW = cW;
                 int uvH = cH;
 
-                pos = DecodePlaneDct(frameData, pos, _currYPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf);
-                pos = DecodePlaneDct(frameData, pos, _currUPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf);
-                pos = DecodePlaneDct(frameData, pos, _currVPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf);
+                int yr0 = band < 0 ? -1 : rowsY * band / QovTypes.IntraRefreshBands;
+                int yr1 = band < 0 ? -1 : rowsY * (band + 1) / QovTypes.IntraRefreshBands;
+                int cr0 = band < 0 ? -1 : rowsC * band / QovTypes.IntraRefreshBands;
+                int cr1 = band < 0 ? -1 : rowsC * (band + 1) / QovTypes.IntraRefreshBands;
+
+                pos = DecodePlaneDct(frameData, pos, _currYPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, yr0, yr1);
+                pos = DecodePlaneDct(frameData, pos, _currUPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, cr0, cr1);
+                pos = DecodePlaneDct(frameData, pos, _currVPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, cr0, cr1);
                 if (_hasYuvAlpha && _currAPlane != null && refA != null)
                 {
                     // Alpha is coded with luma dimensions and the luma quant table
-                    pos = DecodePlaneDct(frameData, pos, _currAPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf);
+                    pos = DecodePlaneDct(frameData, pos, _currAPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, yr0, yr1);
                 }
             }
             else
@@ -1036,7 +1046,7 @@ public class QovDecoder
         return k; // Return value not strictly needed but matches structure
     }
 
-    private int DecodePlaneDct(ReadOnlySpan<byte> data, int startPos, byte[] plane, int w, int h, int[] quantTable, byte opType, float[] blockBuf)
+    private int DecodePlaneDct(ReadOnlySpan<byte> data, int startPos, byte[] plane, int w, int h, int[] quantTable, byte opType, float[] blockBuf, int bandR0 = -1, int bandR1 = -1)
     {
         byte qpBase = _header.DctQpBase != 0 ? _header.DctQpBase : (byte)20;
         int blocksX = (int)Math.Ceiling(w / 8.0);
@@ -1048,22 +1058,31 @@ public class QovDecoder
         while (blockIdx < totalBlocks)
         {
             byte b1 = data[pos++];
-            if (b1 == QovTypes.OpDctSkip)
+            if (b1 == QovTypes.OpDctSkip || b1 == QovTypes.OpDctZero)
             {
                 byte count = data[pos++];
-                blockIdx += count;
-            }
-            else if (b1 == QovTypes.OpDctZero)
-            {
-                byte count = data[pos++];
-                blockIdx += count;
+                for (int n = 0; n < count && blockIdx < totalBlocks; n++, blockIdx++)
+                {
+                    // Refresh band skips are prediction fills, not ref copies
+                    // (spec 3.4.4); a single run may straddle a band boundary
+                    int brow = blockIdx / blocksX;
+                    if (brow < bandR0 || brow >= bandR1) continue;
+                    int bx = (blockIdx % blocksX) * 8;
+                    int by = brow * 8;
+                    int pred = IntraPred(plane, w, h, bx, by);
+                    for (int y = 0; y < 8 && by + y < h; y++)
+                        for (int x = 0; x < 8 && bx + x < w; x++)
+                            plane[(by + y) * w + bx + x] = (byte)pred;
+                }
             }
             else if (b1 == opType)
             {
-                DecodeDctBlock(data, ref pos, quantTable, qpBase, blockBuf);
-                
                 int bx = (blockIdx % blocksX) * 8;
                 int by = (blockIdx / blocksX) * 8;
+                bool inBand = blockIdx / blocksX >= bandR0 && blockIdx / blocksX < bandR1;
+                int pred = inBand ? IntraPred(plane, w, h, bx, by) : 0;
+
+                DecodeDctBlock(data, ref pos, quantTable, qpBase, blockBuf);
 
                 for (int y = 0; y < 8; y++)
                 {
@@ -1073,7 +1092,8 @@ public class QovDecoder
                         if (bx + x >= w) break;
                         int idx = (by + y) * w + (bx + x);
                         // TS adds the untruncated float residual, clamps, then truncates on store
-                        int val = (int)(plane[idx] + blockBuf[y * 8 + x]);
+                        int baseVal = inBand ? pred : plane[idx];
+                        int val = (int)(baseVal + blockBuf[y * 8 + x]);
                         plane[idx] = (byte)Math.Clamp(val, 0, 255);
                     }
                 }

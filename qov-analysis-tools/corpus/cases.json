@@ -266,6 +266,37 @@
       "quality": 50,
       "compression": false,
       "pattern": "checker"
+    },
+    {
+      "id": "refresh_motion_yuv420_lossy",
+      "width": 128,
+      "height": 96,
+      "frames": 6,
+      "fps": 30,
+      "colorspace": "yuv420",
+      "flags": [
+        "index",
+        "motion",
+        "refresh"
+      ],
+      "quality": 50,
+      "pattern": "scroll16",
+      "note": "PR6 intra refresh bands + motion vectors"
+    },
+    {
+      "id": "refresh_static_yuv420_lossy",
+      "width": 64,
+      "height": 64,
+      "frames": 6,
+      "fps": 30,
+      "colorspace": "yuv420",
+      "flags": [
+        "index",
+        "refresh"
+      ],
+      "quality": 50,
+      "pattern": "checker",
+      "note": "PR6 intra refresh bands, static content, band-skip path"
     }
   ]
 }

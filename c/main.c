@@ -317,6 +317,8 @@ static int cmd_encode(const char *case_path, const char *out_path)
     p.motion = motion;
     p.intra_dct_keyframes = json_bool(js, "intraKeyframes", 0) ||
                            json_has_string(js, "flags", "ikf");
+    p.intra_refresh = json_bool(js, "intraRefresh", 0) ||
+                      json_has_string(js, "flags", "refresh");
     p.lz4 = lz4;
     p.quality = quality;
     if (json_present(js, "audio")) {

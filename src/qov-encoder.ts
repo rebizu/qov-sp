@@ -12,6 +12,7 @@ import {
   QOV_FLAG_HAS_ALPHA,
   QOV_FLAG_LOSSY_MODE,
   QOV_FLAG_INTRA_DCT_KF,
+  QOV_FLAG_INTRA_REFRESH,
   QOV_VERSION_EXTENDED,
   QOV_VERSION_LOSSY,
   QOV_CHUNK_SYNC,
@@ -22,6 +23,8 @@ import {
   QOV_CHUNK_END,
   QOV_CHUNK_FLAG_YUV,
   QOV_CHUNK_FLAG_COMPRESSED,
+  QOV_CHUNK_FLAG_REFRESH_BAND,
+  QOV_INTRA_REFRESH_BANDS,
   deriveLossyParams,
 } from './qov-types';
 
@@ -172,6 +175,7 @@ export class QovEncoder {
 
   private motionEnabled = false;
   private intraDctKeyframes = false;
+  private intraRefresh = false;
 
   private qoaEncoder: QoaEncoder | null = null;
 
@@ -198,6 +202,8 @@ export class QovEncoder {
     if (this.lossyMode) {
       flags |= QOV_FLAG_LOSSY_MODE;
       flags |= QOV_FLAG_DCT_ENABLED;
+    } else {
+      flags &= ~QOV_FLAG_INTRA_REFRESH; // refresh bands are a lossy-only feature
     }
 
     this.header = {
@@ -231,6 +237,7 @@ export class QovEncoder {
       colorspace === QOV_COLORSPACE_YUVA420;
     this.motionEnabled = (flags & QOV_FLAG_HAS_MOTION) !== 0;
     this.intraDctKeyframes = (flags & QOV_FLAG_INTRA_DCT_KF) !== 0;
+    this.intraRefresh = (flags & QOV_FLAG_INTRA_REFRESH) !== 0;
 
     console.log(`[Encoder] Created with colorspace: 0x${colorspace.toString(16)}, YUV mode: ${this.isYuvMode}, hasAlpha: ${this.hasAlpha}, compression: ${compressionEnabled}, lossy: ${this.lossyMode}, quality: ${this.quality}`);
 
@@ -714,6 +721,70 @@ export class QovEncoder {
   // Intra DCT plane coding (spec §3.4.3): DC-predicted 8x8 blocks. `plane`
   // doubles as the reconstruction buffer and ends up holding the decoded
   // values, so the caller can use it directly as the P-frame reference.
+  private dctCoeffs = new Float32Array(64);
+  private dctRec = new Float32Array(64);
+  private dctOut = new Float32Array(64);
+
+  /**
+   * Quantizes one 8x8 residual block from blockBuf, writes the op/delta/DC/AC
+   * stream (spec §3.4.2) and returns the IDCT'd reconstruction. Shared by the
+   * inter, intra-keyframe and refresh-band block coders; mirrors
+   * qov__enc_dct_emit. The returned buffer is reused until the next call.
+   */
+  private writeDctBlock(blockBuf: Float32Array, quant: number[], opType: number, scale: number): Float32Array {
+    const coeffs = this.dctCoeffs;
+    forwardDCT(blockBuf, coeffs);
+
+    this.writeU8(opType);
+    this.writeU8(0x40); // qp delta 0
+
+    const dcVal = Math.round(coeffs[0] * scale / quant[0]);
+    this.writeU16(dcVal & 0xffff);
+
+    let zeroRun = 0;
+    for (let k = 1; k < 64; k++) {
+      const zigzagIdx = ZIGZAG[k];
+      const prod = coeffs[zigzagIdx] * scale / quant[zigzagIdx];
+      // Dead-zone (spec §3.4.2): suppress |level| < 0.75 to kill noise
+      // dithering between 0 and ±1
+      const qVal = prod > -0.75 && prod < 0.75 ? 0 : Math.round(prod);
+
+      if (qVal === 0) {
+        zeroRun++;
+      } else {
+        while (zeroRun >= 16) {
+          this.writeU8(0xF0);
+          zeroRun -= 16;
+        }
+
+        let size = 0;
+        if (qVal >= -128 && qVal <= 127) size = 1;
+        else if (qVal >= -32768 && qVal <= 32767) size = 2;
+        else if (qVal >= -8388608 && qVal <= 8388607) size = 3;
+        else size = 4;
+
+        this.writeU8((zeroRun << 4) | size);
+        for (let sh = size - 1; sh >= 0; sh--) {
+          this.writeU8((qVal >> (8 * sh)) & 0xff);
+        }
+        zeroRun = 0;
+      }
+    }
+    this.writeU8(0x00); // EOB
+
+    const recCoeffs = this.dctRec;
+    recCoeffs[0] = dcVal * quant[0] / scale;
+    for (let k = 1; k < 64; k++) {
+      const z = ZIGZAG[k];
+      const prod = coeffs[z] * scale / quant[z];
+      const qVal = prod > -0.75 && prod < 0.75 ? 0 : Math.round(prod);
+      recCoeffs[z] = qVal * quant[z] / scale;
+    }
+    const rec = this.dctOut;
+    inverseDCTRaw(recCoeffs, rec);
+    return rec;
+  }
+
   private encodeIntraPlaneDct(plane: Uint8Array, w: number, h: number, quant: number[], opType: number): void {
     const qpBase = this.lossyParams?.dctQp ?? 20;
     const scale = 1.0 / (0.1 + qpBase * 0.1);
@@ -761,62 +832,13 @@ export class QovEncoder {
           skipCount -= count;
         }
 
-        const coeffs = new Float32Array(64);
-        forwardDCT(blockBuf, coeffs);
-
-        this.writeU8(opType);
-        this.writeU8(0x40); // qp delta 0
-
-        const dcVal = Math.round(coeffs[0] * scale / quant[0]);
-        this.writeU16(dcVal & 0xffff);
-
-        let zeroRun = 0;
-        for (let k = 1; k < 64; k++) {
-          const zigzagIdx = ZIGZAG[k];
-          const coeff = coeffs[zigzagIdx];
-          const prod = coeff * scale / quant[zigzagIdx];
-          const qVal = prod > -0.75 && prod < 0.75 ? 0 : Math.round(prod);
-
-          if (qVal === 0) {
-            zeroRun++;
-          } else {
-            while (zeroRun >= 16) {
-              this.writeU8(0xF0);
-              zeroRun -= 16;
-            }
-
-            let size = 0;
-            if (qVal >= -128 && qVal <= 127) size = 1;
-            else if (qVal >= -32768 && qVal <= 32767) size = 2;
-            else if (qVal >= -8388608 && qVal <= 8388607) size = 3;
-            else size = 4;
-
-            this.writeU8((zeroRun << 4) | size);
-            for (let sh = size - 1; sh >= 0; sh--) {
-              this.writeU8((qVal >> (8 * sh)) & 0xff);
-            }
-            zeroRun = 0;
-          }
-        }
-        this.writeU8(0x00); // EOB
-
-        // Reconstruct into the plane (mirrors the decoder exactly)
-        const recCoeffs = new Float32Array(64);
-        recCoeffs[0] = dcVal * quant[0] / scale;
-        for (let k = 1; k < 64; k++) {
-          const z = ZIGZAG[k];
-          const prod = coeffs[z] * scale / quant[z];
-          const qVal = prod > -0.75 && prod < 0.75 ? 0 : Math.round(prod);
-          recCoeffs[z] = qVal * quant[z] / scale;
-        }
-        inverseDCTRaw(recCoeffs, blockBuf);
+        const rec = this.writeDctBlock(blockBuf, quant, opType, scale);
         for (let y = 0; y < 8; y++) {
           if (y0 + y >= h) break;
           for (let x = 0; x < 8; x++) {
             if (x0 + x >= w) break;
             const idx = (y0 + y) * w + x0 + x;
-            const res = blockBuf[y * 8 + x];
-            plane[idx] = Math.max(0, Math.min(255, pred + res));
+            plane[idx] = Math.max(0, Math.min(255, pred + rec[y * 8 + x]));
           }
         }
       }
@@ -831,23 +853,83 @@ export class QovEncoder {
     }
   }
 
-  private encodePlaneDct(curr: Uint8Array, prev: Uint8Array, next: Uint8Array, w: number, h: number, quant: number[], opType: number, blockBuf: Float32Array): void {
+  private encodePlaneDct(curr: Uint8Array, prev: Uint8Array, next: Uint8Array, w: number, h: number, quant: number[], opType: number, blockBuf: Float32Array, bandR0 = -1, bandR1 = -1): void {
     const qpBase = this.lossyParams?.dctQp ?? 20;
+    const scale = 1.0 / (0.1 + (qpBase * 0.1));
     const blocksX = Math.ceil(w / 8);
     const blocksY = Math.ceil(h / 8);
     let skipCount = 0;
 
     for (let by = 0; by < blocksY; by++) {
+      const inBand = by >= bandR0 && by < bandR1;
       for (let bx = 0; bx < blocksX; bx++) {
+        const x0 = bx * 8;
+        const y0 = by * 8;
+
+        if (inBand) {
+          // refresh band block (spec §3.4.4): intra semantics — predict from
+          // already-reconstructed pixels of the current frame so fresh data
+          // never copies a damaged reference
+          const pred = intraPred(next, w, h, x0, y0);
+          let diffSum = 0;
+          for (let y = 0; y < 8; y++) {
+            const py = y0 + y;
+            if (py >= h) continue;
+            for (let x = 0; x < 8; x++) {
+              const px = x0 + x;
+              if (px >= w) continue;
+              const res = curr[py * w + px] - pred;
+              blockBuf[y * 8 + x] = res;
+              diffSum += Math.abs(res);
+            }
+          }
+
+          if (diffSum < 32 + qpBase * 8) {
+            // prediction-only block inside the band
+            for (let y = 0; y < 8; y++) {
+              const py = y0 + y;
+              if (py >= h) continue;
+              for (let x = 0; x < 8; x++) {
+                const px = x0 + x;
+                if (px >= w) continue;
+                next[py * w + px] = pred;
+              }
+            }
+            skipCount++;
+            continue;
+          }
+
+          // Flush skips
+          while (skipCount > 0) {
+            this.writeU8(QOV_OP_DCT_SKIP);
+            const count = Math.min(skipCount, 255);
+            this.writeU8(count);
+            skipCount -= count;
+          }
+
+          const rec = this.writeDctBlock(blockBuf, quant, opType, scale);
+          for (let y = 0; y < 8; y++) {
+            const py = y0 + y;
+            if (py >= h) continue;
+            for (let x = 0; x < 8; x++) {
+              const px = x0 + x;
+              if (px >= w) continue;
+              const idx = py * w + px;
+              next[idx] = Math.max(0, Math.min(255, pred + rec[y * 8 + x]));
+            }
+          }
+          continue;
+        }
+
         // 1. Extract Block & Calculate Residual
         let hasContent = false;
         let diffSum = 0;
 
         for (let y = 0; y < 8; y++) {
-          const py = by * 8 + y;
+          const py = y0 + y;
           if (py >= h) continue;
           for (let x = 0; x < 8; x++) {
-            const px = bx * 8 + x;
+            const px = x0 + x;
             if (px >= w) continue;
 
             const idx = py * w + px;
@@ -869,10 +951,10 @@ export class QovEncoder {
           skipCount++;
           // Reconstruct: just copy previous
           for (let y = 0; y < 8; y++) {
-            const py = by * 8 + y;
+            const py = y0 + y;
             if (py >= h) continue;
             for (let x = 0; x < 8; x++) {
-              const px = bx * 8 + x;
+              const px = x0 + x;
               if (px >= w) continue;
               const idx = py * w + px;
               next[idx] = prev[idx];
@@ -889,88 +971,19 @@ export class QovEncoder {
           skipCount -= count;
         }
 
-        // 3. DCT Transform (using imported forwardDCT)
-        const coeffs = new Float32Array(64);
-        forwardDCT(blockBuf, coeffs);
-
-        // 4. Quantize
-        const qp = qpBase;
-        const scale = 1.0 / (0.1 + (qp * 0.1));
-
-        this.writeU8(opType);
-        this.writeU8(0x40); // Delta 0
-
-        // DC
-        const dcVal = Math.round(coeffs[0] * scale / quant[0]);
-        this.writeU16(dcVal & 0xffff);
-
-        // AC
-        let zeroRun = 0;
-        for (let k = 1; k < 64; k++) {
-          const zigzagIdx = ZIGZAG[k];
-          const coeff = coeffs[zigzagIdx];
-          // Dead-zone (spec §3.4.2): suppress |level| < 0.75 to kill noise
-          // dithering between 0 and ±1
-          const prod = coeff * scale / quant[zigzagIdx];
-          const qVal = prod > -0.75 && prod < 0.75 ? 0 : Math.round(prod);
-
-          if (qVal === 0) {
-            zeroRun++;
-          } else {
-            // Write run/level
-            while (zeroRun >= 16) {
-              this.writeU8(0xF0);
-              zeroRun -= 16;
-            }
-
-            let size = 0;
-            // Size based on bits? Spec says "size" 1..4.
-            // "The 4 high bits contain the run-length... The 4 low bits contain the size in bytes..."
-            // "Followed by 'size' bytes containing the level."
-            // Signed level.
-            if (qVal >= -128 && qVal <= 127) size = 1;
-            else if (qVal >= -32768 && qVal <= 32767) size = 2;
-            else if (qVal >= -8388608 && qVal <= 8388607) size = 3;
-            else size = 4;
-
-            this.writeU8((zeroRun << 4) | size);
-
-            if (size === 1) this.writeU8(qVal);
-            else if (size === 2) this.writeU16(qVal);
-            else if (size === 3) {
-              this.writeU8((qVal >> 16) & 0xff);
-              this.writeU8((qVal >> 8) & 0xff);
-              this.writeU8(qVal & 0xff);
-            }
-            else this.writeU32(qVal);
-
-            zeroRun = 0;
-          }
-        }
-        this.writeU8(0x00); // EOB
-
-        // 5. Reconstruct
-        const recCoeffs = new Float32Array(64);
-        recCoeffs[0] = Math.round(coeffs[0] * scale / quant[0]) * quant[0] / scale;
-        for (let k = 1; k < 64; k++) {
-          const z = ZIGZAG[k];
-          const qVal = Math.round(coeffs[z] * scale / quant[z]);
-          recCoeffs[z] = qVal * quant[z] / scale;
-        }
-
-        // IDCT (using imported inverseDCTRaw)
-        inverseDCTRaw(recCoeffs, blockBuf);
+        // 3-5. DCT transform, quantize + write, reconstruct
+        const rec = this.writeDctBlock(blockBuf, quant, opType, scale);
 
         // Add to prev and store in next
         for (let y = 0; y < 8; y++) {
-          const py = by * 8 + y;
+          const py = y0 + y;
           if (py >= h) continue;
           for (let x = 0; x < 8; x++) {
-            const px = bx * 8 + x;
+            const px = x0 + x;
             if (px >= w) continue;
 
             const idx = py * w + px;
-            const res = blockBuf[y * 8 + x];
+            const res = rec[y * 8 + x];
             next[idx] = Math.max(0, Math.min(255, prev[idx] + res));
           }
         }
@@ -1047,6 +1060,10 @@ export class QovEncoder {
 
     // Check if we should use DCT
     const useDct = (this.header.flags & QOV_FLAG_DCT_ENABLED) !== 0;
+    // Refresh band (spec §3.4.4): the band byte leads the payload, before MV data
+    const refresh = useDct && this.intraRefresh;
+    const band = refresh ? this.frameCount % QOV_INTRA_REFRESH_BANDS : -1;
+    const refreshFlag = refresh ? QOV_CHUNK_FLAG_REFRESH_BAND : 0;
 
     if (useDct) {
       let chunkHeaderPos = -1;
@@ -1054,18 +1071,18 @@ export class QovEncoder {
       if (this.compressionEnabled) {
         // Compression mode: encode to temp buffer, then compress
         this.startFrameData();
+        if (refresh) this.writeU8(band);
+        if (mv) writeMvBlock(mv, (v) => this.writeU8(v), (v) => this.writeU16(v));
       } else {
         // DCT_BLOCKS does not require compression: write the chunk directly
         chunkHeaderPos = this.buffer.getSize();
         this.writeU8(QOV_CHUNK_PFRAME);
-        this.writeU8(QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS | motionFlag);
+        this.writeU8(QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS | motionFlag | refreshFlag);
         this.writeU32(0);   // size placeholder
         this.writeU32(timestamp);
+        if (refresh) this.writeU8(band);
         if (mv) writeMvBlock(mv, (v) => this.writeU8(v), (v) => this.writeU16(v));
         chunkDataStart = this.buffer.getSize();
-      }
-      if (mv && this.compressionEnabled) {
-        writeMvBlock(mv, (v) => this.writeU8(v), (v) => this.writeU16(v));
       }
 
       // DCT Encoding
@@ -1074,13 +1091,22 @@ export class QovEncoder {
       const nextU = new Uint8Array(planes.uPlane.length);
       const nextV = new Uint8Array(planes.vPlane.length);
 
+      // Band block rows per plane (spec §3.4.4): [rows*band/BANDS, rows*(band+1)/BANDS)
+      const { h: uvHb } = chromaPlaneDims(colorspace, width, height);
+      const rowsY = Math.ceil(height / 8);
+      const rowsC = Math.ceil(uvHb / 8);
+      const yr0 = band < 0 ? -1 : Math.floor(rowsY * band / QOV_INTRA_REFRESH_BANDS);
+      const yr1 = band < 0 ? -1 : Math.floor(rowsY * (band + 1) / QOV_INTRA_REFRESH_BANDS);
+      const cr0 = band < 0 ? -1 : Math.floor(rowsC * band / QOV_INTRA_REFRESH_BANDS);
+      const cr1 = band < 0 ? -1 : Math.floor(rowsC * (band + 1) / QOV_INTRA_REFRESH_BANDS);
+
       // Encode and reconstruct planes (to avoid drift); the effective
       // reference is the motion-compensated copy when vectors were emitted
-      this.encodePlaneDct(planes.yPlane, refY, nextY, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
+      this.encodePlaneDct(planes.yPlane, refY, nextY, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf, yr0, yr1);
 
       const { w: uvW, h: uvH } = chromaPlaneDims(colorspace, width, height);
-      this.encodePlaneDct(planes.uPlane, refU, nextU, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
-      this.encodePlaneDct(planes.vPlane, refV, nextV, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
+      this.encodePlaneDct(planes.uPlane, refU, nextU, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf, cr0, cr1);
+      this.encodePlaneDct(planes.vPlane, refV, nextV, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf, cr0, cr1);
 
       // Update reference planes to RECONSTRUCTED versions
       this.prevYPlane = nextY;
@@ -1090,14 +1116,14 @@ export class QovEncoder {
       // Alpha uses luma dimensions and the luma quant table
       if (planes.aPlane && refA) {
         const nextA = new Uint8Array(planes.aPlane.length);
-        this.encodePlaneDct(planes.aPlane, refA, nextA, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
+        this.encodePlaneDct(planes.aPlane, refA, nextA, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf, yr0, yr1);
         this.prevAPlane = nextA;
       }
 
       this.writeEndMarker();
 
       if (this.compressionEnabled) {
-        this.finishFrameData(QOV_CHUNK_PFRAME, QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS | motionFlag, timestamp);
+        this.finishFrameData(QOV_CHUNK_PFRAME, QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS | motionFlag | refreshFlag, timestamp);
       } else {
         const chunkSize = this.buffer.getSize() - chunkDataStart;
         this.buffer.setByte(chunkHeaderPos + 2, (chunkSize >> 24) & 0xff);

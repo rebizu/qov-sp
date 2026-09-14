@@ -1,4 +1,4 @@
-using QovLibrary;
+﻿using QovLibrary;
 using System.Text.Json;
 
 // QOV corpus generator CLI (C# implementation).
@@ -35,7 +35,7 @@ class Program
         int keyframeInterval = json.TryGetProperty("keyframeInterval", out var ki) ? ki.GetInt32() : 2;
         bool compression = !json.TryGetProperty("compression", out var comp) || comp.GetBoolean();
         int quality = json.TryGetProperty("quality", out var q) ? q.GetInt32() : 0;
-        bool hasAlpha = false, hasMotion = false, hasIndex = true, hasIkf = false;
+        bool hasAlpha = false, hasMotion = false, hasIndex = true, hasIkf = false, hasRefresh = false;
         if (json.TryGetProperty("flags", out var fl))
         {
             foreach (var f in fl.EnumerateArray())
@@ -46,6 +46,7 @@ class Program
                     case "motion": hasMotion = true; break;
                     case "index": hasIndex = true; break;
                     case "ikf": hasIkf = true; break;
+                    case "refresh": hasRefresh = true; break;
                 }
             }
         }
@@ -73,7 +74,7 @@ class Program
             return 1;
         }
 
-        int flags = FlagHasIndex | (hasAlpha ? FlagHasAlpha : 0) | (hasMotion ? FlagHasMotion : 0) | (hasIkf ? QovTypes.FlagIntraDctKf : 0);
+        int flags = FlagHasIndex | (hasAlpha ? FlagHasAlpha : 0) | (hasMotion ? FlagHasMotion : 0) | (hasIkf ? QovTypes.FlagIntraDctKf : 0) | (hasRefresh ? QovTypes.FlagIntraRefresh : 0);
 
         using var stream = File.Create(args[1]);
         var encoder = new QovEncoder(stream, (ushort)width, (ushort)height,

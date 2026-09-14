@@ -97,7 +97,10 @@ export function decodeDctBlockInto(
 
 /**
  * Decodes a full plane of DCT blocks (SKIP/ZERO runs + per-block residuals
- * added to the reference copy already present in `plane`).
+ * added to the reference copy already present in `plane`). Blocks whose row
+ * lies inside [bandR0, bandR1) are refresh-band blocks (spec §3.4.4): skips
+ * fill them with the DC prediction instead of the reference, and coded
+ * blocks add the residual to the prediction.
  */
 export function decodePlaneDctInto(
   readU8: () => number,
@@ -108,6 +111,8 @@ export function decodePlaneDctInto(
   opType: number,
   qpBase: number,
   blockBuf: Float32Array,
+  bandR0 = -1,
+  bandR1 = -1,
 ): void {
   const blocksX = Math.ceil(w / 8);
   const blocksY = Math.ceil(h / 8);
@@ -117,15 +122,34 @@ export function decodePlaneDctInto(
   while (blockIdx < totalBlocks) {
     const b1 = readU8();
     if (b1 === QOV_OP_DCT_SKIP) {
-      // QOV_OP_DCT_SKIP: run of blocks copied from the reference
-      blockIdx += readU8();
+      // QOV_OP_DCT_SKIP: run of blocks copied from the reference — except
+      // inside a refresh band, where each skipped block is a prediction fill
+      // (a single run may straddle a band boundary)
+      const count = readU8();
+      for (let n = 0; n < count && blockIdx < totalBlocks; n++, blockIdx++) {
+        const blockRow = Math.floor(blockIdx / blocksX);
+        if (blockRow < bandR0 || blockRow >= bandR1) continue;
+        const bx = (blockIdx % blocksX) * 8;
+        const by = blockRow * 8;
+        const pred = intraPred(plane, w, h, bx, by);
+        for (let y = 0; y < 8; y++) {
+          if (by + y >= h) break;
+          for (let x = 0; x < 8; x++) {
+            if (bx + x >= w) break;
+            plane[(by + y) * w + bx + x] = pred;
+          }
+        }
+      }
     } else if (b1 === QOV_OP_DCT_ZERO) {
       // QOV_OP_DCT_ZERO: zero residual = reference copy (already in place)
       blockIdx += readU8();
     } else if (b1 === opType) {
-      decodeDctBlockInto(readU8, quant, qpBase, blockBuf);
       const bx = (blockIdx % blocksX) * 8;
       const by = Math.floor(blockIdx / blocksX) * 8;
+      const blockRow = Math.floor(blockIdx / blocksX);
+      const inBand = blockRow >= bandR0 && blockRow < bandR1;
+      const pred = inBand ? intraPred(plane, w, h, bx, by) : 0;
+      decodeDctBlockInto(readU8, quant, qpBase, blockBuf);
 
       for (let y = 0; y < 8; y++) {
         if (by + y >= h) break;
@@ -133,7 +157,8 @@ export function decodePlaneDctInto(
           if (bx + x >= w) break;
           const idx = (by + y) * w + (bx + x);
           const res = blockBuf[y * 8 + x];
-          plane[idx] = Math.max(0, Math.min(255, plane[idx] + res));
+          const base = inBand ? pred : plane[idx];
+          plane[idx] = Math.max(0, Math.min(255, base + res));
         }
       }
       blockIdx++;

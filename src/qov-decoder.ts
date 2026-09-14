@@ -29,6 +29,8 @@ import {
   QOV_OP_SKIP_SIMILAR,
   QOV_OP_SKIP_SIMILAR_LONG,
   QOV_CHUNK_FLAG_DCT_BLOCKS,
+  QOV_CHUNK_FLAG_REFRESH_BAND,
+  QOV_INTRA_REFRESH_BANDS,
   QOV_MAX_DIMENSION,
   QOV_MAX_PIXELS,
   getChunkTypeName,
@@ -1053,10 +1055,11 @@ export class QovDecoder {
     return true;
   }
 
-  private decodeYuvPFrameDataDct(chunkSize: number, hasMotion: boolean): boolean {
+  private decodeYuvPFrameDataDct(chunkSize: number, hasMotion: boolean, hasBand: boolean): boolean {
     const dataEnd = this.pos + chunkSize;
+    const band = hasBand ? this.readU8() : -1;
     const mv = hasMotion ? parseMvBlock(this.readU8.bind(this), this.header.width, this.header.height) : null;
-    this.decodeYuvPFrameDataDctCore(mv);
+    this.decodeYuvPFrameDataDctCore(mv, band);
     this.pos = dataEnd;
     return true;
   }
@@ -1102,19 +1105,28 @@ export class QovDecoder {
     this.currFrame = tmp;
   }
 
-  private decodeYuvPFrameDataDctFromBuffer(_uncompressedSize: number, hasMotion: boolean): boolean {
+  private decodeYuvPFrameDataDctFromBuffer(_uncompressedSize: number, hasMotion: boolean, hasBand: boolean): boolean {
     // Data is consumed through activeData via readU8(); the caller has already
     // advanced this.pos past the chunk, so no file-position fixup may run here.
+    const band = hasBand ? this.readU8() : -1;
     const mv = hasMotion ? parseMvBlock(this.readU8.bind(this), this.header.width, this.header.height) : null;
-    this.decodeYuvPFrameDataDctCore(mv);
+    this.decodeYuvPFrameDataDctCore(mv, band);
     return true;
   }
 
-  private decodeYuvPFrameDataDctCore(mv: MotionVectors | null): void {
+  private decodeYuvPFrameDataDctCore(mv: MotionVectors | null, band: number): void {
     const { width, height, colorspace } = this.header;
     const yW = width;
     const yH = height;
     const { w: uvW, h: uvH } = chromaPlaneDims(colorspace, width, height);
+
+    // Refresh band rows per plane (spec §3.4.4)
+    const rowsY = Math.ceil(height / 8);
+    const rowsC = Math.ceil(uvH / 8);
+    const yr0 = band < 0 ? -1 : Math.floor(rowsY * band / QOV_INTRA_REFRESH_BANDS);
+    const yr1 = band < 0 ? -1 : Math.floor(rowsY * (band + 1) / QOV_INTRA_REFRESH_BANDS);
+    const cr0 = band < 0 ? -1 : Math.floor(rowsC * band / QOV_INTRA_REFRESH_BANDS);
+    const cr1 = band < 0 ? -1 : Math.floor(rowsC * (band + 1) / QOV_INTRA_REFRESH_BANDS);
 
     // Copy reference — compensated when the chunk carries motion vectors
     if (mv) {
@@ -1133,15 +1145,15 @@ export class QovDecoder {
     const blockBuf = new Float32Array(64);
 
     // Decoding loop for Y
-    this.decodePlaneDct(this.currYPlane!, yW, yH, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
+    this.decodePlaneDct(this.currYPlane!, yW, yH, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf, yr0, yr1);
 
     // Decoding loop for UV
-    this.decodePlaneDct(this.currUPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
-    this.decodePlaneDct(this.currVPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf);
+    this.decodePlaneDct(this.currUPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf, cr0, cr1);
+    this.decodePlaneDct(this.currVPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf, cr0, cr1);
 
     // The encoder appends alpha DCT blocks (luma dimensions, luma quant table)
     if (this.hasYuvAlpha && this.currAPlane && this.prevAPlane) {
-      this.decodePlaneDct(this.currAPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf);
+      this.decodePlaneDct(this.currAPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf, yr0, yr1);
     }
 
     this.yuvPlanesToRgba();
@@ -1157,9 +1169,9 @@ export class QovDecoder {
     this.currFrame = tmp;
   }
 
-  private decodePlaneDct(plane: Uint8Array, w: number, h: number, quant: number[], opType: number, blockBuf: Float32Array): void {
+  private decodePlaneDct(plane: Uint8Array, w: number, h: number, quant: number[], opType: number, blockBuf: Float32Array, bandR0 = -1, bandR1 = -1): void {
     const qpBase = this.header.dctQpBase || 20; // Default
-    decodePlaneDctInto(this.readU8.bind(this), plane, w, h, quant, opType, qpBase, blockBuf);
+    decodePlaneDctInto(this.readU8.bind(this), plane, w, h, quant, opType, qpBase, blockBuf, bandR0, bandR1);
   }
 
   *decodeFrames(): Generator<QovFrame | QovAudioFrame> {
@@ -1265,7 +1277,8 @@ export class QovDecoder {
 
             if (isYuvChunk || this.isYuvMode) {
               if (isDctBlocks) {
-                this.decodeYuvPFrameDataDctFromBuffer(chunkHeader.uncompressedSize!, hasMotion);
+                this.decodeYuvPFrameDataDctFromBuffer(chunkHeader.uncompressedSize!, hasMotion,
+                  (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_REFRESH_BAND) !== 0);
               } else {
                 this.decodeYuvPFrameDataFromBuffer(chunkHeader.uncompressedSize!, hasMotion);
               }
@@ -1277,7 +1290,8 @@ export class QovDecoder {
           } else {
             if (isYuvChunk || this.isYuvMode) {
               if (isDctBlocks) {
-                this.decodeYuvPFrameDataDct(chunkHeader.chunkSize, hasMotion);
+                this.decodeYuvPFrameDataDct(chunkHeader.chunkSize, hasMotion,
+                  (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_REFRESH_BAND) !== 0);
               } else {
                 this.decodeYuvPFrameData(chunkHeader.chunkSize, hasMotion);
               }

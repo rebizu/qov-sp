@@ -14,7 +14,7 @@ const colorspaceIds: Record<string, number> = {
   yuv420: 0x10, yuv422: 0x11, yuv444: 0x12, yuva420: 0x13,
 };
 
-const FLAG_BITS: Record<string, number> = { index: 0x04, alpha: 0x01, motion: 0x02, ikf: 0x80 };
+const FLAG_BITS: Record<string, number> = { index: 0x04, alpha: 0x01, motion: 0x02, ikf: 0x80, refresh: 0x10 };
 
 // Deterministic 31-bit LCG shared with the C# generator (see README)
 function lcgNext(s: number): number {

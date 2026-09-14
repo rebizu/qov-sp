@@ -1,4 +1,4 @@
-namespace QovLibrary;
+﻿namespace QovLibrary;
 
 /// <summary>
 /// QOV Encoder - encodes RGBA frames to QOV format with temporal compression.
@@ -23,6 +23,7 @@ public class QovEncoder
     private readonly bool _useCompression;
     private readonly bool _lossyMode;
     private readonly bool _intraDctKeyframes;
+    private readonly bool _intraRefresh;
     private readonly LossyParams _lossyParams;
     private readonly bool _motionEnabled;
     private readonly QoaEncoder? _qoaEncoder;
@@ -43,12 +44,17 @@ public class QovEncoder
             flags |= QovTypes.FlagLossyMode;
             flags |= QovTypes.FlagDctEnabled; // Enable DCT by default for lossy
         }
+        else
+        {
+            flags = (byte)(flags & ~QovTypes.FlagIntraRefresh); // refresh bands are lossy-only
+        }
         
 
         byte version = (flags & QovTypes.FlagLossyMode) != 0 ? QovTypes.Version3 : QovTypes.Version2;
         LossyParams lp = LossyParams.Derive(quality);
         _lossyMode = quality > 0 && quality < 100;
         _intraDctKeyframes = (flags & QovTypes.FlagIntraDctKf) != 0;
+        _intraRefresh = (flags & QovTypes.FlagIntraRefresh) != 0;
         _lossyParams = _lossyMode ? lp : default;
         _motionEnabled = (flags & QovTypes.FlagHasMotion) != 0;
 
@@ -732,9 +738,14 @@ public class QovEncoder
             }
         }
         int motionFlag = mv != null ? QovTypes.ChunkFlagMotion : 0;
+        // Refresh band (spec 3.4.4): the band byte leads the payload, before MV data
+        bool refresh = useDct && _intraRefresh;
+        int band = refresh ? _frameCount % QovTypes.IntraRefreshBands : -1;
+        int refreshFlag = refresh ? QovTypes.ChunkFlagRefreshBand : 0;
 
         using var tempStream = new MemoryStream();
         using var tempWriter = new BinaryWriter(tempStream);
+        if (refresh) tempWriter.Write((byte)band);
         if (mv != null) Motion.WriteMvBlock(mv.Value, tempWriter);
 
         if (useDct)
@@ -744,19 +755,26 @@ public class QovEncoder
             byte[] nextU = new byte[uPlane.Length];
             byte[] nextV = new byte[vPlane.Length];
 
-            EncodePlaneDct(yPlane, refY, nextY, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter);
-
             // Chroma subsampling dims per header colorspace
             (int uvW, int uvH) = ChromaDims();
 
-            EncodePlaneDct(uPlane, refU, nextU, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter);
-            EncodePlaneDct(vPlane, refV, nextV, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter);
+            // Band block rows per plane (spec 3.4.4)
+            int rowsY = (height + 7) / 8, rowsC = (uvH + 7) / 8;
+            int yr0 = band < 0 ? -1 : rowsY * band / QovTypes.IntraRefreshBands;
+            int yr1 = band < 0 ? -1 : rowsY * (band + 1) / QovTypes.IntraRefreshBands;
+            int cr0 = band < 0 ? -1 : rowsC * band / QovTypes.IntraRefreshBands;
+            int cr1 = band < 0 ? -1 : rowsC * (band + 1) / QovTypes.IntraRefreshBands;
+
+            EncodePlaneDct(yPlane, refY, nextY, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter, yr0, yr1);
+
+            EncodePlaneDct(uPlane, refU, nextU, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter, cr0, cr1);
+            EncodePlaneDct(vPlane, refV, nextV, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter, cr0, cr1);
 
             if (aPlane != null && refA != null)
             {
                 // Alpha is coded as a luma table plane (spec v3.2 §3.4.2)
                 byte[] nextA = new byte[aPlane.Length];
-                EncodePlaneDct(aPlane, refA, nextA, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter);
+                EncodePlaneDct(aPlane, refA, nextA, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter, yr0, yr1);
                 nextA.AsSpan().CopyTo(_prevAPlane.AsSpan());
             }
 
@@ -774,7 +792,7 @@ public class QovEncoder
 
             tempWriter.Flush();
             byte[] frameData = tempStream.ToArray();
-            WriteChunk(QovTypes.ChunkTypePframe, (byte)(QovTypes.ChunkFlagYuv | QovTypes.ChunkFlagDctBlocks | motionFlag), timestamp, frameData, false);
+            WriteChunk(QovTypes.ChunkTypePframe, (byte)(QovTypes.ChunkFlagYuv | QovTypes.ChunkFlagDctBlocks | motionFlag | refreshFlag), timestamp, frameData, false);
         }
         else
         {
@@ -1018,6 +1036,69 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
     // Intra DCT plane coding (spec 3.4.3): DC-predicted 8x8 blocks. `plane`
     // doubles as the reconstruction buffer and ends up holding the decoded
     // values, so the caller can use it directly as the P-frame reference.
+    // Quantize + write the op/delta/DC/AC stream (spec 3.4.2), then reconstruct
+    // the dequantized block into blockBuf (IDCT result overwrites the residuals).
+    // Shared by the inter, intra-keyframe and refresh-band block coders.
+    private static void WriteDctBlock(float[] blockBuf, int[] quant, byte opType, double scale, BinaryWriter writer)
+    {
+        float[] coeffs = new float[64];
+        Dct.ForwardDct(blockBuf, coeffs);
+
+        writer.Write(opType);
+        writer.Write((byte)0x40); // qp delta 0
+
+        int dcVal = ColorConversion.JsRound(coeffs[0] * scale / quant[0]);
+        writer.Write((byte)((dcVal >> 8) & 0xff));
+        writer.Write((byte)(dcVal & 0xff));
+
+        int zeroRun = 0;
+        for (int k = 1; k < 64; k++)
+        {
+            int zigzagIdx = Dct.ZigZag[k];
+            double coeff = coeffs[zigzagIdx];
+            // Dead-zone (spec 3.4.2): suppress |level| < 0.75 to kill
+            // noise dithering between 0 and +/-1
+            double prod = coeff * scale / quant[zigzagIdx];
+            int qVal = (prod > -0.75 && prod < 0.75) ? 0 : ColorConversion.JsRound(prod);
+
+            if (qVal == 0)
+            {
+                zeroRun++;
+            }
+            else
+            {
+                while (zeroRun >= 16)
+                {
+                    writer.Write((byte)0xF0);
+                    zeroRun -= 16;
+                }
+
+                int size = 0;
+                if (qVal >= -128 && qVal <= 127) size = 1;
+                else if (qVal >= -32768 && qVal <= 32767) size = 2;
+                else if (qVal >= -8388608 && qVal <= 8388607) size = 3;
+                else size = 4;
+
+                writer.Write((byte)((zeroRun << 4) | size));
+                for (int sh = size - 1; sh >= 0; sh--)
+                    writer.Write((byte)((qVal >> (8 * sh)) & 0xff));
+                zeroRun = 0;
+            }
+        }
+        writer.Write((byte)0x00); // EOB
+
+        float[] recCoeffs = new float[64];
+        recCoeffs[0] = (float)(dcVal * quant[0] / scale);
+        for (int k = 1; k < 64; k++)
+        {
+            int z = Dct.ZigZag[k];
+            double prod = coeffs[z] * scale / quant[z];
+            int qVal = (prod > -0.75 && prod < 0.75) ? 0 : ColorConversion.JsRound(prod);
+            recCoeffs[z] = (float)(qVal * quant[z] / scale);
+        }
+        Dct.InverseDctRaw(recCoeffs, blockBuf);
+    }
+
     private void EncodeIntraPlaneDct(byte[] plane, int width, int height, int[] quant, byte opType, BinaryWriter writer)
     {
         int qpBase = _header.DctQpBase;
@@ -1072,61 +1153,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                     skipCount -= count;
                 }
 
-                float[] coeffs = new float[64];
-                Dct.ForwardDct(blockBuf, coeffs);
-
-                writer.Write(opType);
-                writer.Write((byte)0x40); // qp delta 0
-
-                int dcVal = ColorConversion.JsRound(coeffs[0] * scale / quant[0]);
-                writer.Write((byte)((dcVal >> 8) & 0xff));
-                writer.Write((byte)(dcVal & 0xff));
-
-                int zeroRun = 0;
-                for (int k = 1; k < 64; k++)
-                {
-                    int zigzagIdx = Dct.ZigZag[k];
-                    double coeff = coeffs[zigzagIdx];
-                    double prod = coeff * scale / quant[zigzagIdx];
-                    int qVal = (prod > -0.75 && prod < 0.75) ? 0 : ColorConversion.JsRound(prod);
-
-                    if (qVal == 0)
-                    {
-                        zeroRun++;
-                    }
-                    else
-                    {
-                        while (zeroRun >= 16)
-                        {
-                            writer.Write((byte)0xF0);
-                            zeroRun -= 16;
-                        }
-
-                        int size = 0;
-                        if (qVal >= -128 && qVal <= 127) size = 1;
-                        else if (qVal >= -32768 && qVal <= 32767) size = 2;
-                        else if (qVal >= -8388608 && qVal <= 8388607) size = 3;
-                        else size = 4;
-
-                        writer.Write((byte)((zeroRun << 4) | size));
-                        for (int sh = size - 1; sh >= 0; sh--)
-                            writer.Write((byte)((qVal >> (8 * sh)) & 0xff));
-                        zeroRun = 0;
-                    }
-                }
-                writer.Write((byte)0x00); // EOB
-
-                // Reconstruct into the plane (mirrors the decoder exactly)
-                float[] recCoeffs = new float[64];
-                recCoeffs[0] = (float)(dcVal * quant[0] / scale);
-                for (int k = 1; k < 64; k++)
-                {
-                    int z = Dct.ZigZag[k];
-                    double prod = coeffs[z] * scale / quant[z];
-                    int qVal = (prod > -0.75 && prod < 0.75) ? 0 : ColorConversion.JsRound(prod);
-                    recCoeffs[z] = (float)(qVal * quant[z] / scale);
-                }
-                Dct.InverseDctRaw(recCoeffs, blockBuf);
+                WriteDctBlock(blockBuf, quant, opType, scale, writer);
                 for (int y = 0; y < 8; y++)
                 {
                     if (y0 + y >= height) break;
@@ -1152,7 +1179,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
 
     // Intra DC prediction (spec 3.4.3): mean of the reconstructed left
     // column / top row; integer round-half-up; 128 with no neighbor.
-    private static int IntraPred(byte[] plane, int w, int h, int x0, int y0)
+    private static int IntraPred(ReadOnlySpan<byte> plane, int w, int h, int x0, int y0)
     {
         long lsum = 0, tsum = 0;
         int lcount = 0, tcount = 0;
@@ -1171,17 +1198,87 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
         return 128;
     }
 
-    private void EncodePlaneDct(ReadOnlySpan<byte> curr, ReadOnlySpan<byte> prev, Span<byte> next, int width, int height, int[] quant, byte opType, float[] blockBuf, BinaryWriter writer)
+    private void EncodePlaneDct(ReadOnlySpan<byte> curr, ReadOnlySpan<byte> prev, Span<byte> next, int width, int height, int[] quant, byte opType, float[] blockBuf, BinaryWriter writer, int bandR0 = -1, int bandR1 = -1)
     {
         int qpBase = _header.DctQpBase;
+        // TS uses double math here (1.0 / (0.1 + qp * 0.1)); float breaks bit-exactness
+        double scale = 1.0 / (0.1 + qpBase * 0.1);
         int blocksX = (width + 7) / 8;
         int blocksY = (height + 7) / 8;
         int skipCount = 0;
 
         for (int by = 0; by < blocksY; by++)
         {
+            bool inBand = by >= bandR0 && by < bandR1;
             for (int bx = 0; bx < blocksX; bx++)
             {
+                int x0 = bx * 8;
+                int y0 = by * 8;
+
+                if (inBand)
+                {
+                    // Refresh band block (spec 3.4.4): intra semantics - the
+                    // predictor comes from already-reconstructed pixels of the
+                    // current frame, so fresh data never copies a damaged ref
+                    int pred = IntraPred(next, width, height, x0, y0);
+                    int bandDiff = 0;
+                    for (int y = 0; y < 8; y++)
+                    {
+                        int py = y0 + y;
+                        if (py >= height) continue;
+                        for (int x = 0; x < 8; x++)
+                        {
+                            int px = x0 + x;
+                            if (px >= width) continue;
+                            int res = curr[py * width + px] - pred;
+                            blockBuf[y * 8 + x] = res;
+                            bandDiff += Math.Abs(res);
+                        }
+                    }
+
+                    if (bandDiff < 32 + qpBase * 8)
+                    {
+                        // prediction-only block inside the band
+                        for (int y = 0; y < 8; y++)
+                        {
+                            int py = y0 + y;
+                            if (py >= height) continue;
+                            for (int x = 0; x < 8; x++)
+                            {
+                                int px = x0 + x;
+                                if (px >= width) continue;
+                                next[py * width + px] = (byte)pred;
+                            }
+                        }
+                        skipCount++;
+                        continue;
+                    }
+
+                    while (skipCount > 0)
+                    {
+                        writer.Write(QovTypes.OpDctSkip);
+                        byte count = (byte)Math.Min(skipCount, 255);
+                        writer.Write(count);
+                        skipCount -= count;
+                    }
+
+                    WriteDctBlock(blockBuf, quant, opType, scale, writer);
+                    for (int y = 0; y < 8; y++)
+                    {
+                        int py = y0 + y;
+                        if (py >= height) continue;
+                        for (int x = 0; x < 8; x++)
+                        {
+                            int px = x0 + x;
+                            if (px >= width) continue;
+                            int idx = py * width + px;
+                            int val = (int)(pred + blockBuf[y * 8 + x]);
+                            next[idx] = (byte)Math.Max(0, Math.Min(255, val));
+                        }
+                    }
+                    continue;
+                }
+
                 // 1. Extract Block & Calculate Residual
                 bool hasContent = false;
                 float diffSum = 0;
@@ -1235,89 +1332,8 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                     skipCount -= count;
                 }
 
-                // 3. DCT Transform
-                float[] coeffs = new float[64];
-                Dct.ForwardDct(blockBuf, coeffs);
-
-                // 4. Quantize
-                // TS uses double math here (1.0 / (0.1 + qp * 0.1)); float breaks bit-exactness
-                double scale = 1.0 / (0.1 + qpBase * 0.1);
-
-                writer.Write(opType);
-                writer.Write((byte)0x40); // Delta 0
-
-                // DC (big-endian, matching the decoder and the TS implementation)
-                int dcVal = ColorConversion.JsRound(coeffs[0] * scale / quant[0]);
-                writer.Write((byte)((dcVal >> 8) & 0xff));
-                writer.Write((byte)(dcVal & 0xff));
-
-                // AC
-                int zeroRun = 0;
-                for (int k = 1; k < 64; k++)
-                {
-                    int zigzagIdx = Dct.ZigZag[k];
-                    double coeff = coeffs[zigzagIdx];
-                    // Dead-zone (spec 3.4.2): suppress |level| < 0.75 to kill
-                    // noise dithering between 0 and +/-1
-                    double prod = coeff * scale / quant[zigzagIdx];
-                    int qVal = (prod > -0.75 && prod < 0.75) ? 0 : ColorConversion.JsRound(prod);
-                    
-                    if (qVal == 0)
-                    {
-                        zeroRun++;
-                    }
-                    else
-                    {
-                        // Write run/level
-                        while (zeroRun >= 16)
-                        {
-                            writer.Write((byte)0xF0);
-                            zeroRun -= 16;
-                        }
-                        
-                        int size = 0;
-                        if (qVal >= -128 && qVal <= 127) size = 1;
-                        else if (qVal >= -32768 && qVal <= 32767) size = 2;
-                        else if (qVal >= -8388608 && qVal <= 8388607) size = 3;
-                        else size = 4;
-                        
-                        writer.Write((byte)((zeroRun << 4) | size));
-                        
-                        if (size == 1) writer.Write((byte)qVal);
-                        else if (size == 2) {
-                            writer.Write((byte)((qVal >> 8) & 0xff));
-                            writer.Write((byte)(qVal & 0xff));
-                        }
-                        else if (size == 3) {
-                             writer.Write((byte)((qVal >> 16) & 0xff));
-                             writer.Write((byte)((qVal >> 8) & 0xff));
-                             writer.Write((byte)(qVal & 0xff));
-                        }
-                        else {
-                            writer.Write((byte)((qVal >> 24) & 0xff));
-                            writer.Write((byte)((qVal >> 16) & 0xff));
-                            writer.Write((byte)((qVal >> 8) & 0xff));
-                            writer.Write((byte)(qVal & 0xff));
-                        }
-                        
-                        zeroRun = 0;
-                    }
-                }
-                writer.Write((byte)0x00); // EOB
-
-                // 5. Reconstruct (double math, stored to float32 — mirrors TS)
-                float[] recCoeffs = new float[64];
-                recCoeffs[0] = (float)(ColorConversion.JsRound(coeffs[0] * scale / quant[0]) * quant[0] / scale);
-                for (int k = 1; k < 64; k++)
-                {
-                     int z = Dct.ZigZag[k];
-                     double prod = coeffs[z] * scale / quant[z];
-                     int qVal = (prod > -0.75 && prod < 0.75) ? 0 : ColorConversion.JsRound(prod);
-                     recCoeffs[z] = (float)(qVal * quant[z] / scale);
-                }
-                
-                // IDCT
-                Dct.InverseDctRaw(recCoeffs, blockBuf); 
+                // 3-5. DCT transform, quantize + write, reconstruct (spec 3.4.2)
+                WriteDctBlock(blockBuf, quant, opType, scale, writer); 
                 
                 // Add to prev and store in next
                 for (int y = 0; y < 8; y++)

@@ -1,4 +1,4 @@
-namespace QovLibrary;
+﻿namespace QovLibrary;
 
 /// <summary>
 /// QOV (Quite OK Video) format types and constants.
@@ -15,7 +15,8 @@ public static partial class QovTypes
     public const byte FlagHasMotion = 0x02;
     public const byte FlagHasIndex = 0x04;
     public const byte FlagHasBFrames = 0x08;
-    public const byte FlagEnhancedComp = 0x10;
+    public const byte FlagEnhancedComp = 0x10; // legacy name; bit reclaimed by FlagIntraRefresh (v3.4)
+    public const byte FlagIntraRefresh = 0x10; // lossy P-frames carry rolling refresh bands
     public const byte FlagLossyMode = 0x20;
     public const byte FlagDctEnabled = 0x40;
     public const byte FlagIntraDctKf = 0x80;
@@ -34,6 +35,10 @@ public static partial class QovTypes
     public const byte ChunkFlagCompressed = 0x10;
     public const byte ChunkFlagDctBlocks = 0x20;
     public const byte ChunkFlagAdaptiveQ = 0x40;
+    public const byte ChunkFlagRefreshBand = 0x80; // P-frame payload starts with a refresh band byte
+
+    // Intra refresh (spec 3.4.4): one band per lossy DCT P-frame
+    public const int IntraRefreshBands = 12;
 
     public const byte ColorspaceSrgb = 0x00;
     public const byte ColorspaceSrgba = 0x01;

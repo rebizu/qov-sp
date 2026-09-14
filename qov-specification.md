@@ -1,6 +1,6 @@
 # QOV (Quite OK Video) Format Specification
 
-**Version:** 3.2 (Unified)
+**Version:** 3.4 (Unified)
 **Date:** September 2026
 **Based on:** QOI (Quite OK Image) and QOA (Quite OK Audio)
 
@@ -75,11 +75,14 @@ Bit  Name           Description
 1    HAS_MOTION     Motion vectors enabled for P/B-frames
 2    HAS_INDEX      Index table present at end of file
 3    HAS_BFRAMES    B-frames present (requires decode reordering)
-4    ENHANCED_COMP  Enhanced compression mode (slower decode)
+4    INTRA_REFRESH  P-frames carry rolling intra refresh bands (v3.4+)
 5    LOSSY_MODE     Lossy encoding enabled (Version 0x03+)
 6    DCT_ENABLED    DCT block encoding available (Version 0x03+)
-7    Reserved       Must be 0
-```
+7    INTRA_DCT_KF   Lossy keyframes use intra DCT blocks (v3.3+)
+
+Bit 4 was previously named ENHANCED_COMP ("enhanced compression mode");
+the name was never implemented and the bit is reclaimed by INTRA_REFRESH
+in v3.4. Files setting it with the old meaning do not exist.
 
 ### 1.4 Colorspace Byte
 
@@ -140,7 +143,10 @@ Bit  Name        Description
 1    HAS_MOTION  Frame includes motion vectors (0x02)
 4    COMPRESSED  Chunk data is LZ4 compressed (0x10)
 5    DCT_BLOCKS  Frame uses DCT block encoding (0x20) - NEW in v3
+                 (also marks intra DCT keyframes, see 3.4.3)
 6    ADAPTIVE_Q  Per-block adaptive quantization (0x40) - NEW in v3
+7    REFRESH_BAND P-frame payload starts with a refresh band byte (0x80)
+                 - NEW in v3.4, see 3.4.4
 ```
 
 **LZ4 Compression (Bit 4):**
@@ -324,6 +330,50 @@ section MUST reject KEYFRAME chunks carrying `DCT_BLOCKS`.
   of band. Files written by an independent implementation may not decode
   correctly even when the byte format above is followed.
 
+#### 3.4.4 Intra Refresh Bands (lossy YUV mode, v3.4)
+
+A **PFRAME** chunk with the `REFRESH_BAND` chunk flag (bit 7) carries one
+additional byte at the very start of the payload — **before any motion
+vector data and before the plane block streams**, but after LZ4
+decompression when `COMPRESSED` is set:
+
+```
+payload := band_index (1 byte) [ mv_block ] [ plane block streams... ]
+```
+
+The value `band_index` is in `[0, REFRESH_BANDS)` with
+`REFRESH_BANDS = 12`. It selects which horizontal band of 8x8 block rows
+is intra-coded in this P-frame; each plane maps the band independently
+using its own block-row count `rows = ceil(plane_height / 8)`:
+
+```
+band rows = [ rows * band_index / 12 ,  rows * (band_index + 1) / 12 )
+```
+
+(integer arithmetic; for small planes a band may be empty). Blocks whose
+block row lies inside the band follow the §3.4.3 intra semantics —
+DC prediction from already-reconstructed pixels of the current frame,
+residual through the §3.4.2 block format, the same QP-scaled skip rule
+where a skip fills the block with the predictor. All other blocks follow
+the ordinary §3.4.2 inter semantics (skip copies the reference, coded
+blocks add the residual to it). A single `QOV_OP_DCT_SKIP` run MAY
+straddle a band boundary; the decoder applies the per-block semantics
+determined by each block's own row.
+
+- Band blocks are decoded against the current-frame reconstruction
+  exactly as in a §3.4.3 keyframe, so fresh data never copies reference
+  pixels; damage in the reference stops propagating once every band has
+  passed over it (at most `REFRESH_BANDS` P-frames).
+- The band index is explicit per chunk; decoders do not track frame
+  counters. Encoders SHOULD advance the band deterministically (e.g.
+  frame counter modulo `REFRESH_BANDS`) so the whole frame is refreshed
+  once per cycle.
+- `REFRESH_BAND` is only defined for lossy DCT P-frames (`DCT_BLOCKS`
+  set). Decoders that do not implement this section MUST reject
+  PFRAME chunks carrying bit 7.
+- The `INTRA_REFRESH` header flag (bit 4) is informational: it marks a
+  file whose encoder enabled refresh bands.
+
 ---
 
 ## 4. Lossy Quality & Quantization
@@ -480,6 +530,25 @@ This specification is placed in the public domain.
 ---
 
 ## Changelog
+
+### 3.4 (September 2026)
+- §3.4.4: intra refresh bands. A lossy DCT P-frame may carry the
+  REFRESH_BAND chunk flag (bit 7) plus a leading band byte; the selected
+  band of 8x8 block rows is coded with the 3.4.3 intra semantics while
+  everything else stays inter. Header flag bit 4 renamed from the
+  never-implemented ENHANCED_COMP to INTRA_REFRESH (informational).
+  Chunk flag table documents that DCT_BLOCKS also marks intra DCT
+  keyframes.
+
+### 3.3 (September 2026)
+- §3.4.3: intra DCT keyframes. A KEYFRAME chunk with DCT_BLOCKS set
+  carries DC-predicted 8x8 intra blocks (left column / top row mean,
+  integer round-half-up, 128 with no neighbor) through the 3.4.2 block
+  format with the same dead-zone and QP-scaled skip rule; the
+  reconstructed planes become the P-frame reference. Header flag bit 7
+  INTRA_DCT_KF marks files using it.
+- §3.4.2: AC dead-zone and QP-scaled block-skip recorded as encoder-side
+  normative rules (required for multi-encoder bit-exact parity).
 
 ### 3.2 (September 2026)
 - §5.2: motion vectors are now normative. Defined the MV block placement at

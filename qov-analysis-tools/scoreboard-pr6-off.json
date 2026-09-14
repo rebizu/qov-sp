@@ -1,0 +1,122 @@
+{
+  "rows": [
+    {
+      "name": "cam720",
+      "codec": "qov",
+      "setting": "quality=60",
+      "colorspace": "yuv420",
+      "motion": true,
+      "lz4": true,
+      "refresh": false,
+      "ikf": false,
+      "frames": 1800,
+      "size_bytes": 77033904,
+      "bitrate_kbps": 10271.2,
+      "ssim_all": 0.86455,
+      "enc_ms_per_frame": 92.74,
+      "dec_ms_per_frame": 44.31,
+      "blocks_skip": 16244625,
+      "blocks_coded": 22505775
+    },
+    {
+      "name": "cam720",
+      "codec": "x264-ultrafast",
+      "setting": "crf=28",
+      "frames": 1800,
+      "size_bytes": 8001528,
+      "bitrate_kbps": 1066.9,
+      "ssim_all": 0.969502,
+      "enc_ms_per_frame": 3.119,
+      "dec_ms_per_frame": 2.406
+    },
+    {
+      "name": "cam720",
+      "codec": "x264-ultrafast",
+      "setting": "crf=32",
+      "frames": 1800,
+      "size_bytes": 3700238,
+      "bitrate_kbps": 493.4,
+      "ssim_all": 0.962894,
+      "enc_ms_per_frame": 3.439,
+      "dec_ms_per_frame": 2.532
+    },
+    {
+      "name": "cam720",
+      "codec": "x264-ultrafast",
+      "setting": "crf=36",
+      "frames": 1800,
+      "size_bytes": 1837438,
+      "bitrate_kbps": 245.0,
+      "ssim_all": 0.954139,
+      "enc_ms_per_frame": 3.269,
+      "dec_ms_per_frame": 2.588
+    },
+    {
+      "name": "screen720",
+      "codec": "qov",
+      "setting": "quality=60",
+      "colorspace": "yuv420",
+      "motion": true,
+      "lz4": true,
+      "refresh": false,
+      "ikf": false,
+      "frames": 1800,
+      "size_bytes": 3306246,
+      "bitrate_kbps": 440.8,
+      "ssim_all": 0.981182,
+      "enc_ms_per_frame": 21.87,
+      "dec_ms_per_frame": 5.802,
+      "blocks_skip": 38001048,
+      "blocks_coded": 749352
+    },
+    {
+      "name": "screen720",
+      "codec": "x264-ultrafast",
+      "setting": "crf=28",
+      "frames": 1800,
+      "size_bytes": 1964240,
+      "bitrate_kbps": 261.9,
+      "ssim_all": 0.991723,
+      "enc_ms_per_frame": 2.893,
+      "dec_ms_per_frame": 2.018
+    },
+    {
+      "name": "screen720",
+      "codec": "x264-ultrafast",
+      "setting": "crf=32",
+      "frames": 1800,
+      "size_bytes": 1550988,
+      "bitrate_kbps": 206.8,
+      "ssim_all": 0.990008,
+      "enc_ms_per_frame": 2.865,
+      "dec_ms_per_frame": 2.289
+    },
+    {
+      "name": "screen720",
+      "codec": "x264-ultrafast",
+      "setting": "crf=36",
+      "frames": 1800,
+      "size_bytes": 1215110,
+      "bitrate_kbps": 162.0,
+      "ssim_all": 0.986899,
+      "enc_ms_per_frame": 3.082,
+      "dec_ms_per_frame": 2.123
+    }
+  ],
+  "meta": {
+    "lines": {
+      "qov.h": 3046,
+      "src/qov-types.ts": 210,
+      "src/qov-encoder.ts": 1598,
+      "src/qov-decoder.ts": 1449,
+      "src/qov-streaming-decoder.ts": 1097,
+      "src/dct.ts": 127,
+      "src/motion.ts": 223,
+      "src/lz4.ts": 248,
+      "src/color-utils.ts": 374,
+      "src/qoa.ts": 401,
+      "ts_codec_total": 5727
+    },
+    "generated": "2026-09-14T15:04:22"
+  }
+}

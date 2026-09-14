@@ -1703,6 +1703,165 @@
      "pattern": "checker"
     }
    }
+  },
+  "refresh_motion_yuv420_lossy": {
+   "file_sha256": "8bb43361877c626084f5ffa36900f6b22d6714b8b1eafd4acea5e6bddfb029c0",
+   "file_size": 30065,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 118,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 3,
+    "dct_chunks": 3,
+    "compressed_chunks": 6,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "f7d0f52d8a4b2468249f80c5525bbd84846a03aac2ae3bfcc2a7cb225353de38",
+     "a72843b2b560bbdee4cf83296da3650d673530178590c77b03e22796b71548d7",
+     "9e212cd6675f50ef73591930ad56ec3165c85c8c84659f63afebf5a9f2ab1b80",
+     "9585f13b45536871de84982fe116514f50b8635abb6a58df0580fc957818f3a7",
+     "1d1b871d74c9577dd2b6b11f1d35148fa6ba8a1a4d2fc19801c3bbe862b9af58",
+     "4e196c9a8b14641db20c1ba05b1de28c9bb87587d5ff49898d058d87c0ea1ef2"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "f7d0f52d8a4b2468249f80c5525bbd84846a03aac2ae3bfcc2a7cb225353de38",
+     "a72843b2b560bbdee4cf83296da3650d673530178590c77b03e22796b71548d7",
+     "9e212cd6675f50ef73591930ad56ec3165c85c8c84659f63afebf5a9f2ab1b80",
+     "9585f13b45536871de84982fe116514f50b8635abb6a58df0580fc957818f3a7",
+     "1d1b871d74c9577dd2b6b11f1d35148fa6ba8a1a4d2fc19801c3bbe862b9af58",
+     "4e196c9a8b14641db20c1ba05b1de28c9bb87587d5ff49898d058d87c0ea1ef2"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "refresh_motion_yuv420_lossy",
+     "width": 128,
+     "height": 96,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "index",
+      "motion",
+      "refresh"
+     ],
+     "quality": 50,
+     "pattern": "scroll16",
+     "note": "PR6 intra refresh bands + motion vectors"
+    }
+   }
+  },
+  "refresh_static_yuv420_lossy": {
+   "file_sha256": "1009c3152d2ff87ddd15bbe82259ae810a972268634583fa2cd334858b067785",
+   "file_size": 653,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 116,
+    "width": 64,
+    "height": 64,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 0,
+    "dct_chunks": 3,
+    "compressed_chunks": 6,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "26e79d6c87150d6677874970caaffdbaa37090da865fe220f928b42cc1fefec3",
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "dd5845808a4e787c727182b96073b788e28981a3d8bcec367ae02ca2ccf068ab",
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "c30ebf46abd5429175ba2ddb978f0f7b990124f864a719b1cbf8dcef5056a221"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "26e79d6c87150d6677874970caaffdbaa37090da865fe220f928b42cc1fefec3",
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "dd5845808a4e787c727182b96073b788e28981a3d8bcec367ae02ca2ccf068ab",
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "c30ebf46abd5429175ba2ddb978f0f7b990124f864a719b1cbf8dcef5056a221"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "refresh_static_yuv420_lossy",
+     "width": 64,
+     "height": 64,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "index",
+      "refresh"
+     ],
+     "quality": 50,
+     "pattern": "checker",
+     "note": "PR6 intra refresh bands, static content, band-skip path"
+    }
+   }
   }
  }
 }

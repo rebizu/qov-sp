@@ -1,4 +1,4 @@
-using QovLibrary;
+﻿using QovLibrary;
 using System.Security.Cryptography;
 
 namespace QovValidator;
@@ -189,7 +189,7 @@ class QovFileValidator
         if ((flags & 0x02) != 0) flagNames.Add("HAS_MOTION");
         if ((flags & 0x04) != 0) flagNames.Add("HAS_INDEX");
         if ((flags & 0x08) != 0) flagNames.Add("HAS_BFRAMES");
-        if ((flags & 0x10) != 0) flagNames.Add("ENHANCED_COMP");
+        if ((flags & 0x10) != 0) flagNames.Add("INTRA_REFRESH");
         if ((flags & 0x20) != 0) flagNames.Add("LOSSY_MODE");
         if ((flags & 0x40) != 0) flagNames.Add("DCT_ENABLED");
         if ((flags & 0x80) != 0) _warnings.Add($"Reserved flag bits set: 0x{(flags & 0x80):X2}");
