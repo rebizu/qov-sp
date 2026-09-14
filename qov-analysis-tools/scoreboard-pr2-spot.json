@@ -1,0 +1,63 @@
+{
+  "rows": [
+    {
+      "name": "cam720-dz-spot",
+      "codec": "qov",
+      "setting": "quality=60",
+      "colorspace": "yuv420",
+      "motion": true,
+      "lz4": true,
+      "frames": 180,
+      "size_bytes": 8293477,
+      "bitrate_kbps": 11058.0,
+      "ssim_all": 0.865758,
+      "enc_ms_per_frame": 99.364,
+      "dec_ms_per_frame": 49.867,
+      "blocks_skip": 1493316,
+      "blocks_coded": 2373084
+    },
+    {
+      "name": "cam720-dz-spot",
+      "codec": "qov",
+      "setting": "quality=80",
+      "colorspace": "yuv420",
+      "motion": true,
+      "lz4": true,
+      "frames": 180,
+      "size_bytes": 13631564,
+      "bitrate_kbps": 18175.4,
+      "ssim_all": 0.890264,
+      "enc_ms_per_frame": 118.257,
+      "dec_ms_per_frame": 59.677,
+      "blocks_skip": 762706,
+      "blocks_coded": 3103694
+    },
+    {
+      "name": "cam720-dz-spot",
+      "codec": "x264-ultrafast",
+      "setting": "crf=32",
+      "frames": 180,
+      "size_bytes": 561608,
+      "bitrate_kbps": 748.8,
+      "ssim_all": 0.963789,
+      "enc_ms_per_frame": 4.752,
+      "dec_ms_per_frame": 4.002
+    }
+  ],
+  "meta": {
+    "lines": {
+      "qov.h": 2790,
+      "src/qov-types.ts": 203,
+      "src/qov-encoder.ts": 1420,
+      "src/qov-decoder.ts": 1385,
+      "src/qov-streaming-decoder.ts": 1070,
+      "src/dct.ts": 127,
+      "src/motion.ts": 223,
+      "src/lz4.ts": 248,
+      "src/color-utils.ts": 374,
+      "src/qoa.ts": 401,
+      "ts_codec_total": 5451
+    },
+    "generated": "2026-09-14T10:54:17"
+  }
+}

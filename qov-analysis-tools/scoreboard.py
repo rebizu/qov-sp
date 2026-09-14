@@ -150,8 +150,11 @@ def measure_qov(src, name, w, h, fps, dur, frames, args):
         rows.append({
             "name": name, "codec": "qov", "setting": f"quality={q}",
             "colorspace": args.cs, "motion": bool(args.motion), "lz4": bool(args.lz4),
-            "frames": dec["frames"], "size_bytes": enc["bytes"],
-            "bitrate_kbps": round(enc["bytes"] * 8 / dur / 1000.0, 1),
+            "frames": dec["frames"],
+            "size_bytes": enc["bytes"],
+            # bitrate must use the encoded span (frames/fps), not the source
+            # duration, so capped runs stay comparable
+            "bitrate_kbps": round(enc["bytes"] * 8 / (dec["frames"] / fps) / 1000.0, 1),
             "ssim_all": ssim,
             "enc_ms_per_frame": round(enc["msPerFrame"], 3),
             "dec_ms_per_frame": round(dec["msPerFrame"], 3),
@@ -184,7 +187,7 @@ def measure_x264(src, name, w, h, fps, dur, frames, args):
         rows.append({
             "name": name, "codec": "x264-ultrafast", "setting": f"crf={crf}",
             "frames": frames, "size_bytes": size,
-            "bitrate_kbps": round(size * 8 / dur / 1000.0, 1),
+            "bitrate_kbps": round(size * 8 / (frames / fps) / 1000.0, 1),
             "ssim_all": ssim,
             "enc_ms_per_frame": round(enc_ms / frames, 3),
             "dec_ms_per_frame": round(dec["msPerFrame"], 3),

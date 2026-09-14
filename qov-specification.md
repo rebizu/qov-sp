@@ -281,6 +281,17 @@ Enabled via `DCT_BLOCKS` chunk flag. Operates on 8x8 blocks.
   and the luma quantizer.
 - `DCT_BLOCKS` and `COMPRESSED` (§2.2) are independent: a DCT chunk may
   be stored LZ4-compressed or raw.
+- **Encoder-side normative rules** (required for the bit-exact
+  multi-encoder parity the conformance suite enforces; decoders are
+  unaffected by both):
+  - *Block skip:* an 8x8 block whose sum of absolute residuals against
+    the reference is `< 32 + 8 * qp_base` is coded as `QOV_OP_DCT_SKIP`
+    (the reference is copied unchanged).
+  - *AC dead-zone:* with `prod = coeff * scale / quant[c]`, an AC
+    coefficient whose `prod` satisfies `-0.75 < prod < 0.75` is coded
+    as level 0; otherwise `level = round(prod)` (the DC coefficient is
+    never dead-zoned). The encoder's local reconstruction MUST apply
+    the same rule so its reference frame matches the decoder's.
 - The coefficient scan order (zigzag), the quantization tables, and the
   QP-to-scalefactor mapping are **implementation-defined**: they are not
   part of this specification and encoder/decoder must agree on them out

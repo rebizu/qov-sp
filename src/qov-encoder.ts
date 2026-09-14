@@ -705,8 +705,9 @@ export class QovEncoder {
           }
         }
 
-        // 2. Threshold check (simulated 'Zero' block if residuals are small)
-        if (diffSum < 64) {
+        // 2. Threshold check (simulated 'Zero' block if residuals are small);
+        // scales with QP so low-quality streams skip more aggressively
+        if (diffSum < 32 + qpBase * 8) {
           hasContent = false;
         } else {
           hasContent = true;
@@ -756,7 +757,10 @@ export class QovEncoder {
         for (let k = 1; k < 64; k++) {
           const zigzagIdx = ZIGZAG[k];
           const coeff = coeffs[zigzagIdx];
-          const qVal = Math.round(coeff * scale / quant[zigzagIdx]);
+          // Dead-zone (spec §3.4.2): suppress |level| < 0.75 to kill noise
+          // dithering between 0 and ±1
+          const prod = coeff * scale / quant[zigzagIdx];
+          const qVal = prod > -0.75 && prod < 0.75 ? 0 : Math.round(prod);
 
           if (qVal === 0) {
             zeroRun++;

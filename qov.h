@@ -1437,7 +1437,10 @@ static void qov__dec_plane_dct(const uint8_t *payload, size_t payload_len,
             for (int y = 0; y < 8 && by + y < h; y++)
                 for (int x = 0; x < 8 && bx + x < w; x++) {
                     int idx = (by + y) * w + (bx + x);
-                    int val = (int)(plane[idx] + block[y * 8 + x]); /* trunc then clamp (TS order) */
+                    /* TS adds in double (exact) then truncates via Uint8Array;
+                       a float-precision add here rounds across integer
+                       boundaries and diverges by 1 */
+                    int val = (int)((double)plane[idx] + (double)block[y * 8 + x]);
                     plane[idx] = (uint8_t)qov_clampi(val, 0, 255);
                 }
             block_idx++;
@@ -2399,7 +2402,7 @@ static void qov__enc_plane_dct(qov_encoder *e, const uint8_t *curr, const uint8_
                     res[yy * 8 + xx] = (float)rr;
                     diff += (rr < 0 ? -rr : rr);
                 }
-            if (diff < 64) {
+            if (diff < 32 + e->dct_qp * 8) {
                 for (int yy = 0; yy < 8; yy++)
                     for (int xx = 0; xx < 8; xx++) {
                         int pxx = bxi * 8 + xx, pyy = byi * 8 + yy;
@@ -2424,7 +2427,10 @@ static void qov__enc_plane_dct(qov_encoder *e, const uint8_t *curr, const uint8_
             int zero_run = 0;
             for (int k = 1; k < 64; k++) {
                 int zz = qov_zigzag[k];
-                int qv = qov_round((double)coeffs[zz] * scale / quant[zz]);
+                double prod = (double)coeffs[zz] * scale / quant[zz];
+                /* AC dead-zone (spec 3.4.2): suppress |level| < 0.75 to kill
+                   noise dithering between 0 and +/-1 */
+                int qv = (prod > -0.75 && prod < 0.75) ? 0 : qov_round(prod);
                 if (qv == 0) { zero_run++; continue; }
                 while (zero_run >= 16) { qov__buf_u8(&e->fb, 0xF0); zero_run -= 16; }
                 int size = (qv >= -128 && qv <= 127) ? 1 : (qv >= -32768 && qv <= 32767) ? 2
@@ -2438,7 +2444,9 @@ static void qov__enc_plane_dct(qov_encoder *e, const uint8_t *curr, const uint8_
             rec[0] = (float)(qov_round((double)coeffs[0] * scale / quant[0]) * quant[0] / scale);
             for (int k = 1; k < 64; k++) {
                 int zz = qov_zigzag[k];
-                rec[zz] = (float)(qov_round((double)coeffs[zz] * scale / quant[zz]) * quant[zz] / scale);
+                double prod = (double)coeffs[zz] * scale / quant[zz];
+                int rq = (prod > -0.75 && prod < 0.75) ? 0 : qov_round(prod);
+                rec[zz] = (float)(rq * quant[zz] / scale);
             }
             float idct[64];
             qov_inverse_dct_raw(rec, idct);

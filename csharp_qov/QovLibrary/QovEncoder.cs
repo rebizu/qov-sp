@@ -1033,8 +1033,9 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                     }
                 }
 
-                // 2. Threshold check
-                if (diffSum < 64) hasContent = false;
+                // 2. Threshold check (scales with QP so low-quality streams
+                // skip more aggressively)
+                if (diffSum < 32 + qpBase * 8) hasContent = false;
                 else hasContent = true;
 
                 if (!hasContent)
@@ -1087,7 +1088,10 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                 {
                     int zigzagIdx = Dct.ZigZag[k];
                     double coeff = coeffs[zigzagIdx];
-                    int qVal = ColorConversion.JsRound(coeff * scale / quant[zigzagIdx]);
+                    // Dead-zone (spec 3.4.2): suppress |level| < 0.75 to kill
+                    // noise dithering between 0 and +/-1
+                    double prod = coeff * scale / quant[zigzagIdx];
+                    int qVal = (prod > -0.75 && prod < 0.75) ? 0 : ColorConversion.JsRound(prod);
                     
                     if (qVal == 0)
                     {
@@ -1138,7 +1142,8 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                 for (int k = 1; k < 64; k++)
                 {
                      int z = Dct.ZigZag[k];
-                     int qVal = ColorConversion.JsRound(coeffs[z] * scale / quant[z]);
+                     double prod = coeffs[z] * scale / quant[z];
+                     int qVal = (prod > -0.75 && prod < 0.75) ? 0 : ColorConversion.JsRound(prod);
                      recCoeffs[z] = (float)(qVal * quant[z] / scale);
                 }
                 

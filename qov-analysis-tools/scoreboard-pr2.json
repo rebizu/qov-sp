@@ -8,13 +8,13 @@
       "motion": true,
       "lz4": true,
       "frames": 1800,
-      "size_bytes": 23744232,
-      "bitrate_kbps": 3165.9,
-      "ssim_all": 0.820329,
-      "enc_ms_per_frame": 30.371,
-      "dec_ms_per_frame": 13.789,
-      "blocks_skip": 2527175,
-      "blocks_coded": 7232185
+      "size_bytes": 12801513,
+      "bitrate_kbps": 1706.9,
+      "ssim_all": 0.856932,
+      "enc_ms_per_frame": 16.923,
+      "dec_ms_per_frame": 7.236,
+      "blocks_skip": 6073422,
+      "blocks_coded": 3685938
     },
     {
       "name": "cam360",
@@ -24,13 +24,13 @@
       "motion": true,
       "lz4": true,
       "frames": 1800,
-      "size_bytes": 35463536,
-      "bitrate_kbps": 4728.5,
-      "ssim_all": 0.821765,
-      "enc_ms_per_frame": 28.161,
-      "dec_ms_per_frame": 13.526,
-      "blocks_skip": 2221040,
-      "blocks_coded": 7538320
+      "size_bytes": 19740725,
+      "bitrate_kbps": 2632.1,
+      "ssim_all": 0.87289,
+      "enc_ms_per_frame": 21.49,
+      "dec_ms_per_frame": 9.719,
+      "blocks_skip": 4549215,
+      "blocks_coded": 5210145
     },
     {
       "name": "cam360",
@@ -40,13 +40,13 @@
       "motion": true,
       "lz4": true,
       "frames": 1800,
-      "size_bytes": 56348062,
-      "bitrate_kbps": 7513.1,
-      "ssim_all": 0.713698,
-      "enc_ms_per_frame": 38.309,
-      "dec_ms_per_frame": 15.983,
-      "blocks_skip": 1180958,
-      "blocks_coded": 8578402
+      "size_bytes": 33610937,
+      "bitrate_kbps": 4481.5,
+      "ssim_all": 0.888385,
+      "enc_ms_per_frame": 29.069,
+      "dec_ms_per_frame": 12.411,
+      "blocks_skip": 2246864,
+      "blocks_coded": 7512496
     },
     {
       "name": "cam360",
@@ -55,9 +55,9 @@
       "frames": 1800,
       "size_bytes": 2676678,
       "bitrate_kbps": 356.9,
-      "ssim_all": 0.972004,
-      "enc_ms_per_frame": 1.512,
-      "dec_ms_per_frame": 0.75
+      "ssim_all": 0.972002,
+      "enc_ms_per_frame": 1.187,
+      "dec_ms_per_frame": 0.643
     },
     {
       "name": "cam360",
@@ -67,8 +67,8 @@
       "size_bytes": 1513596,
       "bitrate_kbps": 201.8,
       "ssim_all": 0.962659,
-      "enc_ms_per_frame": 1.299,
-      "dec_ms_per_frame": 0.63
+      "enc_ms_per_frame": 1.292,
+      "dec_ms_per_frame": 0.758
     },
     {
       "name": "cam360",
@@ -78,8 +78,8 @@
       "size_bytes": 844275,
       "bitrate_kbps": 112.6,
       "ssim_all": 0.951488,
-      "enc_ms_per_frame": 1.264,
-      "dec_ms_per_frame": 0.674
+      "enc_ms_per_frame": 1.2,
+      "dec_ms_per_frame": 0.695
     },
     {
       "name": "cam720",
@@ -89,13 +89,13 @@
       "motion": true,
       "lz4": true,
       "frames": 1800,
-      "size_bytes": 94139567,
-      "bitrate_kbps": 12551.9,
-      "ssim_all": 0.799723,
-      "enc_ms_per_frame": 104.674,
-      "dec_ms_per_frame": 48.476,
-      "blocks_skip": 9262930,
-      "blocks_coded": 29487470
+      "size_bytes": 50124176,
+      "bitrate_kbps": 6683.2,
+      "ssim_all": 0.847278,
+      "enc_ms_per_frame": 86.122,
+      "dec_ms_per_frame": 40.553,
+      "blocks_skip": 21909068,
+      "blocks_coded": 16841332
     },
     {
       "name": "cam720",
@@ -105,13 +105,13 @@
       "motion": true,
       "lz4": true,
       "frames": 1800,
-      "size_bytes": 140496377,
-      "bitrate_kbps": 18732.9,
-      "ssim_all": 0.797196,
-      "enc_ms_per_frame": 122.056,
-      "dec_ms_per_frame": 52.597,
-      "blocks_skip": 8218457,
-      "blocks_coded": 30531943
+      "size_bytes": 77033904,
+      "bitrate_kbps": 10271.2,
+      "ssim_all": 0.86455,
+      "enc_ms_per_frame": 87.375,
+      "dec_ms_per_frame": 43.988,
+      "blocks_skip": 16244625,
+      "blocks_coded": 22505775
     },
     {
       "name": "cam720",
@@ -121,13 +121,13 @@
       "motion": true,
       "lz4": true,
       "frames": 1800,
-      "size_bytes": 231019479,
-      "bitrate_kbps": 30802.6,
-      "ssim_all": 0.679864,
-      "enc_ms_per_frame": 120.355,
-      "dec_ms_per_frame": 70.857,
-      "blocks_skip": 4874834,
-      "blocks_coded": 33875566
+      "size_bytes": 133260877,
+      "bitrate_kbps": 17768.1,
+      "ssim_all": 0.883183,
+      "enc_ms_per_frame": 111.07,
+      "dec_ms_per_frame": 56.058,
+      "blocks_skip": 8497933,
+      "blocks_coded": 30252467
     },
     {
       "name": "cam720",
@@ -137,8 +137,8 @@
       "size_bytes": 8001528,
       "bitrate_kbps": 1066.9,
       "ssim_all": 0.969502,
-      "enc_ms_per_frame": 3.875,
-      "dec_ms_per_frame": 3.904
+      "enc_ms_per_frame": 3.6,
+      "dec_ms_per_frame": 3.396
     },
     {
       "name": "cam720",
@@ -148,8 +148,8 @@
       "size_bytes": 3700238,
       "bitrate_kbps": 493.4,
       "ssim_all": 0.962894,
-      "enc_ms_per_frame": 3.759,
-      "dec_ms_per_frame": 2.751
+      "enc_ms_per_frame": 3.645,
+      "dec_ms_per_frame": 3.639
     },
     {
       "name": "cam720",
@@ -159,8 +159,8 @@
       "size_bytes": 1837438,
       "bitrate_kbps": 245.0,
       "ssim_all": 0.954141,
-      "enc_ms_per_frame": 3.629,
-      "dec_ms_per_frame": 2.748
+      "enc_ms_per_frame": 3.528,
+      "dec_ms_per_frame": 2.825
     },
     {
       "name": "screen720",
@@ -170,13 +170,13 @@
       "motion": true,
       "lz4": true,
       "frames": 1800,
-      "size_bytes": 3755675,
-      "bitrate_kbps": 500.8,
-      "ssim_all": 0.96515,
-      "enc_ms_per_frame": 28.182,
-      "dec_ms_per_frame": 7.139,
-      "blocks_skip": 37527943,
-      "blocks_coded": 1222457
+      "size_bytes": 2703287,
+      "bitrate_kbps": 360.4,
+      "ssim_all": 0.965115,
+      "enc_ms_per_frame": 21.632,
+      "dec_ms_per_frame": 5.613,
+      "blocks_skip": 38105803,
+      "blocks_coded": 644597
     },
     {
       "name": "screen720",
@@ -186,13 +186,13 @@
       "motion": true,
       "lz4": true,
       "frames": 1800,
-      "size_bytes": 4745774,
-      "bitrate_kbps": 632.8,
-      "ssim_all": 0.981124,
-      "enc_ms_per_frame": 23.8,
-      "dec_ms_per_frame": 9.158,
-      "blocks_skip": 36878160,
-      "blocks_coded": 1872240
+      "size_bytes": 3306246,
+      "bitrate_kbps": 440.8,
+      "ssim_all": 0.981182,
+      "enc_ms_per_frame": 24.558,
+      "dec_ms_per_frame": 6.635,
+      "blocks_skip": 38001048,
+      "blocks_coded": 749352
     },
     {
       "name": "screen720",
@@ -202,13 +202,13 @@
       "motion": true,
       "lz4": true,
       "frames": 1800,
-      "size_bytes": 8396138,
-      "bitrate_kbps": 1119.5,
-      "ssim_all": 0.985888,
-      "enc_ms_per_frame": 23.15,
-      "dec_ms_per_frame": 7.293,
-      "blocks_skip": 37535690,
-      "blocks_coded": 1214710
+      "size_bytes": 5838762,
+      "bitrate_kbps": 778.5,
+      "ssim_all": 0.987552,
+      "enc_ms_per_frame": 22.755,
+      "dec_ms_per_frame": 7.041,
+      "blocks_skip": 37906803,
+      "blocks_coded": 843597
     },
     {
       "name": "screen720",
@@ -218,8 +218,8 @@
       "size_bytes": 1964240,
       "bitrate_kbps": 261.9,
       "ssim_all": 0.991723,
-      "enc_ms_per_frame": 3.468,
-      "dec_ms_per_frame": 2.603
+      "enc_ms_per_frame": 3.518,
+      "dec_ms_per_frame": 2.759
     },
     {
       "name": "screen720",
@@ -229,8 +229,8 @@
       "size_bytes": 1550988,
       "bitrate_kbps": 206.8,
       "ssim_all": 0.990008,
-      "enc_ms_per_frame": 3.388,
-      "dec_ms_per_frame": 3.24
+      "enc_ms_per_frame": 3.533,
+      "dec_ms_per_frame": 2.762
     },
     {
       "name": "screen720",
@@ -240,35 +240,8 @@
       "size_bytes": 1215110,
       "bitrate_kbps": 162.0,
       "ssim_all": 0.986899,
-      "enc_ms_per_frame": 3.454,
-      "dec_ms_per_frame": 2.296
-    },
-    {
-      "name": "smoke_src",
-      "codec": "qov",
-      "setting": "quality=60",
-      "colorspace": "yuv420",
-      "motion": false,
-      "lz4": false,
-      "frames": 60,
-      "size_bytes": 452343,
-      "bitrate_kbps": 1809.4,
-      "ssim_all": 0.800795,
-      "enc_ms_per_frame": 4.037,
-      "dec_ms_per_frame": 1.882,
-      "blocks_skip": 40359,
-      "blocks_coded": 42241
-    },
-    {
-      "name": "smoke_src",
-      "codec": "x264-ultrafast",
-      "setting": "crf=32",
-      "frames": 60,
-      "size_bytes": 91464,
-      "bitrate_kbps": 365.9,
-      "ssim_all": 0.940424,
-      "enc_ms_per_frame": 1.084,
-      "dec_ms_per_frame": 1.104
+      "enc_ms_per_frame": 3.435,
+      "dec_ms_per_frame": 2.808
     }
   ],
   "meta": {
@@ -285,6 +258,6 @@
       "src/qoa.ts": 401,
       "ts_codec_total": 5451
     },
-    "generated": "2026-09-14T10:51:38"
+    "generated": "2026-09-14T10:55:51"
   }
 }
