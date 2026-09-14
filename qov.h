@@ -181,6 +181,12 @@ void qov_set_allocator(void *(*mem_alloc)(size_t),
                        void (*mem_free)(void *));
 void qov_free(void *p);
 
+/* Converts planar 4:2:0 YUV (BT.601, same math as the decoder) to packed
+   RGBA. out needs w*h*4 bytes. Useful for feeding decoded YUV frames to
+   qov_encode_keyframe/pframe. */
+void qov_yuv420_to_rgba(const uint8_t *yp, const uint8_t *up, const uint8_t *vp,
+                        uint32_t w, uint32_t h, uint8_t *out);
+
 #ifdef QOV_IMPLEMENTATION
 
 #include <stdlib.h>
@@ -1837,6 +1843,12 @@ qov_result qov_decoder_feed(qov_decoder *dec, uint8_t chunk_type, uint8_t chunk_
     if (!dec || (!payload && size > 0)) return QOV_ERR_PARAM;
     return qov__dec_feed(dec, chunk_type, chunk_flags, payload, size, timestamp_us,
                          out_img, out_aud);
+}
+
+void qov_yuv420_to_rgba(const uint8_t *yp, const uint8_t *up, const uint8_t *vp,
+                        uint32_t w, uint32_t h, uint8_t *out)
+{
+    qov_yuv_planes_to_rgba(yp, up, vp, NULL, w, h, QOV_CS_YUV420, out);
 }
 
 static qov_result qov__decode_impl(const uint8_t *data, size_t size,

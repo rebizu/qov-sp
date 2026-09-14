@@ -45,21 +45,6 @@ static block_t *write_access(mux_sys_t *sys, sout_mux_t *mux, const uint8_t *dat
     return NULL;
 }
 
-static void write_chunk(mux_sys_t *sys, sout_mux_t *mux, uint8_t type, uint8_t flags,
-                        uint32_t ts, const uint8_t *payload, size_t len)
-{
-    uint8_t hdr[10];
-    hdr[0] = type;
-    hdr[1] = flags;
-    hdr[2] = (uint8_t)(len >> 24); hdr[3] = (uint8_t)(len >> 16);
-    hdr[4] = (uint8_t)(len >> 8);  hdr[5] = (uint8_t)len;
-    hdr[6] = (uint8_t)(ts >> 24);  hdr[7] = (uint8_t)(ts >> 16);
-    hdr[8] = (uint8_t)(ts >> 8);   hdr[9] = (uint8_t)ts;
-    write_access(sys, mux, hdr, 10);
-    if (len > 0)
-        write_access(sys, mux, payload, len);
-}
-
 static void write_header(mux_sys_t *sys, sout_mux_t *mux)
 {
     sout_input_t *v = sys->video;
@@ -123,32 +108,36 @@ static void mux_video_block(mux_sys_t *sys, sout_mux_t *mux, block_t *block)
             sys->kf_ts[sys->kf_count] = ts;
             sys->kf_count++;
         }
-        if (type == QOV_CHUNK_KEYFRAME || type == QOV_CHUNK_PFRAME)
+        if (type == QOV_CHUNK_KEYFRAME || type == QOV_CHUNK_PFRAME) {
             sys->total_frames++;
+            qov_trace("mux: video chunk type=%d size=%u", (int)type, csize);
+        }
         pos += 10 + csize;
     }
     write_access(sys, mux, p, block->i_buffer);
 }
 
+static void drain_fifo(mux_sys_t *sys, sout_mux_t *mux, sout_input_t *input);
+
 static int Mux(sout_mux_t *mux)
 {
     mux_sys_t *sys = mux->p_sys;
+    qov_trace("mux: pf_mux inputs=%d hdr=%d", mux->i_nb_inputs, (int)sys->header_written);
     if (!sys->header_written)
         write_header(sys, mux);
 
     for (int i = 0; i < mux->i_nb_inputs; i++) {
         sout_input_t *input = mux->pp_inputs[i];
         block_t *block;
-        while ((block = block_FifoGet(input->p_fifo)) != NULL) {
+        /* block_FifoGet blocks, so only pull when data is queued */
+        while (block_FifoCount(input->p_fifo) > 0 &&
+               (block = block_FifoGet(input->p_fifo)) != NULL) {
             if (input == sys->video) {
                 mux_video_block(sys, mux, block);
             } else if (input == sys->audio) {
-                int64_t rel = block->i_dts - VLC_TICK_0;
-                if (rel < 0)
-                    rel = 0;
-                uint32_t ts = (uint32_t)(rel & 0xFFFFFFFFu);
-                write_chunk(sys, mux, QOV_CHUNK_AUDIO, 0, ts,
-                            block->p_buffer, block->i_buffer);
+                /* QOA1 ES carries complete AUDIO chunk records; pass through */
+                qov_trace("mux: audio block %d bytes", (int)block->i_buffer);
+                write_access(sys, mux, block->p_buffer, block->i_buffer);
             }
             block_Release(block);
         }
@@ -159,6 +148,7 @@ static int Mux(sout_mux_t *mux)
 static int AddStream(sout_mux_t *mux, sout_input_t *input)
 {
     mux_sys_t *sys = mux->p_sys;
+    qov_trace("mux: AddStream codec=%4.4s", (const char*)&input->fmt.i_codec);
 
     if (input->fmt.i_codec == QOV_VLC_VIDEO_FOURCC && !sys->video) {
         sys->video = input;
@@ -179,12 +169,17 @@ static int AddStream(sout_mux_t *mux, sout_input_t *input)
 
 static void DelStream(sout_mux_t *mux, sout_input_t *input)
 {
-    VLC_UNUSED(input);
+    mux_sys_t *sys = mux->p_sys;
+    qov_trace("mux: DelStream video=%d fifocount=%zu", input == sys->video,
+              block_FifoCount(input->p_fifo));
+    /* sout tears streams down before mux close: flush this stream now */
+    drain_fifo(sys, mux, input);
 }
 
 int qov_vlc_mux_open(vlc_object_t *obj)
 {
     sout_mux_t *mux = (sout_mux_t *)obj;
+    qov_trace("mux: open enter");
 
     mux_sys_t *sys = vlc_obj_calloc(obj, 1, sizeof(*sys));
     if (!sys)
@@ -193,8 +188,26 @@ int qov_vlc_mux_open(vlc_object_t *obj)
     mux->pf_addstream = AddStream;
     mux->pf_delstream = DelStream;
     mux->pf_mux = Mux;
+    /* VLC gates pf_mux behind sout-mux-caching (default 1500 ms) while
+       b_waiting_stream is true; files shorter than that would lose their
+       tail. Mux immediately instead - which also requires declaring that
+       streams may be added at any time. */
+    mux->b_waiting_stream = false;
+    mux->b_add_stream_any_time = true;
     msg_Dbg(mux, "qov mux: open");
     return VLC_SUCCESS;
+}
+
+static void drain_fifo(mux_sys_t *sys, sout_mux_t *mux, sout_input_t *input)
+{
+    while (block_FifoCount(input->p_fifo) > 0) {
+        block_t *block = block_FifoGet(input->p_fifo);
+        if (input == sys->video)
+            mux_video_block(sys, mux, block);
+        else if (input == sys->audio)
+            write_access(sys, mux, block->p_buffer, block->i_buffer);
+        block_Release(block);
+    }
 }
 
 void qov_vlc_mux_close(vlc_object_t *obj)
@@ -204,7 +217,14 @@ void qov_vlc_mux_close(vlc_object_t *obj)
     if (!sys)
         return;
 
+    qov_trace("mux: close inputs=%d written=%llu eof=%d", mux->i_nb_inputs,
+              (unsigned long long)sys->bytes_written, (int)sys->eof_written);
     if (sys->header_written && !sys->eof_written) {
+        /* flush whatever is still queued when the sout tears down */
+        for (int i = 0; i < mux->i_nb_inputs; i++) {
+            qov_trace("mux: drain fifo %d count=%zu", i, block_FifoCount(mux->pp_inputs[i]->p_fifo));
+            drain_fifo(sys, mux, mux->pp_inputs[i]);
+        }
         /* INDEX chunk */
         if (sys->kf_count > 0) {
             size_t payload = 4 + sys->kf_count * 16;

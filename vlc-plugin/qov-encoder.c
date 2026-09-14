@@ -25,6 +25,8 @@ static block_t *EncodeVideo(encoder_t *enc, picture_t *pic)
     video_enc_sys_t *sys = enc->p_sys;
     if (!pic)
         return NULL;
+    qov_trace("enc: frame chroma=%4.4s %dx%d date=%lld", (const char*)&pic->format.i_chroma,
+              pic->format.i_visible_width, pic->format.i_visible_height, (long long)pic->date);
 
     if (!sys->have_first_pts) {
         sys->first_pts = pic->date;
@@ -35,20 +37,45 @@ static block_t *EncodeVideo(encoder_t *enc, picture_t *pic)
         rel_us = 0;
     uint32_t ts = (uint32_t)(rel_us & 0xFFFFFFFFu);
 
-    /* repack the (pitch-aligned) RGBA picture to tightly packed rows */
+    /* repack the (pitch-aligned) picture to tightly packed rows; I420 input
+       is converted with the codec's own BT.601 math first */
     uint32_t w = pic->format.i_visible_width;
     uint32_t h = pic->format.i_visible_height;
+    bool is_i420 = pic->format.i_chroma == VLC_CODEC_I420;
     uint8_t *rgba = malloc((size_t)w * h * 4);
     if (!rgba)
         return NULL;
-    for (uint32_t y = 0; y < h; y++)
-        memcpy(rgba + (size_t)y * w * 4,
-               pic->p[0].p_pixels + (size_t)y * pic->p[0].i_pitch, (size_t)w * 4);
+    if (is_i420) {
+        uint8_t *y = malloc((size_t)w * h);
+        uint8_t *u = malloc((size_t)((w + 1) / 2) * ((h + 1) / 2));
+        uint8_t *v = malloc((size_t)((w + 1) / 2) * ((h + 1) / 2));
+        if (!y || !u || !v) {
+            free(y); free(u); free(v); free(rgba);
+            return NULL;
+        }
+        for (uint32_t y_row = 0; y_row < h; y_row++)
+            memcpy(y + (size_t)y_row * w,
+                   pic->p[0].p_pixels + (size_t)y_row * pic->p[0].i_pitch, w);
+        uint32_t cw = (w + 1) / 2, ch = (h + 1) / 2;
+        for (uint32_t y_row = 0; y_row < ch; y_row++) {
+            memcpy(u + (size_t)y_row * cw,
+                   pic->p[1].p_pixels + (size_t)y_row * pic->p[1].i_pitch, cw);
+            memcpy(v + (size_t)y_row * cw,
+                   pic->p[2].p_pixels + (size_t)y_row * pic->p[2].i_pitch, cw);
+        }
+        qov_yuv420_to_rgba(y, u, v, w, h, rgba);
+        free(y); free(u); free(v);
+    } else {
+        for (uint32_t y = 0; y < h; y++)
+            memcpy(rgba + (size_t)y * w * 4,
+                   pic->p[0].p_pixels + (size_t)y * pic->p[0].i_pitch, (size_t)w * 4);
+    }
 
     qov_result r = (sys->keyint > 0 && sys->frame_count % (uint32_t)sys->keyint == 0)
         ? qov_encode_keyframe(sys->enc, rgba, ts)
         : qov_encode_pframe(sys->enc, rgba, ts);
     free(rgba);
+    qov_trace("enc: encoded r=%d frame=%u", (int)r, sys->frame_count);
     if (r != QOV_OK) {
         msg_Err(enc, "qov encode error %d", r);
         return NULL;
@@ -78,9 +105,12 @@ static block_t *EncodeVideo(encoder_t *enc, picture_t *pic)
 int qov_vlc_video_encoder_open(vlc_object_t *obj)
 {
     encoder_t *enc = (encoder_t *)obj;
+    qov_trace("enc: open enter vchroma=%4.4s icat=%4.4s out=%4.4s %ux%u", (const char*)&enc->fmt_in.video.i_chroma, (const char*)&enc->fmt_in.i_codec, (const char*)&enc->fmt_out.i_codec, enc->fmt_in.video.i_width, enc->fmt_in.video.i_height);
 
-    if (enc->fmt_in.video.i_chroma != VLC_CODEC_RGBA)
-        return VLC_EGENERIC;
+    /* transcode probes with an empty chroma (availability test only); the
+       real chroma arrives per picture and EncodeVideo adapts (RGBA/I420).
+       Announce I420 so transcode builds a matching converter chain. */
+    enc->fmt_in.video.i_chroma = VLC_CODEC_I420;
     uint32_t w = enc->fmt_in.video.i_visible_width ? enc->fmt_in.video.i_visible_width
                                                    : enc->fmt_in.video.i_width;
     uint32_t h = enc->fmt_in.video.i_visible_height ? enc->fmt_in.video.i_visible_height

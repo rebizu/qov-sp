@@ -12,6 +12,7 @@
 struct decoder_sys_t {
     qov_decoder *dec;
     qov_header hdr;
+    bool vout_ready;
 };
 typedef struct decoder_sys_t video_dec_sys_t;
 
@@ -25,11 +26,17 @@ static picture_t *DecodeBlock(video_dec_sys_t *sys, decoder_t *dec, block_t *blo
                                     block->i_buffer, 0, &img, NULL);
     qov_trace("vd: fed r=%d img=%p", (int)r, (void*)img.rgba);
     block_Release(block);
+    qov_trace("vd: block released");
     if (r != QOV_OK) {
         msg_Warn(dec, "qov decode error %d", r);
         return NULL;
     }
 
+    if (!sys->vout_ready) {
+        if (decoder_UpdateVideoFormat(dec) != 0)
+            return NULL; /* no vout; drop */
+        sys->vout_ready = true;
+    }
     picture_t *pic = decoder_NewPicture(dec);
     qov_trace("vd: newpic=%p", (void*)pic);
     if (!pic)
@@ -70,6 +77,7 @@ static void Flush(decoder_t *dec)
 {
     video_dec_sys_t *sys = dec->p_sys;
     qov_decoder_reset(sys->dec);
+    sys->vout_ready = false;
 }
 
 int qov_vlc_video_decoder_open(vlc_object_t *obj)
@@ -101,11 +109,12 @@ int qov_vlc_video_decoder_open(vlc_object_t *obj)
     }
     dec->p_sys = sys;
 
+    /* decoder_NewPicture allocates from fmt_out.video, which needs a real
+       chroma + SAR setup, not just the codec field */
     dec->fmt_out.i_codec = VLC_CODEC_RGBA;
-    dec->fmt_out.video.i_width = sys->hdr.width;
-    dec->fmt_out.video.i_visible_width = sys->hdr.width;
-    dec->fmt_out.video.i_height = sys->hdr.height;
-    dec->fmt_out.video.i_visible_height = sys->hdr.height;
+    video_format_Setup(&dec->fmt_out.video, VLC_CODEC_RGBA,
+                       (int)sys->hdr.width, (int)sys->hdr.height,
+                       (int)sys->hdr.width, (int)sys->hdr.height, 0, 1);
     dec->fmt_out.video.i_frame_rate = sys->hdr.fps_num;
     dec->fmt_out.video.i_frame_rate_base = sys->hdr.fps_den;
     dec->fmt_out.video.orientation = ORIENT_TOP_LEFT;

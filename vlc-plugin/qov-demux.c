@@ -26,6 +26,7 @@ struct demux_sys_t {
     size_t kf_count;
 
     uint32_t frame_count;
+    uint32_t audio_count;
     bool eof;
 } ;
 
@@ -46,13 +47,14 @@ static uint32_t chunk_ts(const qov_header *h, const uint8_t *hdr_bytes)
                            : qov_vlc_be32(hdr_bytes + 4);
 }
 
-/* chunk timestamps are u32 microseconds and wrap on long files; the frame
-   counter * frame duration stays exact */
-static int64_t frame_pts_us(demux_sys_t *sys, uint32_t chunk_ts)
+/* chunk timestamps are u32 microseconds and wrap on long files; the per-ES
+   counters * frame duration stay exact */
+static int64_t frame_pts_us(demux_sys_t *sys, uint32_t chunk_ts, bool audio)
 {
+    uint32_t counter = audio ? sys->audio_count : sys->frame_count;
     if (chunk_ts != 0)
         return (int64_t)chunk_ts;
-    return (int64_t)sys->frame_count * 1000000ll * sys->hdr.fps_den / sys->hdr.fps_num;
+    return (int64_t)counter * 1000000ll * sys->hdr.fps_den / sys->hdr.fps_num;
 }
 
 static int64_t frame_duration_us(demux_sys_t *sys)
@@ -90,66 +92,71 @@ static void load_index(demux_t *demux, demux_sys_t *sys)
     if (tail[0] != QOV_CHUNK_END)
         return;
 
-    /* the INDEX chunk header must start at end_of_payload - csize - chdr;
-       resolve self-consistently from the stored csize */
-    uint64_t guess = file_size - chdr - 4 - chdr;
-    if (guess < sys->hdr.header_size)
+    /* scan a bounded window backwards from END for the INDEX chunk header:
+       header position P must satisfy P + chdr + csize == file_size - chdr
+       with csize read from the header itself */
+    uint64_t window = 4 + (uint64_t)16 * 100000 + 2 * chdr;
+    if (window > file_size)
+        window = file_size;
+    uint64_t win_start = file_size - window;
+    size_t wlen = (size_t)window;
+    uint8_t *win = malloc(wlen);
+    if (!win)
         return;
-    uint8_t ihdr[10];
-    if (vlc_stream_Seek(demux->s, guess) != VLC_SUCCESS)
-        return;
-    if (vlc_stream_Read(demux->s, ihdr, chdr) != (ssize_t)chdr)
-        return;
-    if (ihdr[0] != QOV_CHUNK_INDEX)
-        return;
-    uint32_t csize = chunk_payload_size(&sys->hdr, ihdr);
-    if (csize < 4 || (csize - 4) % 16 != 0 ||
-        guess + chdr + csize != file_size - chdr)
-        return;
-
-    uint32_t count = (csize - 4) / 16;
-    if (count == 0 || count > 1000000u)
-        return;
-
-    size_t total = 4 + (size_t)count * 16;
-    uint8_t *payload = malloc(total);
-    if (!payload)
-        return;
-    if (vlc_stream_Read(demux->s, payload, (ssize_t)total) != (ssize_t)total) {
-        free(payload);
+    if (vlc_stream_Seek(demux->s, win_start) != VLC_SUCCESS ||
+        vlc_stream_Read(demux->s, win, (ssize_t)wlen) != (ssize_t)wlen) {
+        free(win);
         return;
     }
 
-    uint32_t *kf_frame = malloc(sizeof(uint32_t) * count);
-    uint64_t *kf_offset = malloc(sizeof(uint64_t) * count);
-    uint32_t *kf_ts = malloc(sizeof(uint32_t) * count);
-    if (!kf_frame || !kf_offset || !kf_ts) {
-        free(kf_frame); free(kf_offset); free(kf_ts); free(payload);
-        return;
-    }
-
-    size_t n = 0;
-    for (uint32_t i = 0; i < count; i++) {
-        const uint8_t *e = payload + 4 + (size_t)i * 16;
-        uint64_t offset = ((uint64_t)qov_vlc_be32(e + 4) << 32) | qov_vlc_be32(e + 8);
-        if (offset < sys->hdr.header_size || offset >= file_size)
+    uint64_t payload_end = file_size - chdr; /* INDEX payload ends here */
+    for (size_t i = 0; i + chdr <= wlen; i++) {
+        if (win[i] != QOV_CHUNK_INDEX)
             continue;
-        kf_frame[n] = qov_vlc_be32(e);
-        kf_offset[n] = offset;
-        kf_ts[n] = qov_vlc_be32(e + 12);
-        n++;
-    }
-    free(payload);
+        uint32_t csize = chunk_payload_size(&sys->hdr, win + i);
+        uint64_t p = win_start + i;
+        if (csize < 4 || (csize - 4) % 16 != 0 || csize > 4 + 1000000u * 16)
+            continue;
+        if (p + chdr + csize != payload_end)
+            continue;
+        if (i + chdr + csize > wlen) {
+            free(win);
+            return;
+        }
+        uint32_t count = (csize - 4) / 16;
+        if (count == 0)
+            break;
 
-    if (n == 0) {
-        free(kf_frame); free(kf_offset); free(kf_ts);
-        return;
+        uint32_t *kf_frame = malloc(sizeof(uint32_t) * count);
+        uint64_t *kf_offset = malloc(sizeof(uint64_t) * count);
+        uint32_t *kf_ts = malloc(sizeof(uint32_t) * count);
+        if (!kf_frame || !kf_offset || !kf_ts) {
+            free(kf_frame); free(kf_offset); free(kf_ts);
+            break;
+        }
+        size_t n = 0;
+        for (uint32_t k = 0; k < count; k++) {
+            const uint8_t *e = win + i + chdr + 4 + (size_t)k * 16;
+            uint64_t offset = ((uint64_t)qov_vlc_be32(e + 4) << 32) | qov_vlc_be32(e + 8);
+            if (offset < sys->hdr.header_size || offset >= file_size)
+                continue;
+            kf_frame[n] = qov_vlc_be32(e);
+            kf_offset[n] = offset;
+            kf_ts[n] = qov_vlc_be32(e + 12);
+            n++;
+        }
+        if (n > 0) {
+            sys->kf_frame = kf_frame;
+            sys->kf_offset = kf_offset;
+            sys->kf_ts = kf_ts;
+            sys->kf_count = n;
+            msg_Dbg(demux, "qov: loaded keyframe index (%zu entries)", n);
+        } else {
+            free(kf_frame); free(kf_offset); free(kf_ts);
+        }
+        break;
     }
-    sys->kf_frame = kf_frame;
-    sys->kf_offset = kf_offset;
-    sys->kf_ts = kf_ts;
-    sys->kf_count = n;
-    msg_Dbg(demux, "qov: loaded keyframe index (%zu entries)", n);
+    free(win);
 }
 
 static int seek_to_keyframe(demux_t *demux, int64_t target_us)
@@ -181,8 +188,6 @@ static int Demux(demux_t *demux)
     demux_sys_t *sys = demux->p_sys;
     if (sys->eof)
         return 0;
-    static int dbg_calls = 0;
-    if (dbg_calls++ < 3) msg_Warn(demux, "qovdmx: Demux call %d", dbg_calls);
 
     size_t chdr = chunk_header_size(&sys->hdr);
     uint8_t hdr_bytes[10];
@@ -201,33 +206,51 @@ static int Demux(demux_t *demux)
     }
 
     if (ctype == QOV_CHUNK_KEYFRAME || ctype == QOV_CHUNK_PFRAME) {
-        block_t *block = block_Alloc(csize);
+        /* ES format: complete chunk records (header + payload) */
+        block_t *block = block_Alloc((size_t)chdr + csize);
         if (!block)
             return -1;
-        if (vlc_stream_Read(demux->s, block->p_buffer, csize) != (ssize_t)csize) {
+        memcpy(block->p_buffer, hdr_bytes, chdr);
+        if (vlc_stream_Read(demux->s, block->p_buffer + chdr, csize) != (ssize_t)csize) {
             block_Release(block);
             return -1;
         }
-        int64_t pts = VLC_TICK_0 + frame_pts_us(sys, chunk_ts(&sys->hdr, hdr_bytes));
+        int64_t pts = VLC_TICK_0 + frame_pts_us(sys, chunk_ts(&sys->hdr, hdr_bytes), false);
         block->i_pts = pts;
         block->i_dts = pts;
         block->i_flags = ctype == QOV_CHUNK_KEYFRAME ? BLOCK_FLAG_TYPE_I : BLOCK_FLAG_TYPE_P;
         sys->frame_count++;
+        es_out_Control(demux->out, ES_OUT_SET_PCR, (int64_t)pts);
+#ifdef QOV_TRACE
+        {
+            FILE *qf = fopen("qov_trace.txt", "a");
+            if (qf) { fprintf(qf, "dmx: video chunk type=%d size=%u pts=%lld", (int)ctype, csize, (long long)pts); fputc(10, qf); fclose(qf); }
+        }
+#endif
         es_out_Send(demux->out, sys->video_es, block);
         return 1;
     }
 
     if (ctype == QOV_CHUNK_AUDIO && sys->audio_es) {
-        block_t *block = block_Alloc(csize);
+        block_t *block = block_Alloc((size_t)chdr + csize);
         if (!block)
             return -1;
-        if (vlc_stream_Read(demux->s, block->p_buffer, csize) != (ssize_t)csize) {
+        memcpy(block->p_buffer, hdr_bytes, chdr);
+        if (vlc_stream_Read(demux->s, block->p_buffer + chdr, csize) != (ssize_t)csize) {
             block_Release(block);
             return -1;
         }
-        int64_t pts = VLC_TICK_0 + frame_pts_us(sys, chunk_ts(&sys->hdr, hdr_bytes));
+        sys->audio_count++;
+        int64_t pts = VLC_TICK_0 + frame_pts_us(sys, chunk_ts(&sys->hdr, hdr_bytes), true);
         block->i_pts = pts;
         block->i_dts = pts;
+        es_out_Control(demux->out, ES_OUT_SET_PCR, (int64_t)pts);
+#ifdef QOV_TRACE
+        {
+            FILE *qf = fopen("qov_trace.txt", "a");
+            if (qf) { fprintf(qf, "dmx: audio chunk size=%u pts=%lld", csize, (long long)pts); fputc(10, qf); fclose(qf); }
+        }
+#endif
         es_out_Send(demux->out, sys->audio_es, block);
         return 1;
     }
@@ -295,7 +318,6 @@ static int Control(demux_t *demux, int query, va_list args)
 static int Open(vlc_object_t *obj)
 {
     demux_t *demux = (demux_t *)obj;
-    msg_Warn(obj, "qovdmx: Open enter");
 
     const uint8_t *peek;
     ssize_t peeked = vlc_stream_Peek(demux->s, &peek, 32);
@@ -314,7 +336,6 @@ static int Open(vlc_object_t *obj)
         return VLC_EGENERIC;
     }
 
-    msg_Warn(obj, "qovdmx: header ok");
     demux->p_sys = sys;
     demux->pf_demux = Demux;
     demux->pf_control = Control;
@@ -349,13 +370,18 @@ static int Open(vlc_object_t *obj)
         fmt.audio.i_rate = sys->hdr.audio_rate;
         fmt.audio.i_channels = sys->hdr.audio_channels;
         fmt.audio.i_physical_channels = sys->hdr.audio_channels > 1 ? AOUT_CHANS_STEREO : AOUT_CHAN_CENTER;
+        fmt.i_extra = (int)sys->hdr.header_size;
+        fmt.p_extra = malloc(sys->hdr.header_size);
+        if (!fmt.p_extra) {
+            es_format_Clean(&fmt);
+            return VLC_ENOMEM;
+        }
+        memcpy(fmt.p_extra, peek, sys->hdr.header_size);
         sys->audio_es = es_out_Add(demux->out, &fmt);
         es_format_Clean(&fmt);
     }
 
-    msg_Warn(obj, "qovdmx: es added video=%p audio=%p", (void*)sys->video_es, (void*)sys->audio_es);
     load_index(demux, sys);
-    msg_Warn(obj, "qovdmx: index loaded count=%zu", sys->kf_count);
     if (vlc_stream_Seek(demux->s, sys->hdr.header_size) != VLC_SUCCESS)
         msg_Warn(demux, "qov: cannot rewind after index probe");
 
@@ -395,7 +421,7 @@ vlc_module_begin()
     add_submodule()
     set_shortname("QOV")
     set_description(N_("QOV (Quite OK Video) video encoder"))
-    set_capability("video encoder", 60)
+    set_capability("encoder", 60)
     set_callbacks(qov_vlc_video_encoder_open, qov_vlc_video_encoder_close)
     add_shortcut("qov")
     add_integer("sout-qov-keyint", 150, N_("Keyframe interval"),
@@ -406,7 +432,7 @@ vlc_module_begin()
     add_submodule()
     set_shortname("QOV")
     set_description(N_("QOV (Quite OK Video) muxer"))
-    set_capability("mux", 60)
+    set_capability("sout mux", 60)
     set_callbacks(qov_vlc_mux_open, qov_vlc_mux_close)
     add_shortcut("qov")
 #endif

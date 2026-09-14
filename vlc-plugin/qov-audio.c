@@ -12,6 +12,7 @@
 struct decoder_sys_t {
     qov_decoder *dec;   /* video-free context used only for AUDIO chunks */
     qov_header hdr;
+    bool aout_ready;
 };
 typedef struct decoder_sys_t audio_dec_sys_t;
 
@@ -26,14 +27,28 @@ static int Decode(decoder_t *dec, block_t *block)
     }
 
     vlc_tick_t pts = block->i_pts != VLC_TICK_INVALID ? block->i_pts : block->i_dts;
+
+    /* ES carries complete chunk records; the chunk header size follows from
+       the qov file version the demuxer attached as extra data */
+    size_t chdr = sys->hdr.version >= 2 ? 10 : 8;
+    if (block->i_buffer <= chdr || block->p_buffer[0] != QOV_CHUNK_AUDIO) {
+        block_Release(block);
+        return VLCDEC_SUCCESS;
+    }
     qov_audio aud;
-    qov_result r = qov_decoder_feed(sys->dec, QOV_CHUNK_AUDIO, 0, block->p_buffer,
-                                    block->i_buffer, 0, NULL, &aud);
+    qov_result r = qov_decoder_feed(sys->dec, QOV_CHUNK_AUDIO, block->p_buffer[1],
+                                    block->p_buffer + chdr, block->i_buffer - chdr,
+                                    0, NULL, &aud);
     block_Release(block);
     if (r != QOV_OK || aud.sample_count == 0)
         return VLCDEC_SUCCESS;
 
-    block_t *out = block_Alloc(aud.sample_count * aud.channels * 2);
+    if (!sys->aout_ready) {
+        if (decoder_UpdateAudioFormat(dec) != 0)
+            return VLCDEC_SUCCESS; /* no aout; drop */
+        sys->aout_ready = true;
+    }
+    block_t *out = decoder_NewAudioBuffer(dec, (unsigned)aud.sample_count);
     if (!out)
         return VLCDEC_SUCCESS;
     memcpy(out->p_buffer, aud.samples, aud.sample_count * aud.channels * 2);
@@ -48,6 +63,7 @@ static void Flush(decoder_t *dec)
 {
     audio_dec_sys_t *sys = dec->p_sys;
     qov_decoder_reset(sys->dec);
+    sys->aout_ready = false;
 }
 
 int qov_vlc_audio_decoder_open(vlc_object_t *obj)
