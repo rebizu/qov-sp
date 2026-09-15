@@ -1,3 +1,7 @@
+// Reference implementation of the RETIRED QOV-S v1.0 draft (TCP control +
+// raw UDP media, 16-byte packet header). Superseded by QOV-S v2.0
+// (WebTransport primary / WebSocket fallback, 20-byte header with seq) —
+// kept until the v2.0 transport workstream lands. Do not extend.
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;

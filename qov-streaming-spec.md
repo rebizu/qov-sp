@@ -1,115 +1,170 @@
 # QOV-S (Quite OK Video Streaming) Protocol Specification
 
-**Version:** 1.0 (Draft)
-**Date:** February 2026
-**Transport:** Hybrid TCP/UDP
+**Version:** 2.0
+**Date:** September 2026
+**Transports:** WebTransport (HTTP/3, QUIC datagrams) primary; WebSocket fallback
+**Supersedes:** QOV-S v1.0 (Draft, February 2026 — hybrid TCP control + UDP data)
 
 ---
 
 ## 1. Overview
 
-QOV-S is a streaming protocol designed to transport QOV video and audio data over a network. It prioritizes low latency by using UDP for media transport while maintaining stream stability and session management via a reliable TCP control channel.
+QOV-S transports QOV video (and QOA audio) chunks over a network with
+interactive latency (target < 250 ms glass-to-glass). Version 2.0 replaces the
+v1.0 split transport (TCP control + raw UDP media) with a single connection:
 
-**Architecture:**
-*   **Control Channel (TCP):** Handles handshake, stream configuration, state changes (Play/Pause), and error recovery (Keyframe requests).
-*   **Data Channel (UDP):** Handles the transmission of fragmented QOV chunks (Video/Audio).
+* **Primary: WebTransport** over HTTP/3. Media packets ride QUIC **unreliable
+  datagrams** (no head-of-line blocking, no retransmission delay); session
+  control rides a QUIC **stream** (reliable, ordered).
+* **Fallback: WebSocket.** When WebTransport is unavailable (corporate
+  proxies, old browsers), the identical session runs over one WebSocket:
+  control messages and length-prefixed packets share the byte stream.
+  Reliability is delegated to TCP — NACK/FEC logic is simply idle. No other
+  difference; the packetization (§3) and session state machine (§2) are
+  byte-identical.
 
----
+Rationale for the change from v1.0: two sockets doubled the handshake and
+NAT/state surface, TCP control could head-of-line-block behind nothing while
+UDP flooded, and QUIC gives per-packet loss signals (§5) for free.
 
-## 2. Control Channel (TCP)
-
-The control channel uses a simple text-based line protocol (UTF-8, terminated by `
-`) or binary fixed structures for critical headers.
+## 2. Session
 
 ### 2.1 Connection Flow
 
-1.  **Connect:** Client connects to Server TCP port (default: 8880).
-2.  **Handshake:** Server sends the **QOV File Header** (24 or 32 bytes) immediately upon connection. This ensures the client has the sequence header (Width, Height, Version) to initialize the decoder.
-3.  **Command Loop:** Client and Server exchange commands.
+1. Client connects (WebTransport URL `https://host/qovs`, or
+   `wss://host/qovs`).
+2. Client sends `HELLO` (auth token, protocol version).
+3. Server validates and replies with `CONFIG` carrying the **QOV file header**
+   (24/32 bytes, spec v3.6 §1) — the receiver initializes its decoder from it.
+4. `PLAY` / media flows / `PAUSE` / `BYE`.
 
-### 2.2 Commands
+### 2.2 Control Messages
 
-| Command | Direction | Description |
+Text lines (UTF-8, `\n`-terminated) on the reliable channel. `k=v` arguments
+after the verb.
+
+| Message | Dir | Description |
 | :--- | :--- | :--- |
-| `PLAY` | C -> S | Start sending UDP data. |
-| `PAUSE` | C -> S | Stop sending UDP data. |
-| `KEYFRAME` | C -> S | Request an immediate Keyframe (I-Frame). Used when packet loss causes artifacts. |
-| `PING` | Both | Keep-alive. Responder must reply with `PONG`. |
-| `PONG` | Both | Response to PING. |
-| `BYE` | Both | Close connection. |
+| `HELLO token=T v=2` | C→S | Auth + protocol version. Server closes on mismatch. |
+| `CONFIG` | S→C | Followed by the raw QOV file header bytes on the stream. |
+| `PLAY` / `PAUSE` | C→S | Start/stop media flow. |
+| `KEYFRAME` | C→S | Request immediate keyframe (rate-limited: server MUST cap at 1/s). |
+| `REPORT loss=P rtt=US buf=MS since=SEQ` | C→S | Receiver report, every 500 ms (§6). |
+| `NACK seq=A-B seq=C seq=D` | C→S | Missing datagram sequence numbers (§5.1). |
+| `PING` / `PONG t=US` | both | Keep-alive + RTT measurement. |
+| `BYE` | both | Close. |
 
-**Example Handshake:**
-```text
-[Client connects to TCP]
-[Server sends 24-byte QOV Header binary data]
-Client: PLAY
-[Server starts UDP stream]
-...
-Client: KEYFRAME
-[Server forces next frame to be I-Frame]
-```
+## 3. Packetization
 
----
-
-## 3. Data Channel (UDP)
-
-The data channel transmits QOV chunks. Since QOV chunks (especially Keyframes) can exceed the network MTU, a simple fragmentation layer is introduced.
-
-### 3.1 Packet Structure
-
-Each UDP packet consists of a **16-byte header** followed by the payload. All integer fields are **Big-Endian**.
+One page, one header, both transports.
 
 ```
 Offset  Size  Name            Description
 ──────────────────────────────────────────────────────────────
-0       4     magic           Magic bytes "QOVP" (0x514F5650)
-4       4     frame_id        Monotonic Frame ID. Increments per QOV Chunk.
-8       2     fragment_id     Index of this fragment (0-based).
-10      2     fragment_count  Total fragments for this Frame ID.
-12      2     payload_size    Size of the data following this header.
-14      1     packet_type     0x00=Video, 0x01=Audio, 0xF0=KeepAlive
-15      1     reserved        Reserved (0x00)
-16      N     payload         Fragment of the QOV Chunk.
+0       4     magic           "QOVP" (0x514F5650)
+4       1     version         0x02
+5       1     packet_type     0x00 video, 0x01 audio, 0x02 FEC (§5.2),
+                              0xF0 keep-alive
+6       4     seq             Monotonic datagram counter (loss detection)
+10      4     frame_id        Monotonic QOV chunk counter (video+audio)
+14      2     fragment_id     0-based fragment index within the frame
+16      2     fragment_count  Total fragments for this frame
+18      2     payload_size    Payload bytes following the header
+20      N     payload         Fragment of the QOV chunk
 ```
 
-### 3.2 Fragmentation Logic
+All integers big-endian. **Every packet (header + payload) MUST be ≤ 1200
+bytes** — safe inside QUIC datagrams without IP fragmentation on any common
+link. (v1.0's 16-byte header is retired; the 16-byte layout cannot carry
+`seq`, which the loss machinery in §5 requires.)
 
-**Sender (Server):**
-1.  Generate a QOV Chunk (e.g., a 100KB Keyframe).
-2.  Assign a `frame_id`.
-3.  Split the chunk into `N` fragments, where each fragment payload size <= (MTU - 16).
-    *   *Recommended Max Payload:* 1400 bytes (to stay within safe Ethernet MTU of 1500).
-4.  Send `N` UDP packets with `fragment_id` from `0` to `N-1`.
+**Sender:** split each QOV chunk (video keyframe/P-frame, or audio QOA frame)
+into `ceil(len / 1180)` fragments; emit one datagram per fragment with a
+shared `frame_id`, incrementing `seq` across all packets. Fragments are sent
+in order; the last one may be short. Audio frames typically fit one packet.
 
-**Receiver (Client):**
-1.  Receive UDP packet.
-2.  Check `frame_id`.
-    *   If `frame_id` is new: Allocate buffer.
-    *   If `frame_id` is old/completed: Discard.
-3.  Place payload into buffer at offset `fragment_id * max_fragment_size` (Note: Receiver must handle variable sized last fragments correctly, ideally by simply concatenating sorted fragments).
-4.  If all `fragment_count` packets are received:
-    *   Pass the reassembled buffer to the QOV Decoder.
-5.  **Timeout:** If a frame is incomplete after T milliseconds (e.g., 100ms), discard it.
-    *   If the discarded frame was a Video packet, send `KEYFRAME` command over TCP to repair stream.
+**Receiver:** buffer by `frame_id`; a frame is decodable when all
+`fragment_count` fragments have arrived; assemble by `fragment_id` order
+(concatenate payloads). A frame whose fragments do not arrive within its
+playback slot (one frame interval, hard cap 100 ms later) is **dropped** —
+never decoded partially (§6).
 
----
+## 4. Chunk Semantics
 
-## 4. Recovery Strategy
+* Keyframes are self-contained; P-frames depend on the previously *decoded*
+  frame. The QOV chunk flags (MOTION, DCT_BLOCKS, refresh bands, Exp-Golomb)
+  pass through untouched — receivers use the ordinary QOV decoders.
+* Senders SHOULD enable intra refresh bands (spec v3.6 §3.4.4) for camera
+  content: a lost P-frame heals when the rolling band crosses it, without a
+  full keyframe.
+* Audio chunks are independent; loss only gaps audio (receivers fill silence
+  or stretch the previous QOA frame).
 
-Since UDP is unreliable:
+## 5. Loss Recovery (WebTransport/datagram path only)
 
-1.  **Video:**
-    *   If a **Keyframe** fragment is lost: The whole frame is corrupt. Decoder cannot initialize. Client MUST send `KEYFRAME` request.
-    *   If a **P-Frame** fragment is lost: The frame is dropped. Subsequent P-frames will have visual artifacts. Client SHOULD send `KEYFRAME` request.
-    *   *Optimization:* Client can tolerate a few dropped P-frames if the visual glitch is acceptable, but QOV's dependencies usually require a refresh.
+### 5.1 NACK
 
-2.  **Audio:**
-    *   Audio chunks are small and usually fit in one packet.
-    *   If lost: Audio gap. Client fills with silence or repeats last sample.
+The receiver detects gaps in `seq` and sends `NACK` immediately (coalescing a
+500 ms window). The sender retransmits the listed datagrams if the frame is
+still within its playback window; otherwise it ignores the NACK (the frame is
+already dropped receiver-side).
 
----
+### 5.2 XOR FEC
 
-## 5. Security Considerations
+Senders MAY add parity datagrams over groups of consecutive media packets of
+the **same frame**: group sizes 4 (light, `1:4`) or 3 (aggressive, `1:3`),
+one XOR parity packet per group. Parity packets use `packet_type = 0x02`, the
+group's first `seq` in the `seq` field, and payload = XOR of the group's
+packets zero-padded to the longest. A receiver missing exactly one group
+member reconstructs it; missing more → drop the frame (§6).
 
-*   **Authentication:** The TCP handshake can be extended to include an auth token before the QOV Header is sent.
-*   **DoS:** Server should limit the rate of `KEYFRAME` requests to prevent encoder overload (e.g., max 1 per second).
+FEC ratio is adaptive: start at 1:4, move to 1:3 when the receiver report
+shows loss > 2%, and to none below 0.5%.
+
+## 6. Receive Path & Adaptation
+
+**Freeze, don't glitch.** On an undecodable frame the receiver keeps
+displaying the last good frame and waits. Recovery order:
+1. If intra refresh bands are active: keep decoding subsequent frames into a
+   scratch state; resume display when the rolling band has repainted the
+   affected rows (at most one GOP segment).
+2. Otherwise send `KEYFRAME` (≤ 1/s).
+3. On a stream stall > 1 s: send `BYE`-and-reconnect semantics — the sender
+   MUST `qov_drop_reference()` and open with a keyframe, so stale prediction
+   never leaks into the new state.
+
+**Receiver report** (`REPORT`, every 500 ms): packet loss %, RTT (from
+PING/PONG), playout buffer depth, and the highest contiguous `seq`.
+The sender maps the report onto its adaptation ladder, in order:
+
+| Condition | Action |
+| :--- | :--- |
+| loss > 5% or RTT spike | FEC 1:3 |
+| buffer draining (< 2 frame intervals) | skip every other frame (`frame skip`) |
+| sustained loss > 8% after FEC | `qov_drop_reference()` + reconnect logic |
+| bandwidth < current bitrate | `qov_set_quality(q − 10)`, floor q = 20 |
+| bandwidth surplus > 20% for 3 s | `qov_set_quality(q + 10)`, ceiling = start quality |
+
+Adaptation is **by subtraction**: never add machinery (B-frames, larger
+motion search, second passes) mid-call; only remove work (frames, coefficients,
+references).
+
+## 7. Security
+
+* WebTransport requires TLS 1.3 + a valid origin certificate; the `HELLO`
+  token is an application-scoped capability (short-lived, single-use).
+* Servers MUST rate-limit `KEYFRAME` (≤ 1/s) and drop clients exceeding it.
+* Datagrams are authenticated by QUIC; no additional CRC. WebSocket fallback
+  inherits TLS via `wss://`.
+
+## 8. Changes from v1.0
+
+* Transports: TCP+UDP hybrid → WebTransport primary, WebSocket fallback.
+* Packet header: 16 → 20 bytes; added `version` and monotonic `seq`
+  (required for NACK/FEC and the receiver report). `reserved` byte removed.
+* Fragment target size 1400 → 1180 bytes (1200-byte packet cap).
+* Control: text protocol kept on the reliable channel; added
+  `HELLO`/`CONFIG`/`REPORT`/`NACK`; `KEYFRAME` is now rate-limited and the
+  recovery path of last resort (refresh bands first).
+* Added the adaptation ladder binding receiver reports to
+  `qov_set_quality` / `qov_drop_reference` (spec v3.6 §4.1).
