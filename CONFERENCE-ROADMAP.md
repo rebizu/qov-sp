@@ -17,7 +17,7 @@
 | PR5 Exp-Golomb (optional) | SHIPPED — 5582257; spec v3.5 §3.4.5; −13.6%/−20% at equal SSIM, corpus twins to −28% |
 | PR4 half-pel refinement | SHIPPED — spec v3.6 §5.2; gate PASSED on real webcam footage (residual SSD −40%, SAD −14%; integer MC measured net-harmful on real footage, half-pel + full-SAD rescoring flips it net-positive); cam720 q60: −61.6% bitrate (11272→4331 kbps), SSIM 0.865→0.929, enc −32%, dec −44% (scoreboard-pr4.json); synthetic scroll corpus: motion cases −1.5%/−5.7%, refresh twins +1.5% |
 | VLC plugin workstream | NOT STARTED — aenc QOA, mux total_frames, GUI seek; v4 compat rebuild after |
-| Phase 2 streaming | NOT STARTED — qov_set_quality/qov_drop_reference, packetization, demo call |
+| Phase 2 streaming | IN PROGRESS — adaptive API SHIPPED (9527619: qov_set_quality/qov_drop_reference in C+TS+C#, corpus case adaptive_quality_yuv420_lossy, spec v3.6 §4.1); QOV-S v2.0 spec SHIPPED (350f0d4: WebTransport primary/WS fallback, 20-byte packet header, NACK+FEC, adaptation ladder); REMAINING: sender/receiver reference implementation, receive path freeze+refresh-band wait, demo 1:1 call app |
 | Phase 3 audio | NOT STARTED — 16 kHz speech mode, Opus flag |
 | Phase 4 v4 subtraction/freeze | NOT STARTED |
 
