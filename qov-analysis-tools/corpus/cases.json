@@ -297,6 +297,163 @@
       "quality": 50,
       "pattern": "checker",
       "note": "PR6 intra refresh bands, static content, band-skip path"
+    },
+    {
+      "id": "intra_kf_yuv420_lossy_eg",
+      "width": 64,
+      "height": 64,
+      "frames": 6,
+      "fps": 30,
+      "colorspace": "yuv420",
+      "flags": [
+        "eg",
+        "ikf",
+        "index"
+      ],
+      "quality": 50,
+      "compression": false,
+      "pattern": "checker",
+      "note": "PR5 Exp-Golomb variant"
+    },
+    {
+      "id": "motion_yuv420_lossy_dct_eg",
+      "width": 128,
+      "height": 96,
+      "frames": 6,
+      "fps": 30,
+      "colorspace": "yuv420",
+      "flags": [
+        "eg",
+        "ikf",
+        "index",
+        "motion"
+      ],
+      "quality": 50,
+      "pattern": "scroll16",
+      "note": "PR5 Exp-Golomb variant"
+    },
+    {
+      "id": "refresh_motion_yuv420_lossy_eg",
+      "width": 128,
+      "height": 96,
+      "frames": 6,
+      "fps": 30,
+      "colorspace": "yuv420",
+      "flags": [
+        "eg",
+        "index",
+        "motion",
+        "refresh"
+      ],
+      "quality": 50,
+      "pattern": "scroll16",
+      "note": "PR6 intra refresh bands + motion vectors | PR5 Exp-Golomb variant"
+    },
+    {
+      "id": "refresh_static_yuv420_lossy_eg",
+      "width": 64,
+      "height": 64,
+      "frames": 6,
+      "fps": 30,
+      "colorspace": "yuv420",
+      "flags": [
+        "eg",
+        "index",
+        "refresh"
+      ],
+      "quality": 50,
+      "pattern": "checker",
+      "note": "PR6 intra refresh bands, static content, band-skip path | PR5 Exp-Golomb variant"
+    },
+    {
+      "id": "yuv420_lossy_dct_lz4_eg",
+      "width": 128,
+      "height": 96,
+      "frames": 5,
+      "fps": 30,
+      "colorspace": "yuv420",
+      "quality": 50,
+      "pattern": "noise",
+      "flags": [
+        "eg",
+        "ikf",
+        "index"
+      ],
+      "note": "PR5 Exp-Golomb variant"
+    },
+    {
+      "id": "yuv420_lossy_dct_nolz4_eg",
+      "width": 128,
+      "height": 96,
+      "frames": 5,
+      "fps": 30,
+      "colorspace": "yuv420",
+      "quality": 50,
+      "compression": false,
+      "pattern": "noise",
+      "flags": [
+        "eg"
+      ],
+      "note": "PR5 Exp-Golomb variant"
+    },
+    {
+      "id": "yuv420_nearlossless_eg",
+      "width": 128,
+      "height": 96,
+      "frames": 5,
+      "fps": 30,
+      "colorspace": "yuv420",
+      "quality": 95,
+      "pattern": "gradient",
+      "flags": [
+        "eg"
+      ],
+      "note": "PR5 Exp-Golomb variant"
+    },
+    {
+      "id": "yuv422_lossy_dct_eg",
+      "width": 128,
+      "height": 96,
+      "frames": 5,
+      "fps": 30,
+      "colorspace": "yuv422",
+      "quality": 50,
+      "pattern": "noise",
+      "flags": [
+        "eg"
+      ],
+      "note": "PR5 Exp-Golomb variant"
+    },
+    {
+      "id": "yuv444_lossy_dct_eg",
+      "width": 128,
+      "height": 96,
+      "frames": 5,
+      "fps": 30,
+      "colorspace": "yuv444",
+      "quality": 50,
+      "pattern": "noise",
+      "flags": [
+        "eg"
+      ],
+      "note": "PR5 Exp-Golomb variant"
+    },
+    {
+      "id": "yuva420_lossy_dct_eg",
+      "width": 128,
+      "height": 96,
+      "frames": 5,
+      "fps": 30,
+      "colorspace": "yuva420",
+      "flags": [
+        "alpha",
+        "eg",
+        "ikf",
+        "index"
+      ],
+      "quality": 50,
+      "pattern": "noise",
+      "note": "PR5 Exp-Golomb variant"
     }
   ]
 }

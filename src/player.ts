@@ -15,7 +15,7 @@ import {
   QOV_FLAG_HAS_ALPHA,
   QOV_FLAG_HAS_MOTION,
   QOV_FLAG_HAS_INDEX,
-  QOV_FLAG_HAS_BFRAMES,
+  QOV_FLAG_EXP_GOLOB,
   QOV_FLAG_INTRA_REFRESH,
   QOV_FLAG_LOSSY_MODE,
   QOV_CHUNK_KEYFRAME,
@@ -146,7 +146,7 @@ function getFlagsDescription(flags: number): string {
   if (flags & QOV_FLAG_HAS_ALPHA) parts.push('Alpha');
   if (flags & QOV_FLAG_HAS_MOTION) parts.push('Motion');
   if (flags & QOV_FLAG_HAS_INDEX) parts.push('Index');
-  if (flags & QOV_FLAG_HAS_BFRAMES) parts.push('B-frames');
+  if (flags & QOV_FLAG_EXP_GOLOB) parts.push('Exp-Golomb');
   if (flags & QOV_FLAG_INTRA_REFRESH) parts.push('Refresh');
   if (flags & QOV_FLAG_LOSSY_MODE) parts.push('Lossy');
   return parts.length > 0 ? parts.join(', ') : 'None';

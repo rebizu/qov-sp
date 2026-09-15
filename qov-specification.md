@@ -1,6 +1,6 @@
 # QOV (Quite OK Video) Format Specification
 
-**Version:** 3.4 (Unified)
+**Version:** 3.5 (Unified)
 **Date:** September 2026
 **Based on:** QOI (Quite OK Image) and QOA (Quite OK Audio)
 
@@ -74,15 +74,16 @@ Bit  Name           Description
 0    HAS_ALPHA      Frames include alpha channel
 1    HAS_MOTION     Motion vectors enabled for P/B-frames
 2    HAS_INDEX      Index table present at end of file
-3    HAS_BFRAMES    B-frames present (requires decode reordering)
+3    EXP_GOLOB      DCT blocks use Exp-Golomb coefficient coding (v3.5+)
 4    INTRA_REFRESH  P-frames carry rolling intra refresh bands (v3.4+)
 5    LOSSY_MODE     Lossy encoding enabled (Version 0x03+)
 6    DCT_ENABLED    DCT block encoding available (Version 0x03+)
 7    INTRA_DCT_KF   Lossy keyframes use intra DCT blocks (v3.3+)
 
-Bit 4 was previously named ENHANCED_COMP ("enhanced compression mode");
-the name was never implemented and the bit is reclaimed by INTRA_REFRESH
-in v3.4. Files setting it with the old meaning do not exist.
+Bits 3 and 4 were previously named HAS_BFRAMES and ENHANCED_COMP; neither
+feature ever shipped and the bits are reclaimed by EXP_GOLOB (v3.5) and
+INTRA_REFRESH (v3.4). Files setting them with the old meanings do not
+exist.
 
 ### 1.4 Colorspace Byte
 
@@ -144,7 +145,9 @@ Bit  Name        Description
 4    COMPRESSED  Chunk data is LZ4 compressed (0x10)
 5    DCT_BLOCKS  Frame uses DCT block encoding (0x20) - NEW in v3
                  (also marks intra DCT keyframes, see 3.4.3)
-6    ADAPTIVE_Q  Per-block adaptive quantization (0x40) - NEW in v3
+6    EXP_GOLOB   DCT coefficient section is Exp-Golomb coded (0x40)
+                 - NEW in v3.5, see 3.4.5 (reclaims the never-implemented
+                 ADAPTIVE_Q)
 7    REFRESH_BAND P-frame payload starts with a refresh band byte (0x80)
                  - NEW in v3.4, see 3.4.4
 ```
@@ -374,6 +377,36 @@ determined by each block's own row.
 - The `INTRA_REFRESH` header flag (bit 4) is informational: it marks a
   file whose encoder enabled refresh bands.
 
+#### 3.4.5 Exp-Golomb Coefficient Coding (optional, v3.5)
+
+A DCT chunk (§3.4.2 block streams, including §3.4.3 intra keyframes and
+§3.4.4 refresh bands) MAY set the `EXP_GOLOB` chunk flag (bit 6); the
+chunk flag is authoritative per chunk. The QP delta byte, block opcodes,
+skip/zero runs and the end marker are unchanged. Only the **coefficient
+section** of each coded block is replaced by a bit-packed string:
+
+1. `se(DC)` — the quantized DC level.
+2. Zero or more `ue(zero_run)` / `se(level)` pairs in zigzag scan order,
+   where `zero_run` counts zero coefficients before the next non-zero
+   level.
+3. A terminating `ue(64 - k)` sentinel, where `k` is the scan position
+   after the last coded level (i.e. the number of remaining zero
+   coefficients); this value can never collide with a real run.
+4. Zero bits pad the string to the next byte boundary, so the following
+   block's opcode byte stays byte-aligned. Decoders discard any pending
+   bits below eight after the sentinel.
+
+Codes are MSB-first. `ue(v)` writes `v + 1` in binary prefixed with
+`bitlength(v + 1) - 1` zero bits. `se(v)` writes `ue(2v - 1)` for `v > 0`
+and `ue(-2v)` otherwise. Quantization, dead-zone, reconstruction and the
+decoded pixels are identical to the §3.4.2 byte coding — Exp-Golomb is
+pure re-entropy-coding, so a conforming encoder MUST produce bitstreams
+that decode to the same pixels in either coding. The `EXP_GOLOB` header
+flag (bit 3) is informational: it marks a file whose encoder enabled the
+coding. Bit 3 reclaims the never-implemented `HAS_BFRAMES`/`ADAPTIVE_Q`
+names; files using those meanings do not exist. Decoders MUST implement
+both codings.
+
 ---
 
 ## 4. Lossy Quality & Quantization
@@ -530,6 +563,15 @@ This specification is placed in the public domain.
 ---
 
 ## Changelog
+
+### 3.5 (September 2026)
+- §3.4.5: optional Exp-Golomb coefficient coding for DCT chunks, marked
+  per chunk by the EXP_GOLOB flag (bit 6, reclaiming the never-
+  implemented ADAPTIVE_Q). se(DC) + ue(zero-run)/se(level) pairs + a
+  ue(64-k) sentinel, zero-padded to a byte per block; quantization and
+  decoded pixels are unchanged versus the 3.4.2 byte coding. Header
+  flag bit 3 renamed from the never-implemented HAS_BFRAMES to
+  EXP_GOLOB (informational). Decoders implement both codings.
 
 ### 3.4 (September 2026)
 - §3.4.4: intra refresh bands. A lossy DCT P-frame may carry the

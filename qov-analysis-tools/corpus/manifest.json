@@ -1862,6 +1862,791 @@
      "note": "PR6 intra refresh bands, static content, band-skip path"
     }
    }
+  },
+  "intra_kf_yuv420_lossy_eg": {
+   "file_sha256": "7ad6406f12a9a1955919ff351245c5723ad8135e45030c2b43a624eef4c01e66",
+   "file_size": 4906,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 236,
+    "width": 64,
+    "height": 64,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 0,
+    "dct_chunks": 6,
+    "compressed_chunks": 0,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "305a822c37232924e02f594993cc4b217f50874ed49442ed4900aac7aec02390",
+     "7628ba1ffce018b75cebfc845726ee867d85f3c330eb346ecba0052817aa2daf",
+     "305a822c37232924e02f594993cc4b217f50874ed49442ed4900aac7aec02390",
+     "7628ba1ffce018b75cebfc845726ee867d85f3c330eb346ecba0052817aa2daf",
+     "305a822c37232924e02f594993cc4b217f50874ed49442ed4900aac7aec02390",
+     "7628ba1ffce018b75cebfc845726ee867d85f3c330eb346ecba0052817aa2daf"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "305a822c37232924e02f594993cc4b217f50874ed49442ed4900aac7aec02390",
+     "7628ba1ffce018b75cebfc845726ee867d85f3c330eb346ecba0052817aa2daf",
+     "305a822c37232924e02f594993cc4b217f50874ed49442ed4900aac7aec02390",
+     "7628ba1ffce018b75cebfc845726ee867d85f3c330eb346ecba0052817aa2daf",
+     "305a822c37232924e02f594993cc4b217f50874ed49442ed4900aac7aec02390",
+     "7628ba1ffce018b75cebfc845726ee867d85f3c330eb346ecba0052817aa2daf"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "intra_kf_yuv420_lossy_eg",
+     "width": 64,
+     "height": 64,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "eg",
+      "ikf",
+      "index"
+     ],
+     "quality": 50,
+     "compression": false,
+     "pattern": "checker",
+     "note": "PR5 Exp-Golomb variant"
+    }
+   }
+  },
+  "motion_yuv420_lossy_dct_eg": {
+   "file_sha256": "83a0d19fb3a7cca4aed066164c957b08aa19a8f658ead888166ee2fd5316f21f",
+   "file_size": 9611,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 238,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 3,
+    "dct_chunks": 6,
+    "compressed_chunks": 5,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
+     "0b3bfd22d4b66d83f7896e76555f8ac161d365c618181eb8acea5b815fb188dc",
+     "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
+     "fbd9a1089a1d56709ff727ca9e0a1aaff20e4e49cfc7aede513df6227f80c9e0",
+     "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
+     "4b10a9f4df9c7cfe072858f19c438b07bd4c52cf7dd3993a33a92ace3b424bc2"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
+     "0b3bfd22d4b66d83f7896e76555f8ac161d365c618181eb8acea5b815fb188dc",
+     "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
+     "fbd9a1089a1d56709ff727ca9e0a1aaff20e4e49cfc7aede513df6227f80c9e0",
+     "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
+     "4b10a9f4df9c7cfe072858f19c438b07bd4c52cf7dd3993a33a92ace3b424bc2"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "motion_yuv420_lossy_dct_eg",
+     "width": 128,
+     "height": 96,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "eg",
+      "ikf",
+      "index",
+      "motion"
+     ],
+     "quality": 50,
+     "pattern": "scroll16",
+     "note": "PR5 Exp-Golomb variant"
+    }
+   }
+  },
+  "refresh_motion_yuv420_lossy_eg": {
+   "file_sha256": "604ec1b8647960b717521ba0b1282066da5bfc13736d0020abae02eb5c9af9b9",
+   "file_size": 29999,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 126,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 3,
+    "dct_chunks": 3,
+    "compressed_chunks": 6,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "f7d0f52d8a4b2468249f80c5525bbd84846a03aac2ae3bfcc2a7cb225353de38",
+     "a72843b2b560bbdee4cf83296da3650d673530178590c77b03e22796b71548d7",
+     "9e212cd6675f50ef73591930ad56ec3165c85c8c84659f63afebf5a9f2ab1b80",
+     "9585f13b45536871de84982fe116514f50b8635abb6a58df0580fc957818f3a7",
+     "1d1b871d74c9577dd2b6b11f1d35148fa6ba8a1a4d2fc19801c3bbe862b9af58",
+     "4e196c9a8b14641db20c1ba05b1de28c9bb87587d5ff49898d058d87c0ea1ef2"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "f7d0f52d8a4b2468249f80c5525bbd84846a03aac2ae3bfcc2a7cb225353de38",
+     "a72843b2b560bbdee4cf83296da3650d673530178590c77b03e22796b71548d7",
+     "9e212cd6675f50ef73591930ad56ec3165c85c8c84659f63afebf5a9f2ab1b80",
+     "9585f13b45536871de84982fe116514f50b8635abb6a58df0580fc957818f3a7",
+     "1d1b871d74c9577dd2b6b11f1d35148fa6ba8a1a4d2fc19801c3bbe862b9af58",
+     "4e196c9a8b14641db20c1ba05b1de28c9bb87587d5ff49898d058d87c0ea1ef2"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "refresh_motion_yuv420_lossy_eg",
+     "width": 128,
+     "height": 96,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "eg",
+      "index",
+      "motion",
+      "refresh"
+     ],
+     "quality": 50,
+     "pattern": "scroll16",
+     "note": "PR6 intra refresh bands + motion vectors | PR5 Exp-Golomb variant"
+    }
+   }
+  },
+  "refresh_static_yuv420_lossy_eg": {
+   "file_sha256": "cb5599be412fe9637257dc1789a33a573e6974a1a6107be28c0c9321ce9c9a23",
+   "file_size": 571,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 124,
+    "width": 64,
+    "height": 64,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 0,
+    "dct_chunks": 3,
+    "compressed_chunks": 6,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "f73e1eadbe141ed0803ee50a6375e68a5619534d92e14ee3a943138d2e19b1b3",
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "c0b9f97203fad561e83325b486b1b15ebc0985e5e8e6796461a8e70a0850501b",
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "a3f6ac2c4b1464ce85c9e88fb25236bfda0bae683c2319609425d923575a922b"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "f73e1eadbe141ed0803ee50a6375e68a5619534d92e14ee3a943138d2e19b1b3",
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "c0b9f97203fad561e83325b486b1b15ebc0985e5e8e6796461a8e70a0850501b",
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "a3f6ac2c4b1464ce85c9e88fb25236bfda0bae683c2319609425d923575a922b"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "refresh_static_yuv420_lossy_eg",
+     "width": 64,
+     "height": 64,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "eg",
+      "index",
+      "refresh"
+     ],
+     "quality": 50,
+     "pattern": "checker",
+     "note": "PR6 intra refresh bands, static content, band-skip path | PR5 Exp-Golomb variant"
+    }
+   }
+  },
+  "yuv420_lossy_dct_lz4_eg": {
+   "file_sha256": "e2a3d8c84f90f99f3ad1ac9566472d503db34b3b8f34b5507488fdf8b4ac185f",
+   "file_size": 16255,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 236,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 5,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 10,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 2,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 5,
+    "keyframes": 3,
+    "pframes": 2,
+    "motion_chunks": 0,
+    "dct_chunks": 5,
+    "compressed_chunks": 0,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 5,
+    "frame_sha256": [
+     "d0c6b3777f22765119962060f5649d48e294be05f2831259f736bb9a877d3090",
+     "b4e4dc2fbb811bf84103e1b14b886e66e87ecbe7713a6379f78105b120d166e3",
+     "eabdda2e7c3471fe073e8aca53d0353d7a04eb0704d8e22ff9b261ac4394700a",
+     "adb54b5dfd91f3e8af39f7bf3b00d096bc34b34b6c87a219cd2d56c1b91efdff",
+     "289b6c99226a645533038eb7477865d9c5651074ea4f89113dc501bd14e3ab52"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 5,
+    "frame_sha256": [
+     "d0c6b3777f22765119962060f5649d48e294be05f2831259f736bb9a877d3090",
+     "b4e4dc2fbb811bf84103e1b14b886e66e87ecbe7713a6379f78105b120d166e3",
+     "eabdda2e7c3471fe073e8aca53d0353d7a04eb0704d8e22ff9b261ac4394700a",
+     "adb54b5dfd91f3e8af39f7bf3b00d096bc34b34b6c87a219cd2d56c1b91efdff",
+     "289b6c99226a645533038eb7477865d9c5651074ea4f89113dc501bd14e3ab52"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "yuv420_lossy_dct_lz4_eg",
+     "width": 128,
+     "height": 96,
+     "frames": 5,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "quality": 50,
+     "pattern": "noise",
+     "flags": [
+      "eg",
+      "ikf",
+      "index"
+     ],
+     "note": "PR5 Exp-Golomb variant"
+    }
+   }
+  },
+  "yuv420_lossy_dct_nolz4_eg": {
+   "file_sha256": "cd8526a0d4166e7e279123eb7ae27a29e69b6a4c674ec4911d0dd58ccf78ab11",
+   "file_size": 62688,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 108,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 5,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 10,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 2,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 5,
+    "keyframes": 3,
+    "pframes": 2,
+    "motion_chunks": 0,
+    "dct_chunks": 2,
+    "compressed_chunks": 0,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 5,
+    "frame_sha256": [
+     "c372948bd7982e5f1cf65d8f63203763dc307cacf5ee42669b5eddc90277668c",
+     "a9ba2e3cfcf62ec4e5e6368608a457b12bb31d13843e9fa69c8da5e7d4ef4603",
+     "cd5e366ca64a5fc2b9df96d3821de57d1d5d99113fbe8f2eb49b77f5d2bdc6cc",
+     "d8f0ce3cd21a1ce74c5a992dfc51528dc1cbf79493d76ba292818a2e6bce021c",
+     "f274f2ff60edbf4a4826938ca10040b63814a0d62cae6d65a7fa01ae1031e70a"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 5,
+    "frame_sha256": [
+     "c372948bd7982e5f1cf65d8f63203763dc307cacf5ee42669b5eddc90277668c",
+     "a9ba2e3cfcf62ec4e5e6368608a457b12bb31d13843e9fa69c8da5e7d4ef4603",
+     "cd5e366ca64a5fc2b9df96d3821de57d1d5d99113fbe8f2eb49b77f5d2bdc6cc",
+     "d8f0ce3cd21a1ce74c5a992dfc51528dc1cbf79493d76ba292818a2e6bce021c",
+     "f274f2ff60edbf4a4826938ca10040b63814a0d62cae6d65a7fa01ae1031e70a"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "yuv420_lossy_dct_nolz4_eg",
+     "width": 128,
+     "height": 96,
+     "frames": 5,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "quality": 50,
+     "compression": false,
+     "pattern": "noise",
+     "flags": [
+      "eg"
+     ],
+     "note": "PR5 Exp-Golomb variant"
+    }
+   }
+  },
+  "yuv420_nearlossless_eg": {
+   "file_sha256": "073888606a33c1c47a9ad0cab5c902528ec3624f5a9d0d9650760b155fb27898",
+   "file_size": 17944,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 108,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 5,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 10,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 2,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 5,
+    "keyframes": 3,
+    "pframes": 2,
+    "motion_chunks": 0,
+    "dct_chunks": 2,
+    "compressed_chunks": 5,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 5,
+    "frame_sha256": [
+     "6b76dad3ce11e2376b31991fab0fab2f5fc1a781f4e884e79048c54127fb7221",
+     "37a89888cadc12ac567be3d47c9261cafea378614bc81854a94ade7f4cf4f749",
+     "1bdfb314e444068af852221c6170ee35de5cabe496a30463f70d09a2ca2f8feb",
+     "45a1da5b51d3c3907d63b7a5d661b95c634b5b31510c6c45bfe3936a74041dbe",
+     "e1e2522376daa82411d28edb37bd662c4ce20e0c48f7944c12931adfabd345ff"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 5,
+    "frame_sha256": [
+     "6b76dad3ce11e2376b31991fab0fab2f5fc1a781f4e884e79048c54127fb7221",
+     "37a89888cadc12ac567be3d47c9261cafea378614bc81854a94ade7f4cf4f749",
+     "1bdfb314e444068af852221c6170ee35de5cabe496a30463f70d09a2ca2f8feb",
+     "45a1da5b51d3c3907d63b7a5d661b95c634b5b31510c6c45bfe3936a74041dbe",
+     "e1e2522376daa82411d28edb37bd662c4ce20e0c48f7944c12931adfabd345ff"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "yuv420_nearlossless_eg",
+     "width": 128,
+     "height": 96,
+     "frames": 5,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "quality": 95,
+     "pattern": "gradient",
+     "flags": [
+      "eg"
+     ],
+     "note": "PR5 Exp-Golomb variant"
+    }
+   }
+  },
+  "yuv422_lossy_dct_eg": {
+   "file_sha256": "576bad53c0a77d3172fdd9a446736c3af8eaade2b7a5ae0edc05d6656a8dd860",
+   "file_size": 82858,
+   "header": {
+    "version": 3,
+    "colorspace": 17,
+    "flags": 108,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 5,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 10,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 2,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 5,
+    "keyframes": 3,
+    "pframes": 2,
+    "motion_chunks": 0,
+    "dct_chunks": 2,
+    "compressed_chunks": 0,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 5,
+    "frame_sha256": [
+     "9a392abbf63b4a7502f53e82b830e76c5db4157e2a0a9fa2e75ec71da8231344",
+     "72f2dbfc91c819f237e7d0ebedfb71cb86e3f7d5fabbe43c68af9bb4049179e3",
+     "125fa68b29edbebf80ac69fc9902216e4fb5fde6b50c41c00cb3ab2e0bf94a8f",
+     "59402b8b5b2f12b3d524b4fee4c5c04f9b92a55fd6d7c47c7be7950578090f2b",
+     "dfa26b237d93c4a9cc1db76ec7c72d0c4d9312a07f9f6f326d2ab401361448fe"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 5,
+    "frame_sha256": [
+     "9a392abbf63b4a7502f53e82b830e76c5db4157e2a0a9fa2e75ec71da8231344",
+     "72f2dbfc91c819f237e7d0ebedfb71cb86e3f7d5fabbe43c68af9bb4049179e3",
+     "125fa68b29edbebf80ac69fc9902216e4fb5fde6b50c41c00cb3ab2e0bf94a8f",
+     "59402b8b5b2f12b3d524b4fee4c5c04f9b92a55fd6d7c47c7be7950578090f2b",
+     "dfa26b237d93c4a9cc1db76ec7c72d0c4d9312a07f9f6f326d2ab401361448fe"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "yuv422_lossy_dct_eg",
+     "width": 128,
+     "height": 96,
+     "frames": 5,
+     "fps": 30,
+     "colorspace": "yuv422",
+     "quality": 50,
+     "pattern": "noise",
+     "flags": [
+      "eg"
+     ],
+     "note": "PR5 Exp-Golomb variant"
+    }
+   }
+  },
+  "yuv444_lossy_dct_eg": {
+   "file_sha256": "91fde7da705c82d42fd1a5220b94459fc770c08ad6f73c495a52122423b03247",
+   "file_size": 123546,
+   "header": {
+    "version": 3,
+    "colorspace": 18,
+    "flags": 108,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 5,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 10,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 2,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 5,
+    "keyframes": 3,
+    "pframes": 2,
+    "motion_chunks": 0,
+    "dct_chunks": 2,
+    "compressed_chunks": 0,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 5,
+    "frame_sha256": [
+     "0b29aa2b19f05b6adf309c981bcf3c204a72639405addad383e6986216531f2c",
+     "b77fea717e181006aebe62644469496dd887629d549bed049b889b0295826ec2",
+     "5d7fd4b7d125acb31adfaea23f4e8e14dfe754f489e30677e3b0d21a88915a8a",
+     "02e78360d3746a73c238b6b2d004f809f6c560f27cb162ff4da8fa8ee71d6c8a",
+     "83b67fb26efcf16661872d72ca0e9c24d0c420c4a663e60bbbc4052aa8e05250"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 5,
+    "frame_sha256": [
+     "0b29aa2b19f05b6adf309c981bcf3c204a72639405addad383e6986216531f2c",
+     "b77fea717e181006aebe62644469496dd887629d549bed049b889b0295826ec2",
+     "5d7fd4b7d125acb31adfaea23f4e8e14dfe754f489e30677e3b0d21a88915a8a",
+     "02e78360d3746a73c238b6b2d004f809f6c560f27cb162ff4da8fa8ee71d6c8a",
+     "83b67fb26efcf16661872d72ca0e9c24d0c420c4a663e60bbbc4052aa8e05250"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "yuv444_lossy_dct_eg",
+     "width": 128,
+     "height": 96,
+     "frames": 5,
+     "fps": 30,
+     "colorspace": "yuv444",
+     "quality": 50,
+     "pattern": "noise",
+     "flags": [
+      "eg"
+     ],
+     "note": "PR5 Exp-Golomb variant"
+    }
+   }
+  },
+  "yuva420_lossy_dct_eg": {
+   "file_sha256": "dd66f466e808973cd25d14eb0386f92215118c1fb46b7a80c57f3575f15ae2b3",
+   "file_size": 20079,
+   "header": {
+    "version": 3,
+    "colorspace": 19,
+    "flags": 237,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 5,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 10,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 2,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 5,
+    "keyframes": 3,
+    "pframes": 2,
+    "motion_chunks": 0,
+    "dct_chunks": 5,
+    "compressed_chunks": 0,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 5,
+    "frame_sha256": [
+     "8463a4baaa80b81ef0440534ca7fed273fe55da454cb244e1db7600563476e6d",
+     "21835478ffc66cd5ebc48334a813230db01c88e61265262f35f6980b0a70e7b3",
+     "aae299c067f3fb0a9c8aa78c1b5b3d0673c38bee7d10107cb989a2c0b74cfd59",
+     "42ec8a98c8f5c8a2c1d395a3e2d4e2dd4ee077d140d098065b609a2b6f7ce909",
+     "186da029730a440d40c85e1577507c278a48f2fd2f9fb27d2a65d80bc7203451"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 5,
+    "frame_sha256": [
+     "8463a4baaa80b81ef0440534ca7fed273fe55da454cb244e1db7600563476e6d",
+     "21835478ffc66cd5ebc48334a813230db01c88e61265262f35f6980b0a70e7b3",
+     "aae299c067f3fb0a9c8aa78c1b5b3d0673c38bee7d10107cb989a2c0b74cfd59",
+     "42ec8a98c8f5c8a2c1d395a3e2d4e2dd4ee077d140d098065b609a2b6f7ce909",
+     "186da029730a440d40c85e1577507c278a48f2fd2f9fb27d2a65d80bc7203451"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "yuva420_lossy_dct_eg",
+     "width": 128,
+     "height": 96,
+     "frames": 5,
+     "fps": 30,
+     "colorspace": "yuva420",
+     "flags": [
+      "alpha",
+      "eg",
+      "ikf",
+      "index"
+     ],
+     "quality": 50,
+     "pattern": "noise",
+     "note": "PR5 Exp-Golomb variant"
+    }
+   }
   }
  }
 }

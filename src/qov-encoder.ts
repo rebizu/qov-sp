@@ -13,6 +13,7 @@ import {
   QOV_FLAG_LOSSY_MODE,
   QOV_FLAG_INTRA_DCT_KF,
   QOV_FLAG_INTRA_REFRESH,
+  QOV_FLAG_EXP_GOLOB,
   QOV_VERSION_EXTENDED,
   QOV_VERSION_LOSSY,
   QOV_CHUNK_SYNC,
@@ -24,6 +25,7 @@ import {
   QOV_CHUNK_FLAG_YUV,
   QOV_CHUNK_FLAG_COMPRESSED,
   QOV_CHUNK_FLAG_REFRESH_BAND,
+  QOV_CHUNK_FLAG_EXP_GOLOB,
   QOV_INTRA_REFRESH_BANDS,
   deriveLossyParams,
 } from './qov-types';
@@ -47,6 +49,8 @@ import {
 import {
   intraPred,
 } from './dct-decode';
+
+import { BitWriter } from './exp-golomb';
 
 import {
   QOV_OP_DCT_Y,
@@ -176,6 +180,7 @@ export class QovEncoder {
   private motionEnabled = false;
   private intraDctKeyframes = false;
   private intraRefresh = false;
+  private expGolomb = false;
 
   private qoaEncoder: QoaEncoder | null = null;
 
@@ -238,6 +243,7 @@ export class QovEncoder {
     this.motionEnabled = (flags & QOV_FLAG_HAS_MOTION) !== 0;
     this.intraDctKeyframes = (flags & QOV_FLAG_INTRA_DCT_KF) !== 0;
     this.intraRefresh = (flags & QOV_FLAG_INTRA_REFRESH) !== 0;
+    this.expGolomb = (flags & QOV_FLAG_EXP_GOLOB) !== 0;
 
     console.log(`[Encoder] Created with colorspace: 0x${colorspace.toString(16)}, YUV mode: ${this.isYuvMode}, hasAlpha: ${this.hasAlpha}, compression: ${compressionEnabled}, lossy: ${this.lossyMode}, quality: ${this.quality}`);
 
@@ -517,7 +523,7 @@ export class QovEncoder {
     }
 
     const kfFlags = this.lossyMode && this.intraDctKeyframes
-      ? QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS
+      ? QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS | (this.expGolomb ? QOV_CHUNK_FLAG_EXP_GOLOB : 0)
       : QOV_CHUNK_FLAG_YUV;
 
     if (this.compressionEnabled) {
@@ -527,11 +533,11 @@ export class QovEncoder {
       // Encode planes to frame buffer
       if (this.lossyMode && this.intraDctKeyframes) {
         const { w: uvW, h: uvH } = chromaPlaneDims(colorspace, width, height);
-        this.encodeIntraPlaneDct(planes.yPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y);
-        this.encodeIntraPlaneDct(planes.uPlane, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV);
-        this.encodeIntraPlaneDct(planes.vPlane, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV);
+        this.encodeIntraPlaneDct(planes.yPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, this.expGolomb);
+        this.encodeIntraPlaneDct(planes.uPlane, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, this.expGolomb);
+        this.encodeIntraPlaneDct(planes.vPlane, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, this.expGolomb);
         if (planes.aPlane) {
-          this.encodeIntraPlaneDct(planes.aPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y);
+          this.encodeIntraPlaneDct(planes.aPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, this.expGolomb);
         }
       } else {
         this.encodeYuvPlaneKeyframe(planes.yPlane);
@@ -557,11 +563,11 @@ export class QovEncoder {
 
       if (this.lossyMode && this.intraDctKeyframes) {
         const { w: uvW, h: uvH } = chromaPlaneDims(colorspace, width, height);
-        this.encodeIntraPlaneDct(planes.yPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y);
-        this.encodeIntraPlaneDct(planes.uPlane, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV);
-        this.encodeIntraPlaneDct(planes.vPlane, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV);
+        this.encodeIntraPlaneDct(planes.yPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, this.expGolomb);
+        this.encodeIntraPlaneDct(planes.uPlane, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, this.expGolomb);
+        this.encodeIntraPlaneDct(planes.vPlane, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, this.expGolomb);
         if (planes.aPlane) {
-          this.encodeIntraPlaneDct(planes.aPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y);
+          this.encodeIntraPlaneDct(planes.aPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, this.expGolomb);
         }
       } else {
         this.encodeYuvPlaneKeyframe(planes.yPlane);
@@ -724,6 +730,7 @@ export class QovEncoder {
   private dctCoeffs = new Float32Array(64);
   private dctRec = new Float32Array(64);
   private dctOut = new Float32Array(64);
+  private dctQv = new Int32Array(64);
 
   /**
    * Quantizes one 8x8 residual block from blockBuf, writes the op/delta/DC/AC
@@ -731,12 +738,41 @@ export class QovEncoder {
    * inter, intra-keyframe and refresh-band block coders; mirrors
    * qov__enc_dct_emit. The returned buffer is reused until the next call.
    */
-  private writeDctBlock(blockBuf: Float32Array, quant: number[], opType: number, scale: number): Float32Array {
+  private writeDctBlock(blockBuf: Float32Array, quant: number[], opType: number, scale: number, eg = false): Float32Array {
     const coeffs = this.dctCoeffs;
     forwardDCT(blockBuf, coeffs);
 
     this.writeU8(opType);
     this.writeU8(0x40); // qp delta 0
+
+    if (eg) {
+      // Exp-Golomb coefficient section (spec 3.4.5)
+      const qv = this.dctQv;
+      qv[0] = Math.round(coeffs[0] * scale / quant[0]);
+      for (let k = 1; k < 64; k++) {
+        const prod = coeffs[ZIGZAG[k]] * scale / quant[ZIGZAG[k]];
+        qv[k] = prod > -0.75 && prod < 0.75 ? 0 : Math.round(prod);
+      }
+      const w = new BitWriter();
+      w.se(qv[0]);
+      let k = 1;
+      for (;;) {
+        let run = 0;
+        while (k + run < 64 && qv[k + run] === 0) run++;
+        if (k + run >= 64) { w.ue(64 - k); break; }
+        w.ue(run);
+        w.se(qv[k + run]);
+        k += run + 1;
+      }
+      for (const b of w.flush()) this.writeU8(b);
+
+      const recCoeffs = this.dctRec;
+      recCoeffs[0] = qv[0] * quant[0] / scale;
+      for (let k2 = 1; k2 < 64; k2++) recCoeffs[ZIGZAG[k2]] = qv[k2] * quant[ZIGZAG[k2]] / scale;
+      const rec = this.dctOut;
+      inverseDCTRaw(recCoeffs, rec);
+      return rec;
+    }
 
     const dcVal = Math.round(coeffs[0] * scale / quant[0]);
     this.writeU16(dcVal & 0xffff);
@@ -785,7 +821,7 @@ export class QovEncoder {
     return rec;
   }
 
-  private encodeIntraPlaneDct(plane: Uint8Array, w: number, h: number, quant: number[], opType: number): void {
+  private encodeIntraPlaneDct(plane: Uint8Array, w: number, h: number, quant: number[], opType: number, eg = false): void {
     const qpBase = this.lossyParams?.dctQp ?? 20;
     const scale = 1.0 / (0.1 + qpBase * 0.1);
     const blocksX = Math.ceil(w / 8);
@@ -832,7 +868,7 @@ export class QovEncoder {
           skipCount -= count;
         }
 
-        const rec = this.writeDctBlock(blockBuf, quant, opType, scale);
+        const rec = this.writeDctBlock(blockBuf, quant, opType, scale, eg);
         for (let y = 0; y < 8; y++) {
           if (y0 + y >= h) break;
           for (let x = 0; x < 8; x++) {
@@ -853,7 +889,7 @@ export class QovEncoder {
     }
   }
 
-  private encodePlaneDct(curr: Uint8Array, prev: Uint8Array, next: Uint8Array, w: number, h: number, quant: number[], opType: number, blockBuf: Float32Array, bandR0 = -1, bandR1 = -1): void {
+  private encodePlaneDct(curr: Uint8Array, prev: Uint8Array, next: Uint8Array, w: number, h: number, quant: number[], opType: number, blockBuf: Float32Array, bandR0 = -1, bandR1 = -1, eg = false): void {
     const qpBase = this.lossyParams?.dctQp ?? 20;
     const scale = 1.0 / (0.1 + (qpBase * 0.1));
     const blocksX = Math.ceil(w / 8);
@@ -907,7 +943,7 @@ export class QovEncoder {
             skipCount -= count;
           }
 
-          const rec = this.writeDctBlock(blockBuf, quant, opType, scale);
+          const rec = this.writeDctBlock(blockBuf, quant, opType, scale, eg);
           for (let y = 0; y < 8; y++) {
             const py = y0 + y;
             if (py >= h) continue;
@@ -972,7 +1008,7 @@ export class QovEncoder {
         }
 
         // 3-5. DCT transform, quantize + write, reconstruct
-        const rec = this.writeDctBlock(blockBuf, quant, opType, scale);
+        const rec = this.writeDctBlock(blockBuf, quant, opType, scale, eg);
 
         // Add to prev and store in next
         for (let y = 0; y < 8; y++) {
@@ -1077,7 +1113,7 @@ export class QovEncoder {
         // DCT_BLOCKS does not require compression: write the chunk directly
         chunkHeaderPos = this.buffer.getSize();
         this.writeU8(QOV_CHUNK_PFRAME);
-        this.writeU8(QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS | motionFlag | refreshFlag);
+        this.writeU8(QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS | motionFlag | refreshFlag | (this.expGolomb ? QOV_CHUNK_FLAG_EXP_GOLOB : 0));
         this.writeU32(0);   // size placeholder
         this.writeU32(timestamp);
         if (refresh) this.writeU8(band);
@@ -1102,11 +1138,11 @@ export class QovEncoder {
 
       // Encode and reconstruct planes (to avoid drift); the effective
       // reference is the motion-compensated copy when vectors were emitted
-      this.encodePlaneDct(planes.yPlane, refY, nextY, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf, yr0, yr1);
+      this.encodePlaneDct(planes.yPlane, refY, nextY, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf, yr0, yr1, this.expGolomb);
 
       const { w: uvW, h: uvH } = chromaPlaneDims(colorspace, width, height);
-      this.encodePlaneDct(planes.uPlane, refU, nextU, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf, cr0, cr1);
-      this.encodePlaneDct(planes.vPlane, refV, nextV, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf, cr0, cr1);
+      this.encodePlaneDct(planes.uPlane, refU, nextU, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf, cr0, cr1, this.expGolomb);
+      this.encodePlaneDct(planes.vPlane, refV, nextV, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf, cr0, cr1, this.expGolomb);
 
       // Update reference planes to RECONSTRUCTED versions
       this.prevYPlane = nextY;
@@ -1116,14 +1152,14 @@ export class QovEncoder {
       // Alpha uses luma dimensions and the luma quant table
       if (planes.aPlane && refA) {
         const nextA = new Uint8Array(planes.aPlane.length);
-        this.encodePlaneDct(planes.aPlane, refA, nextA, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf, yr0, yr1);
+        this.encodePlaneDct(planes.aPlane, refA, nextA, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf, yr0, yr1, this.expGolomb);
         this.prevAPlane = nextA;
       }
 
       this.writeEndMarker();
 
       if (this.compressionEnabled) {
-        this.finishFrameData(QOV_CHUNK_PFRAME, QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS | motionFlag | refreshFlag, timestamp);
+        this.finishFrameData(QOV_CHUNK_PFRAME, QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS | motionFlag | refreshFlag | (this.expGolomb ? QOV_CHUNK_FLAG_EXP_GOLOB : 0), timestamp);
       } else {
         const chunkSize = this.buffer.getSize() - chunkDataStart;
         this.buffer.setByte(chunkHeaderPos + 2, (chunkSize >> 24) & 0xff);

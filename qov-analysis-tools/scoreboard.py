@@ -147,6 +147,8 @@ def measure_qov(src, name, w, h, fps, dur, frames, args):
             bench_args.append("--refresh")
         if args.ikf:
             bench_args.append("--ikf")
+        if args.eg:
+            bench_args.append("--eg")
         enc = pipe_frames(src, bench_args, w, h, frames)
         dec = decode_qov(qov_path, raw_path)
         ssim = ssim_all(raw_path, src, w, h, fps, dec["frames"])
@@ -154,7 +156,7 @@ def measure_qov(src, name, w, h, fps, dur, frames, args):
         rows.append({
             "name": name, "codec": "qov", "setting": f"quality={q}",
             "colorspace": args.cs, "motion": bool(args.motion), "lz4": bool(args.lz4),
-            "refresh": bool(args.refresh), "ikf": bool(args.ikf),
+            "refresh": bool(args.refresh), "ikf": bool(args.ikf), "eg": bool(args.eg),
             "frames": dec["frames"],
             "size_bytes": enc["bytes"],
             # bitrate must use the encoded span (frames/fps), not the source
@@ -216,6 +218,7 @@ def main():
     ap.add_argument("--lz4", action="store_true")
     ap.add_argument("--refresh", action="store_true", help="enable PR6 intra refresh bands")
     ap.add_argument("--ikf", action="store_true", help="enable PR3 intra DCT keyframes")
+    ap.add_argument("--eg", action="store_true", help="enable PR5 Exp-Golomb coefficient coding")
     ap.add_argument("--cs", default="yuv420", choices=["yuv420", "srgb"])
     args = ap.parse_args()
     args.qualities = [int(x) for x in args.qualities.split(",")]

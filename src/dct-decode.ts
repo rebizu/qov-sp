@@ -4,6 +4,7 @@
 
 import { ZIGZAG, inverseDCTRaw } from './dct';
 import { QOV_OP_DCT_SKIP, QOV_OP_DCT_ZERO } from './qov-types';
+import { BitReader } from './exp-golomb';
 
 /**
  * Intra DC prediction (spec §3.4.3): mean of the reconstructed left column /
@@ -38,6 +39,7 @@ export function decodeDctBlockInto(
   quantTable: number[],
   qpBase: number,
   out: Float32Array,
+  eg = false,
 ): void {
   // 1. QP delta (1 byte: | 0 | delta (7 bits, bias 64) | )
   const qpByte = readU8();
@@ -47,11 +49,30 @@ export function decodeDctBlockInto(
   // Inverse of the encoder's quantization scale (encoder divides by this).
   const scale = 0.1 + (finalQp * 0.1);
 
+  const coeffs = new Float32Array(64);
+
+  if (eg) {
+    // Exp-Golomb coefficient section (spec 3.4.5)
+    const r = new BitReader(readU8);
+    coeffs[0] = r.se() * quantTable[0] * scale;
+    let k = 1;
+    for (;;) {
+      const run = r.ue();
+      if (run >= 64 - k) break; // EOB sentinel ue(64-k)
+      k += run;
+      const level = r.se();
+      coeffs[ZIGZAG[k]] = level * quantTable[ZIGZAG[k]] * scale;
+      k++;
+      if (k >= 64) break; // defensive; canonical streams hit the sentinel
+    }
+    inverseDCTRaw(coeffs, out);
+    return;
+  }
+
   // 2. DC Coeff (2 bytes, signed 16-bit)
   const dcRaw = (readU8() << 8) | readU8();
   const dc = (dcRaw & 0x8000) ? dcRaw - 65536 : dcRaw;
 
-  const coeffs = new Float32Array(64);
   coeffs[0] = dc * quantTable[0] * scale;
 
   // 3. AC Coeffs (Run-Level)
@@ -113,6 +134,7 @@ export function decodePlaneDctInto(
   blockBuf: Float32Array,
   bandR0 = -1,
   bandR1 = -1,
+  eg = false,
 ): void {
   const blocksX = Math.ceil(w / 8);
   const blocksY = Math.ceil(h / 8);
@@ -149,7 +171,7 @@ export function decodePlaneDctInto(
       const blockRow = Math.floor(blockIdx / blocksX);
       const inBand = blockRow >= bandR0 && blockRow < bandR1;
       const pred = inBand ? intraPred(plane, w, h, bx, by) : 0;
-      decodeDctBlockInto(readU8, quant, qpBase, blockBuf);
+      decodeDctBlockInto(readU8, quant, qpBase, blockBuf, eg);
 
       for (let y = 0; y < 8; y++) {
         if (by + y >= h) break;
@@ -183,6 +205,7 @@ export function decodeIntraPlaneDctInto(
   opType: number,
   qpBase: number,
   blockBuf: Float32Array,
+  eg = false,
 ): void {
   const blocksX = Math.ceil(w / 8);
   const blocksY = Math.ceil(h / 8);
@@ -209,7 +232,7 @@ export function decodeIntraPlaneDctInto(
       const bx = (blockIdx % blocksX) * 8;
       const by = Math.floor(blockIdx / blocksX) * 8;
       const pred = intraPred(plane, w, h, bx, by);
-      decodeDctBlockInto(readU8, quant, qpBase, blockBuf);
+      decodeDctBlockInto(readU8, quant, qpBase, blockBuf, eg);
       for (let y = 0; y < 8; y++) {
         if (by + y >= h) break;
         for (let x = 0; x < 8; x++) {

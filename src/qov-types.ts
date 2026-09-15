@@ -24,7 +24,8 @@ export interface QovHeader {
 export const QOV_FLAG_HAS_ALPHA = 0x01;
 export const QOV_FLAG_HAS_MOTION = 0x02;
 export const QOV_FLAG_HAS_INDEX = 0x04;
-export const QOV_FLAG_HAS_BFRAMES = 0x08;
+export const QOV_FLAG_HAS_BFRAMES = 0x08; // legacy name; bit reclaimed by QOV_FLAG_EXP_GOLOB (v3.5)
+export const QOV_FLAG_EXP_GOLOB = 0x08; // DCT blocks use Exp-Golomb coefficient coding
 export const QOV_FLAG_ENHANCED_COMP = 0x10; // legacy name; bit reclaimed by QOV_FLAG_INTRA_REFRESH (v3.4)
 export const QOV_FLAG_INTRA_REFRESH = 0x10; // lossy P-frames carry rolling refresh bands
 export const QOV_FLAG_LOSSY_MODE = 0x20;  // Lossy encoding enabled
@@ -64,6 +65,7 @@ export const QOV_CHUNK_FLAG_YUV = 0x01;         // bit 0: YUV mode
 export const QOV_CHUNK_FLAG_MOTION = 0x02;      // bit 1: motion vectors
 export const QOV_CHUNK_FLAG_COMPRESSED = 0x10;  // bit 4: LZ4 compressed
 export const QOV_CHUNK_FLAG_DCT_BLOCKS = 0x20;  // bit 5: DCT blocks
+export const QOV_CHUNK_FLAG_EXP_GOLOB = 0x40;   // bit 6: Exp-Golomb coefficient section
 export const QOV_CHUNK_FLAG_REFRESH_BAND = 0x80; // bit 7: P-frame payload starts with a refresh band byte
 
 // Intra refresh (spec §3.4.4): one band is intra-coded per lossy DCT P-frame;

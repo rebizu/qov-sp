@@ -66,12 +66,18 @@ enum {
 
 /* ---- header flags ---- */
 enum { QOV_F_HAS_ALPHA = 0x01, QOV_F_HAS_MOTION = 0x02, QOV_F_HAS_INDEX = 0x04,
-       QOV_F_HAS_BFRAMES = 0x08, QOV_F_INTRA_REFRESH = 0x10,
+       QOV_F_EXP_GOLOB = 0x08, QOV_F_INTRA_REFRESH = 0x10,
        QOV_F_LOSSY = 0x20, QOV_F_DCT = 0x40,
        QOV_F_INTRA_DCT_KF = 0x80 };
+/* bit 3 was previously named HAS_BFRAMES; the feature never shipped and the
+   bit is reclaimed by QOV_F_EXP_GOLOB. Files setting it with the old
+   meaning do not exist. */
 
 /* chunk flag: P-frame payload starts with a refresh band index (spec 3.4.4) */
 #define QOV_CF_REFRESH_BAND 0x80
+/* chunk flag: DCT block coefficient section is Exp-Golomb coded (spec 3.4.5);
+   reclaims the never-implemented ADAPTIVE_Q name for bit 6 */
+#define QOV_CF_EXP_GOLOB 0x40
 /* rolling intra refresh covers the full frame every QOV_REFRESH_BANDS
    P-frames (~400 ms at 30 fps); one band is intra-coded per P-frame */
 #define QOV_REFRESH_BANDS 12
@@ -158,6 +164,10 @@ typedef struct {
     int intra_refresh;      /* nonzero: lossy P-frames intra-code one rolling
                                 band (spec 3.4.4); smooths keyframe spikes,
                                 bounds loss damage to one refresh cycle */
+    int exp_golomb;         /* nonzero: DCT block coefficients use the
+                                Exp-Golomb coding (spec 3.4.5, chunk flag
+                                0x40); pure re-entropy-coding, decoded
+                                pixels are identical */
     uint8_t audio_channels; /* 0 = no audio (QOV_CHUNK_AUDIO via qov_encode_audio) */
     uint32_t audio_rate;    /* required when audio_channels > 0 */
 } qov_encode_params;
@@ -1407,21 +1417,100 @@ static void qov__dec_yuv_plane_temporal(const uint8_t *payload, size_t payload_l
     }
 }
 
+/* ---- Exp-Golomb bit I/O (spec 3.4.5) ----
+   ue(v): v+1 in binary prefixed with bitlength(v+1)-1 zeros; se(v): v>0 ->
+   ue(2v-1), else ue(-2v). MSB-first, zero-padded to a byte boundary at the
+   end of each DCT block's coefficient section so opcode framing stays
+   byte-aligned. */
+typedef struct { qov__buf *out; uint32_t acc; int nbits; } qov__bw;
+static void qov__bw_bit(qov__bw *w, int bit)
+{
+    w->acc = (w->acc << 1) | (uint32_t)(bit & 1);
+    if (++w->nbits == 8) {
+        qov__buf_u8(w->out, (uint8_t)(w->acc & 0xff));
+        w->acc = 0; w->nbits = 0;
+    }
+}
+static void qov__bw_put(qov__bw *w, uint32_t v, int n)
+{
+    for (int i = n - 1; i >= 0; i--) qov__bw_bit(w, (int)((v >> i) & 1));
+}
+static void qov__bw_ue(qov__bw *w, uint32_t v)
+{
+    uint32_t x = v + 1;
+    int n = 0;
+    while ((x >> (n + 1)) != 0) n++;
+    for (int i = 0; i < n; i++) qov__bw_bit(w, 0);
+    qov__bw_put(w, x, n + 1);
+}
+static void qov__bw_se(qov__bw *w, int v)
+{
+    qov__bw_ue(w, v <= 0 ? (uint32_t)(-2 * v) : (uint32_t)(2 * v - 1));
+}
+static void qov__bw_flush(qov__bw *w)
+{
+    while (w->nbits != 0) qov__bw_bit(w, 0);
+}
+
+typedef struct { const uint8_t *p; size_t len; size_t pos; uint32_t acc; int nbits; } qov__br;
+static int qov__br_bit(qov__br *r)
+{
+    if (r->nbits == 0) {
+        if (r->pos >= r->len) return 0; /* truncated: tolerate like the byte reader */
+        r->acc = r->p[r->pos++];
+        r->nbits = 8;
+    }
+    r->nbits--;
+    return (int)((r->acc >> r->nbits) & 1);
+}
+static uint32_t qov__br_ue(qov__br *r)
+{
+    int zeros = 0;
+    while (qov__br_bit(r) == 0) {
+        if (++zeros > 31) return 0xffffffffu;
+    }
+    uint32_t v = 1;
+    for (int i = 0; i < zeros; i++) v = (v << 1) | (uint32_t)qov__br_bit(r);
+    return v - 1;
+}
+static int qov__br_se(qov__br *r)
+{
+    uint32_t u = qov__br_ue(r);
+    return (u & 1) ? (int)((u >> 1) + 1) : -(int)(u >> 1);
+}
+
 static void qov__dec_dct_block(const uint8_t *payload, size_t payload_len,
-                               size_t *pos, const int *quant, uint8_t qp_base, float *out)
+                               size_t *pos, const int *quant, uint8_t qp_base, float *out, int eg)
 {
     uint8_t qp_byte = payload[(*pos)++];
     int qp_delta = (qp_byte & 0x7F) - 64;
     int final_qp = qov_clampi((int)qp_base + qp_delta, 0, 100);
     double scale = 0.1 + final_qp * 0.1;
 
+    float coeffs[64];
+    for (int i = 0; i < 64; i++) coeffs[i] = 0; /* TS: new Float32Array(64) */
+
+    if (eg) {
+        /* Exp-Golomb coefficient section (spec 3.4.5) */
+        qov__br r;
+        r.p = payload; r.len = payload_len; r.pos = *pos; r.acc = 0; r.nbits = 0;
+        coeffs[0] = (float)(qov__br_se(&r) * (double)quant[0] * scale);
+        int k = 1;
+        for (;;) {
+            uint32_t run = qov__br_ue(&r);
+            if (run >= (uint32_t)(64 - k)) break; /* EOB sentinel ue(64-k) */
+            k += (int)run;
+            int level = qov__br_se(&r);
+            coeffs[qov_zigzag[k]] = (float)(level * (double)quant[qov_zigzag[k]] * scale);
+            k++;
+            if (k >= 64) break; /* defensive; canonical streams hit the sentinel */
+        }
+        *pos = r.pos; /* pending bits (<8) are the block's zero padding */
+    } else {
     if (*pos + 2 > payload_len) return;
     uint16_t dc_raw = (uint16_t)((payload[*pos] << 8) | payload[*pos + 1]);
     *pos += 2;
     int dc = (dc_raw & 0x8000) ? (int)dc_raw - 65536 : (int)dc_raw;
-
-    float coeffs[64];
-    for (int i = 0; i < 64; i++) coeffs[i] = 0; /* TS: new Float32Array(64) */
     coeffs[0] = (float)(dc * (double)quant[0] * scale);
 
     int k = 1;
@@ -1448,6 +1537,7 @@ static void qov__dec_dct_block(const uint8_t *payload, size_t payload_len,
         coeffs[qov_zigzag[k]] = (float)(level * (double)quant[qov_zigzag[k]] * scale);
         k++;
     }
+    }
 
     qov_inverse_dct_raw(coeffs, out);
 }
@@ -1455,7 +1545,7 @@ static void qov__dec_dct_block(const uint8_t *payload, size_t payload_len,
 static void qov__dec_plane_dct(const uint8_t *payload, size_t payload_len,
                                size_t *pos, uint8_t *plane, int w, int h,
                                const int *quant, uint8_t qp_base, uint8_t op_type,
-                               int band_r0, int band_r1)
+                               int band_r0, int band_r1, int eg)
 {
     float block[64];
     int blocks_x = (w + 7) / 8, blocks_y = (h + 7) / 8;
@@ -1478,7 +1568,7 @@ static void qov__dec_plane_dct(const uint8_t *payload, size_t payload_len,
                         plane[(by + y) * w + bx + x] = (uint8_t)pred;
             }
         } else if (b1 == op_type) {
-            qov__dec_dct_block(payload, payload_len, pos, quant, qp_base, block);
+            qov__dec_dct_block(payload, payload_len, pos, quant, qp_base, block, eg);
             int bx = (block_idx % blocks_x) * 8;
             int by = (block_idx / blocks_x) * 8;
             int in_band = block_idx / blocks_x >= band_r0 && block_idx / blocks_x < band_r1;
@@ -1506,7 +1596,7 @@ static void qov__dec_plane_dct(const uint8_t *payload, size_t payload_len,
    DC prediction; coded blocks add the residual to it. */
 static void qov__dec_plane_intra_dct(const uint8_t *payload, size_t payload_len,
                                      size_t *pos, uint8_t *plane, int w, int h,
-                                     const int *quant, uint8_t qp_base, uint8_t op_type)
+                                     const int *quant, uint8_t qp_base, uint8_t op_type, int eg)
 {
     float block[64];
     int blocks_x = (w + 7) / 8, blocks_y = (h + 7) / 8;
@@ -1528,7 +1618,7 @@ static void qov__dec_plane_intra_dct(const uint8_t *payload, size_t payload_len,
             int bx = (block_idx % blocks_x) * 8;
             int by = (block_idx / blocks_x) * 8;
             int pred = qov__intra_pred(plane, w, h, bx, by);
-            qov__dec_dct_block(payload, payload_len, pos, quant, qp_base, block);
+            qov__dec_dct_block(payload, payload_len, pos, quant, qp_base, block, eg);
             for (int yy = 0; yy < 8 && by + yy < h; yy++)
                 for (int xx = 0; xx < 8 && bx + xx < w; xx++) {
                     int idx = (by + yy) * w + bx + xx;
@@ -1854,6 +1944,7 @@ static qov_result qov__dec_feed(qov_decoder *dec, uint8_t ctype, uint8_t cflags,
             qov__mv mv;
             int have_mv = 0;
             int band = -1;
+            int eg = (cflags & QOV_CF_EXP_GOLOB) != 0;
             /* refresh band byte leads the payload (spec 3.4.4), before MV data */
             if (ctype == 0x02 && (cflags & QOV_CF_REFRESH_BAND) && pos < payload_len_v)
                 band = p[pos++];
@@ -1880,11 +1971,11 @@ static qov_result qov__dec_feed(qov_decoder *dec, uint8_t ctype, uint8_t cflags,
             if (ctype == 0x01 && (cflags & 0x20)) {
                 /* PR3 intra DCT keyframe (spec 3.4.3) */
                 uint8_t qp = hdr->dct_qp ? hdr->dct_qp : 20;
-                qov__dec_plane_intra_dct(p, payload_len_v, &pos, d->curr_y, (int)hdr->width, (int)hdr->height, qov_quant_luma, qp, 0x50);
-                qov__dec_plane_intra_dct(p, payload_len_v, &pos, d->curr_u, d->uv_w, d->uv_h, qov_quant_chroma, qp, 0x51);
-                qov__dec_plane_intra_dct(p, payload_len_v, &pos, d->curr_v, d->uv_w, d->uv_h, qov_quant_chroma, qp, 0x51);
+                qov__dec_plane_intra_dct(p, payload_len_v, &pos, d->curr_y, (int)hdr->width, (int)hdr->height, qov_quant_luma, qp, 0x50, eg);
+                qov__dec_plane_intra_dct(p, payload_len_v, &pos, d->curr_u, d->uv_w, d->uv_h, qov_quant_chroma, qp, 0x51, eg);
+                qov__dec_plane_intra_dct(p, payload_len_v, &pos, d->curr_v, d->uv_w, d->uv_h, qov_quant_chroma, qp, 0x51, eg);
                 if (d->has_yuv_alpha)
-                    qov__dec_plane_intra_dct(p, payload_len_v, &pos, d->curr_a, (int)hdr->width, (int)hdr->height, qov_quant_luma, qp, 0x50);
+                    qov__dec_plane_intra_dct(p, payload_len_v, &pos, d->curr_a, (int)hdr->width, (int)hdr->height, qov_quant_luma, qp, 0x50, eg);
             } else if (ctype == 0x01) {
                 qov__dec_yuv_plane_keyframe(p, payload_len_v, &pos, d->curr_y, (size_t)d->y_size);
                 qov__dec_yuv_plane_keyframe(p, payload_len_v, &pos, d->curr_u, dec->uv_bytes);
@@ -1905,11 +1996,11 @@ static qov_result qov__dec_feed(qov_decoder *dec, uint8_t ctype, uint8_t cflags,
                 memcpy(d->curr_u, ref_u, dec->uv_bytes);
                 memcpy(d->curr_v, ref_v, dec->uv_bytes);
                 if (d->has_yuv_alpha && ref_a) memcpy(d->curr_a, ref_a, (size_t)d->y_size);
-                qov__dec_plane_dct(p, payload_len_v, &pos, d->curr_y, (int)hdr->width, (int)hdr->height, qov_quant_luma, qp, 0x50, yr0, yr1);
-                qov__dec_plane_dct(p, payload_len_v, &pos, d->curr_u, d->uv_w, d->uv_h, qov_quant_chroma, qp, 0x51, cr0, cr1);
-                qov__dec_plane_dct(p, payload_len_v, &pos, d->curr_v, d->uv_w, d->uv_h, qov_quant_chroma, qp, 0x51, cr0, cr1);
+                qov__dec_plane_dct(p, payload_len_v, &pos, d->curr_y, (int)hdr->width, (int)hdr->height, qov_quant_luma, qp, 0x50, yr0, yr1, eg);
+                qov__dec_plane_dct(p, payload_len_v, &pos, d->curr_u, d->uv_w, d->uv_h, qov_quant_chroma, qp, 0x51, cr0, cr1, eg);
+                qov__dec_plane_dct(p, payload_len_v, &pos, d->curr_v, d->uv_w, d->uv_h, qov_quant_chroma, qp, 0x51, cr0, cr1, eg);
                 if (d->has_yuv_alpha && ref_a)
-                    qov__dec_plane_dct(p, payload_len_v, &pos, d->curr_a, (int)hdr->width, (int)hdr->height, qov_quant_luma, qp, 0x50, yr0, yr1);
+                    qov__dec_plane_dct(p, payload_len_v, &pos, d->curr_a, (int)hdr->width, (int)hdr->height, qov_quant_luma, qp, 0x50, yr0, yr1, eg);
             } else {
                 qov__dec_yuv_plane_temporal(p, payload_len_v, &pos, d->curr_y, ref_y, (size_t)d->y_size);
                 qov__dec_yuv_plane_temporal(p, payload_len_v, &pos, d->curr_u, ref_u, dec->uv_bytes);
@@ -2176,7 +2267,8 @@ qov_encoder *qov_encode_start(const qov_encode_params *params)
     uint8_t flags = (uint8_t)(QOV_F_HAS_INDEX | (e->p.has_alpha ? QOV_F_HAS_ALPHA : 0) |
                               (e->p.motion ? QOV_F_HAS_MOTION : 0) |
                               (e->p.intra_dct_keyframes ? QOV_F_INTRA_DCT_KF : 0) |
-                              ((e->p.intra_refresh && e->lossy) ? QOV_F_INTRA_REFRESH : 0));
+                              ((e->p.intra_refresh && e->lossy) ? QOV_F_INTRA_REFRESH : 0) |
+                              (e->p.exp_golomb ? QOV_F_EXP_GOLOB : 0));
     if (e->lossy) flags |= (uint8_t)(QOV_F_LOSSY | QOV_F_DCT);
     qov__buf_bytes(&e->out, (const uint8_t *)"qovf", 4);
     qov__buf_u8(&e->out, version);
@@ -2286,7 +2378,7 @@ static void qov__enc_yuv_keyframe(qov_encoder *e, const uint8_t *pixels, uint32_
         qov__enc_plane_intra_dct(e, vp, cw, ch, qov_quant_chroma, 0x51);
         if (ap) qov__enc_plane_intra_dct(e, ap, (int)w, (int)h, qov_quant_luma, 0x50);
         qov__enc_end_marker(&e->fb);
-        qov__enc_write_chunk(e, 0x01, 0x01 | 0x20, ts, e->fb.data, e->fb.size);
+        qov__enc_write_chunk(e, 0x01, (uint8_t)(0x01 | 0x20 | (e->p.exp_golomb ? QOV_CF_EXP_GOLOB : 0)), ts, e->fb.data, e->fb.size);
         memcpy(e->prev_y, yp, y_size);
         memcpy(e->prev_u, up, uv_size);
         memcpy(e->prev_v, vp, uv_size);
@@ -2526,32 +2618,50 @@ static void qov__enc_dct_emit(qov_encoder *e, const float *res, const int *quant
     qov__buf_u8(&e->fb, op);
     e->stats.blocks_coded++;
     qov__buf_u8(&e->fb, 0x40);
-    int dc = qov_round((double)coeffs[0] * scale / quant[0]);
-    qov__buf_u16(&e->fb, (uint16_t)((uint16_t)dc & 0xffff));
-    int zero_run = 0;
+    int qv[64];
+    qv[0] = qov_round((double)coeffs[0] * scale / quant[0]);
     for (int k = 1; k < 64; k++) {
         int zz = qov_zigzag[k];
         double prod = (double)coeffs[zz] * scale / quant[zz];
         /* AC dead-zone (spec 3.4.2): suppress |level| < 0.75 to kill
            noise dithering between 0 and +/-1 */
-        int qv = (prod > -0.75 && prod < 0.75) ? 0 : qov_round(prod);
-        if (qv == 0) { zero_run++; continue; }
-        while (zero_run >= 16) { qov__buf_u8(&e->fb, 0xF0); zero_run -= 16; }
-        int size = (qv >= -128 && qv <= 127) ? 1 : (qv >= -32768 && qv <= 32767) ? 2
-                 : (qv >= -8388608 && qv <= 8388607) ? 3 : 4;
-        qov__buf_u8(&e->fb, (uint8_t)((zero_run << 4) | size));
-        for (int sh = size - 1; sh >= 0; sh--)
-            qov__buf_u8(&e->fb, (uint8_t)((qv >> (8 * sh)) & 0xff));
-        zero_run = 0;
+        qv[k] = (prod > -0.75 && prod < 0.75) ? 0 : qov_round(prod);
     }
-    qov__buf_u8(&e->fb, 0x00);
-    rec[0] = (float)(dc * quant[0] / scale);
-    for (int k = 1; k < 64; k++) {
-        int zz = qov_zigzag[k];
-        double prod = (double)coeffs[zz] * scale / quant[zz];
-        int rq = (prod > -0.75 && prod < 0.75) ? 0 : qov_round(prod);
-        rec[zz] = (float)(rq * quant[zz] / scale);
+    if (e->p.exp_golomb) {
+        /* Exp-Golomb coefficient section (spec 3.4.5): se(DC), then
+           ue(zero-run)/se(level) pairs in zigzag scan; ue(64-k) ends the
+           block. Zero-padded to a byte so opcode framing stays aligned. */
+        qov__bw w;
+        w.out = &e->fb; w.acc = 0; w.nbits = 0;
+        qov__bw_se(&w, qv[0]);
+        int k = 1;
+        for (;;) {
+            int run = 0;
+            while (k + run < 64 && qv[k + run] == 0) run++;
+            if (k + run >= 64) { qov__bw_ue(&w, (uint32_t)(64 - k)); break; }
+            qov__bw_ue(&w, (uint32_t)run);
+            qov__bw_se(&w, qv[k + run]);
+            k += run + 1;
+        }
+        qov__bw_flush(&w);
+    } else {
+        qov__buf_u16(&e->fb, (uint16_t)((uint16_t)qv[0] & 0xffff));
+        int zero_run = 0;
+        for (int k = 1; k < 64; k++) {
+            if (qv[k] == 0) { zero_run++; continue; }
+            while (zero_run >= 16) { qov__buf_u8(&e->fb, 0xF0); zero_run -= 16; }
+            int size = (qv[k] >= -128 && qv[k] <= 127) ? 1 : (qv[k] >= -32768 && qv[k] <= 32767) ? 2
+                     : (qv[k] >= -8388608 && qv[k] <= 8388607) ? 3 : 4;
+            qov__buf_u8(&e->fb, (uint8_t)((zero_run << 4) | size));
+            for (int sh = size - 1; sh >= 0; sh--)
+                qov__buf_u8(&e->fb, (uint8_t)((qv[k] >> (8 * sh)) & 0xff));
+            zero_run = 0;
+        }
+        qov__buf_u8(&e->fb, 0x00);
     }
+    rec[0] = (float)(qv[0] * quant[0] / scale);
+    for (int k = 1; k < 64; k++)
+        rec[qov_zigzag[k]] = (float)(qv[k] * quant[qov_zigzag[k]] / scale);
     qov_inverse_dct_raw(rec, out_idct);
 }
 
@@ -2788,6 +2898,7 @@ static void qov__enc_yuv_pframe(qov_encoder *e, const uint8_t *pixels, uint32_t 
     uint8_t flags = (uint8_t)(0x01 | (have_mv ? 0x02 : 0) | (refresh ? QOV_CF_REFRESH_BAND : 0));
     if (e->use_dct) {
         flags |= 0x20;
+        if (e->p.exp_golomb) flags |= QOV_CF_EXP_GOLOB;
         uint8_t *next_y = qov__u8malloc(y_size);
         uint8_t *next_u = qov__u8malloc(uv_size);
         uint8_t *next_v = qov__u8malloc(uv_size);

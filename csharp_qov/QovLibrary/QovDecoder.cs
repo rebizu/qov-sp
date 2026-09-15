@@ -337,7 +337,7 @@ public class QovDecoder
     // Intra DCT plane decoder (spec 3.4.3): raster-order reconstruction.
     // Skip opcodes fill the block with the DC prediction; coded blocks add
     // the residual to it.
-    private int DecodeIntraPlaneDct(byte[] data, int startPos, byte[] plane, int w, int h, int[] quantTable, byte opType, int qpBase, float[] blockBuf)
+    private int DecodeIntraPlaneDct(byte[] data, int startPos, byte[] plane, int w, int h, int[] quantTable, byte opType, int qpBase, float[] blockBuf, bool eg = false)
     {
         int pos = startPos;
         int blocksX = (int)Math.Ceiling(w / 8.0);
@@ -366,7 +366,7 @@ public class QovDecoder
             else if (b1 == opType)
             {
                 int pred = IntraPred(plane, w, h, bx, by);
-                DecodeDctBlock(data, ref pos, quantTable, (byte)qpBase, blockBuf);
+                DecodeDctBlock(data, ref pos, quantTable, (byte)qpBase, blockBuf, eg);
                 for (int y = 0; y < 8 && by + y < h; y++)
                 {
                     for (int x = 0; x < 8 && bx + x < w; x++)
@@ -458,15 +458,16 @@ public class QovDecoder
             if (isDctKeyframe)
             {
                 // Intra DCT keyframe (spec 3.4.3)
+                bool egKf = (chunkFlags & QovTypes.ChunkFlagExpGolob) != 0;
                 int qpBase = _header.DctQpBase != 0 ? (int)_header.DctQpBase : 20;
                 (int uvW, int uvH) = ChromaDims();
                 float[] blockBuf = new float[64];
-                int p = DecodeIntraPlaneDct(frameData, 0, _currYPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, qpBase, blockBuf);
-                p = DecodeIntraPlaneDct(frameData, p, _currUPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, qpBase, blockBuf);
-                p = DecodeIntraPlaneDct(frameData, p, _currVPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, qpBase, blockBuf);
+                int p = DecodeIntraPlaneDct(frameData, 0, _currYPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, qpBase, blockBuf, egKf);
+                p = DecodeIntraPlaneDct(frameData, p, _currUPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, qpBase, blockBuf, egKf);
+                p = DecodeIntraPlaneDct(frameData, p, _currVPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, qpBase, blockBuf, egKf);
                 if (_hasYuvAlpha && _currAPlane != null)
                 {
-                    DecodeIntraPlaneDct(frameData, p, _currAPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, qpBase, blockBuf);
+                    DecodeIntraPlaneDct(frameData, p, _currAPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, qpBase, blockBuf, egKf);
                 }
             }
             else
@@ -569,14 +570,15 @@ public class QovDecoder
                 int yr1 = band < 0 ? -1 : rowsY * (band + 1) / QovTypes.IntraRefreshBands;
                 int cr0 = band < 0 ? -1 : rowsC * band / QovTypes.IntraRefreshBands;
                 int cr1 = band < 0 ? -1 : rowsC * (band + 1) / QovTypes.IntraRefreshBands;
+                bool eg = (chunkFlags & QovTypes.ChunkFlagExpGolob) != 0;
 
-                pos = DecodePlaneDct(frameData, pos, _currYPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, yr0, yr1);
-                pos = DecodePlaneDct(frameData, pos, _currUPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, cr0, cr1);
-                pos = DecodePlaneDct(frameData, pos, _currVPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, cr0, cr1);
+                pos = DecodePlaneDct(frameData, pos, _currYPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, yr0, yr1, eg);
+                pos = DecodePlaneDct(frameData, pos, _currUPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, cr0, cr1, eg);
+                pos = DecodePlaneDct(frameData, pos, _currVPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, cr0, cr1, eg);
                 if (_hasYuvAlpha && _currAPlane != null && refA != null)
                 {
                     // Alpha is coded with luma dimensions and the luma quant table
-                    pos = DecodePlaneDct(frameData, pos, _currAPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, yr0, yr1);
+                    pos = DecodePlaneDct(frameData, pos, _currAPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, yr0, yr1, eg);
                 }
             }
             else
@@ -998,7 +1000,7 @@ public class QovDecoder
         return result;
     }
 
-    private int DecodeDctBlock(ReadOnlySpan<byte> data, ref int pos, int[] quantTable, byte qpBase, float[] output)
+    private int DecodeDctBlock(ReadOnlySpan<byte> data, ref int pos, int[] quantTable, byte qpBase, float[] output, bool eg = false)
     {
         byte qpByte = data[pos++];
         int qpDelta = (qpByte & 0x7F) - 64;
@@ -1006,11 +1008,37 @@ public class QovDecoder
         // TS uses double math (0.1 + finalQp * 0.1); float breaks bit-exactness
         double scale = 0.1 + finalQp * 0.1;
 
+        float[] coeffs = new float[64];
+
+        if (eg)
+        {
+            // Exp-Golomb coefficient section (spec 3.4.5)
+            int blockStart = pos;
+            byte[] tail = data.Slice(pos).ToArray();
+            int bytePos = 0;
+            var r = new EgBitReader(() => bytePos < tail.Length ? tail[bytePos++] : 0);
+            coeffs[0] = (float)(r.Se() * (double)quantTable[0] * scale);
+            int ke = 1;
+            for (;;)
+            {
+                uint run = r.Ue();
+                if (run >= (uint)(64 - ke)) break; // EOB sentinel ue(64-k)
+                ke += (int)run;
+                int level = r.Se();
+                coeffs[Dct.ZigZag[ke]] = (float)(level * (double)quantTable[Dct.ZigZag[ke]] * scale);
+                ke++;
+                if (ke >= 64) break; // defensive; canonical streams hit the sentinel
+            }
+            pos = blockStart + bytePos; // pending bits (<8) are the block's zero padding
+
+            Dct.InverseDctRaw(coeffs, output);
+            return ke;
+        }
+
         ushort dcRaw = (ushort)((data[pos] << 8) | data[pos + 1]);
         pos += 2;
         int dc = (dcRaw & 0x8000) != 0 ? dcRaw - 65536 : dcRaw;
 
-        float[] coeffs = new float[64];
         coeffs[0] = (float)(dc * (double)quantTable[0] * scale);
 
         int k = 1;
@@ -1046,7 +1074,7 @@ public class QovDecoder
         return k; // Return value not strictly needed but matches structure
     }
 
-    private int DecodePlaneDct(ReadOnlySpan<byte> data, int startPos, byte[] plane, int w, int h, int[] quantTable, byte opType, float[] blockBuf, int bandR0 = -1, int bandR1 = -1)
+    private int DecodePlaneDct(ReadOnlySpan<byte> data, int startPos, byte[] plane, int w, int h, int[] quantTable, byte opType, float[] blockBuf, int bandR0 = -1, int bandR1 = -1, bool eg = false)
     {
         byte qpBase = _header.DctQpBase != 0 ? _header.DctQpBase : (byte)20;
         int blocksX = (int)Math.Ceiling(w / 8.0);
@@ -1082,7 +1110,7 @@ public class QovDecoder
                 bool inBand = blockIdx / blocksX >= bandR0 && blockIdx / blocksX < bandR1;
                 int pred = inBand ? IntraPred(plane, w, h, bx, by) : 0;
 
-                DecodeDctBlock(data, ref pos, quantTable, qpBase, blockBuf);
+                DecodeDctBlock(data, ref pos, quantTable, qpBase, blockBuf, eg);
 
                 for (int y = 0; y < 8; y++)
                 {

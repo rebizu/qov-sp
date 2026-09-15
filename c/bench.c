@@ -128,6 +128,7 @@ static int cmd_encode(int argc, char **argv)
     p.motion = arg_flag(argc, argv, "--motion");
     p.intra_dct_keyframes = arg_flag(argc, argv, "--ikf");
     p.intra_refresh = arg_flag(argc, argv, "--refresh");
+    p.exp_golomb = arg_flag(argc, argv, "--eg");
     p.lz4 = arg_flag(argc, argv, "--lz4");
     p.quality = quality;
 
