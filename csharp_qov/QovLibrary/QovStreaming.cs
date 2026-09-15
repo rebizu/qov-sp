@@ -487,11 +487,14 @@ public class QovStreamClient : IDisposable
     private readonly SemaphoreSlim _tcpWriteLock = new(1, 1);
     private readonly object _lock = new();
 
-    // Reassembly (spec section 3 receiver): frameId -> state
+    // Reassembly (spec section 3 receiver): frameId -> state. Video + audio
+    // share the sender's frame_id space; all media delivers in frame_id
+    // order (spec section 4: audio is independent, but both halves of one
+    // sender interleave ids, so ordering them together is well-defined).
     private readonly Dictionary<uint, FrameReassembly> _pending = new();
-    private readonly Dictionary<uint, byte[]> _completedVideo = new();
-    private uint _nextVideoFrameId;
-    private bool _videoInit;
+    private readonly Dictionary<uint, (byte[] Chunk, QovPacketType Type)> _completedMedia = new();
+    private uint _nextMediaFrameId;
+    private bool _mediaInit;
     private uint _resolvedUpTo;
 
     // Seq bookkeeping for loss detection + receiver report (spec section 6)
@@ -739,17 +742,18 @@ public class QovStreamClient : IDisposable
         lock (_lock)
         {
             if (header.FrameId == 0) return;
-            if (_videoInit && header.FrameId <= _resolvedUpTo) return; // late, frame resolved
+            if (_mediaInit && header.FrameId <= _resolvedUpTo) return; // late, frame resolved
 
-            // Video frame_id holes below this packet infer frames whose
-            // packets never arrived: track them so the watermark can advance.
-            if (header.PacketType == QovPacketType.Video && _videoInit)
+            // frame_id holes below this packet infer frames whose packets
+            // never arrived: track them so the watermark can advance.
+            if (_mediaInit)
             {
-                for (uint f = _nextVideoFrameId; f < header.FrameId; f++)
-                    if (!_pending.ContainsKey(f) && !_completedVideo.ContainsKey(f))
+                for (uint f = _nextMediaFrameId; f < header.FrameId; f++)
+                    if (!_pending.ContainsKey(f) && !_completedMedia.ContainsKey(f))
                         _pending[f] = FrameReassembly.Phantom(DateTime.UtcNow);
             }
 
+            if (_completedMedia.ContainsKey(header.FrameId)) return; // dup: already assembled
             if (!_pending.TryGetValue(header.FrameId, out var frame))
             {
                 frame = new FrameReassembly(header.FragmentCount, header.PacketType);
@@ -773,22 +777,16 @@ public class QovStreamClient : IDisposable
             if (frame.ReceivedCount == frame.FragmentCount)
             {
                 _pending.Remove(header.FrameId);
-                if (frame.Type == QovPacketType.Audio)
-                {
-                    toDeliver = new List<byte[]> { AssembleChunk(frame) };
-                    deliverType = QovPacketType.Audio;
-                }
-                else
-                {
-                    _completedVideo[header.FrameId] = AssembleChunk(frame);
-                    toDeliver = DeliverInOrderVideo();
-                    deliverType = QovPacketType.Video;
-                }
+                _completedMedia[header.FrameId] = (AssembleChunk(frame), frame.Type);
+                toDeliver = DeliverInOrderMedia(out deliverType);
             }
         }
 
         if (toDeliver != null)
-            foreach (var chunk in toDeliver) OnFrameReceived?.Invoke(chunk, deliverType);
+        {
+            var type = deliverType;
+            foreach (var chunk in toDeliver) OnFrameReceived?.Invoke(chunk, type);
+        }
     }
 
     private void HandleParity(QovPacketHeader header, byte[] packet)
@@ -819,8 +817,8 @@ public class QovStreamClient : IDisposable
 
     private void SweepDeadlines()
     {
-        List<byte[]>? videoReady = null;
-        List<byte[]>? audioReady = null;
+        List<byte[]>? mediaReady = null;
+        var mediaType = QovPacketType.Video;
         var droppedIds = new List<uint>();
 
         lock (_lock)
@@ -846,76 +844,64 @@ public class QovStreamClient : IDisposable
                 _pending.Remove(frameId);
                 if (frame.ReceivedCount == frame.FragmentCount)
                 {
-                    if (frame.Type == QovPacketType.Audio)
-                    {
-                        audioReady ??= new List<byte[]>();
-                        audioReady.Add(AssembleChunk(frame));
-                        Interlocked.Increment(ref _framesDelivered);
-                    }
-                    else
-                    {
-                        _completedVideo[frameId] = AssembleChunk(frame);
-                    }
+                    _completedMedia[frameId] = (AssembleChunk(frame), frame.Type);
                 }
                 else
                 {
                     Interlocked.Increment(ref _framesDropped);
                     droppedIds.Add(frameId);
-                    if (frame.Type == QovPacketType.Video)
-                        AdvanceWatermarkOnDrop(frameId);
+                    AdvanceWatermarkOnDrop(frameId);
                 }
             }
 
-            var more = DeliverInOrderVideo();
-            if (more != null)
-            {
-                videoReady ??= new List<byte[]>();
-                videoReady.AddRange(more);
-            }
+            mediaReady = DeliverInOrderMedia(out mediaType);
         }
 
         // Drop notifications reach the app BEFORE later frames are delivered:
         // the playback gate must be healing while the post-loss frames arrive.
         foreach (var id in droppedIds) OnFrameDropped?.Invoke(id);
-        if (audioReady != null)
-            foreach (var chunk in audioReady) OnFrameReceived?.Invoke(chunk, QovPacketType.Audio);
-        if (videoReady != null)
-            foreach (var chunk in videoReady) OnFrameReceived?.Invoke(chunk, QovPacketType.Video);
+        if (mediaReady != null)
+            foreach (var chunk in mediaReady) OnFrameReceived?.Invoke(chunk, mediaType);
     }
 
-    // Spec section 6: video chunks are delivered in decode order; a dropped
-    // frame advances the watermark so late retransmits are discarded.
-    private List<byte[]>? DeliverInOrderVideo()
+    // Spec sections 3/6: media chunks (video and audio) are delivered in
+    // frame_id order; a dropped frame advances the watermark so late
+    // retransmits are discarded.
+    private List<byte[]>? DeliverInOrderMedia(out QovPacketType type)
     {
-        if (!_videoInit && _completedVideo.Count > 0)
+        type = QovPacketType.Video;
+        if (!_mediaInit && _completedMedia.Count > 0)
         {
-            _videoInit = true;
-            _nextVideoFrameId = _completedVideo.Keys.Min();
+            _mediaInit = true;
+            _nextMediaFrameId = _completedMedia.Keys.Min();
         }
         List<byte[]>? ready = null;
-        while (_completedVideo.Remove(_nextVideoFrameId, out var chunk))
+        while (_completedMedia.ContainsKey(_nextMediaFrameId))
         {
+            var (chunk, entryType) = _completedMedia[_nextMediaFrameId];
+            _completedMedia.Remove(_nextMediaFrameId);
             ready ??= new List<byte[]>();
             ready.Add(chunk);
+            type = entryType;
             Interlocked.Increment(ref _framesDelivered);
-            _resolvedUpTo = _nextVideoFrameId;
-            _nextVideoFrameId++;
+            _resolvedUpTo = _nextMediaFrameId;
+            _nextMediaFrameId++;
         }
         return ready;
     }
 
-    // A dropped video frame must advance the decode-order watermark, or
+    // A dropped media frame must advance the decode-order watermark, or
     // delivery stalls behind the hole and phantom holes re-create forever.
     private void AdvanceWatermarkOnDrop(uint frameId)
     {
-        if (!_videoInit)
+        if (!_mediaInit)
         {
-            _videoInit = true;
-            _nextVideoFrameId = frameId + 1;
+            _mediaInit = true;
+            _nextMediaFrameId = frameId + 1;
         }
-        else if (frameId >= _nextVideoFrameId)
+        else if (frameId >= _nextMediaFrameId)
         {
-            _nextVideoFrameId = frameId + 1;
+            _nextMediaFrameId = frameId + 1;
         }
         _resolvedUpTo = Math.Max(_resolvedUpTo, frameId);
     }

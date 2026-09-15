@@ -199,13 +199,16 @@ export class QovStreamReceiver {
   private readonly deadlineCapMs: number;
   private readonly reportIntervalMs: number;
   private readonly pending = new Map<number, FrameReassembly>();
-  private readonly completedVideo = new Map<number, Uint8Array>();
+  // video + audio share the sender's frame_id space; all media delivers in
+  // frame_id order (spec section 4: audio is independent, but both halves of
+  // one sender interleave ids, so ordering them together is well-defined)
+  private readonly completedMedia = new Map<number, { chunk: Uint8Array; isAudio: boolean }>();
   private readonly receivedSeq = new Set<number>();
   private readonly seqOrder: number[] = [];
   private readonly seqWindow = 4096;
   private readonly nackPending = new Set<number>();
-  private nextVideoFrameId = 0;
-  private videoInit = false;
+  private nextMediaFrameId = 0;
+  private mediaInit = false;
   private resolvedUpTo = 0;
   private highestSeq = 0;
   private contiguous = 0;
@@ -292,15 +295,18 @@ export class QovStreamReceiver {
 
   private handleFragment(header: QovPacketFields, packet: Uint8Array): void {
     if (header.frameId === 0) return;
-    if (this.videoInit && header.frameId <= this.resolvedUpTo) return; // late
+    if (this.mediaInit && header.frameId <= this.resolvedUpTo) return; // late, frame resolved
 
-    if (header.packetType === QovPacketType.Video && this.videoInit) {
-      for (let f = this.nextVideoFrameId; f < header.frameId; f++) {
-        if (!this.pending.has(f) && !this.completedVideo.has(f))
+    // frame_id holes below this packet infer frames whose packets never
+    // arrived: track them so the watermark can advance (any media type)
+    if (this.mediaInit) {
+      for (let f = this.nextMediaFrameId; f < header.frameId; f++) {
+        if (!this.pending.has(f) && !this.completedMedia.has(f))
           this.pending.set(f, phantom());
       }
     }
 
+    if (this.completedMedia.has(header.frameId)) return; // dup: already assembled
     let frame = this.pending.get(header.frameId);
     if (!frame) {
       frame = {
@@ -330,13 +336,8 @@ export class QovStreamReceiver {
     if (frame.receivedCount === frame.fragmentCount) {
       this.pending.delete(header.frameId);
       const chunk = assembleChunk(frame);
-      if (frame.isAudio) {
-        this.framesDelivered++;
-        this.onChunk(chunk, true);
-      } else {
-        this.completedVideo.set(header.frameId, chunk);
-        this.deliverInOrderVideo();
-      }
+      this.completedMedia.set(header.frameId, { chunk, isAudio: frame.isAudio });
+      this.deliverInOrderMedia();
     }
   }
 
@@ -383,7 +384,6 @@ export class QovStreamReceiver {
   private sweepDeadlines(): void {
     const now = nowMs();
     const dropped: number[] = [];
-    const audioReady: Uint8Array[] = [];
     for (const [frameId, frame] of [...this.pending]) {
       if (now - frame.createdAt < this.deadline()) continue;
 
@@ -400,49 +400,44 @@ export class QovStreamReceiver {
       this.pending.delete(frameId);
       if (frame.receivedCount === frame.fragmentCount) {
         const chunk = assembleChunk(frame);
-        if (frame.isAudio) {
-          this.framesDelivered++;
-          audioReady.push(chunk);
-        } else {
-          this.completedVideo.set(frameId, chunk);
-        }
+        this.completedMedia.set(frameId, { chunk, isAudio: frame.isAudio });
       } else {
         this.framesDropped++;
         dropped.push(frameId);
-        if (!frame.isAudio) this.advanceWatermarkOnDrop(frameId);
+        this.advanceWatermarkOnDrop(frameId);
       }
     }
     // Drop notifications reach the app BEFORE later frames are delivered:
     // the playback gate must be healing while the post-loss frames arrive.
     for (const id of dropped) this.onFrameDropped(id);
-    for (const chunk of audioReady) this.onChunk(chunk, true);
-    this.deliverInOrderVideo();
+    this.deliverInOrderMedia();
   }
 
   private advanceWatermarkOnDrop(frameId: number): void {
-    if (!this.videoInit) {
-      this.videoInit = true;
-      this.nextVideoFrameId = frameId + 1;
-    } else if (frameId >= this.nextVideoFrameId) {
-      this.nextVideoFrameId = frameId + 1;
+    if (!this.mediaInit) {
+      this.mediaInit = true;
+      this.nextMediaFrameId = frameId + 1;
+    } else if (frameId >= this.nextMediaFrameId) {
+      this.nextMediaFrameId = frameId + 1;
     }
     this.resolvedUpTo = Math.max(this.resolvedUpTo, frameId);
   }
 
-  // Spec section 6: video chunks are delivered in decode order; a dropped
-  // frame advances the watermark so late retransmits are discarded.
-  private deliverInOrderVideo(): void {
-    if (!this.videoInit && this.completedVideo.size > 0) {
-      this.videoInit = true;
-      this.nextVideoFrameId = Math.min(...this.completedVideo.keys());
+  // Spec sections 3/6: media chunks (video and audio) are delivered in
+  // frame_id order; a dropped frame advances the watermark so late
+  // retransmits are discarded.
+  private deliverInOrderMedia(): void {
+    if (!this.mediaInit && this.completedMedia.size > 0) {
+      this.mediaInit = true;
+      this.nextMediaFrameId = Math.min(...this.completedMedia.keys());
     }
-    while (this.completedVideo.has(this.nextVideoFrameId)) {
-      const chunk = this.completedVideo.get(this.nextVideoFrameId)!;
-      this.completedVideo.delete(this.nextVideoFrameId);
+    while (this.completedMedia.has(this.nextMediaFrameId)) {
+      const entry = this.completedMedia.get(this.nextMediaFrameId)!;
+      this.completedMedia.delete(this.nextMediaFrameId);
       this.framesDelivered++;
-      this.onChunk(chunk, false);
-      this.resolvedUpTo = this.nextVideoFrameId;
-      this.nextVideoFrameId++;
+      this.onChunk(entry.chunk, entry.isAudio);
+      this.resolvedUpTo = this.nextMediaFrameId;
+      this.nextMediaFrameId++;
     }
   }
 

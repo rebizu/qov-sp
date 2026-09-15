@@ -6,6 +6,8 @@
 // QOV-S receiver -> streaming decoder, gated by the playback gate
 // (freeze last good frame, heal over refresh bands) -> REPORTs back.
 import { QovEncoder } from './qov-encoder';
+import { QoaDecoder } from './qoa';
+import { QOV_AUDIO_RATE_SPEECH } from './qov-types';
 import { QovStreamSender, QovStreamReceiver } from './qov-streaming';
 import { QovPlaybackGate, QovAdaptationController, PlaybackDecision, inspectChunk } from './qov-adaptation';
 import { QovStreamingDecoder, StreamDataSource } from './qov-streaming-decoder';
@@ -65,7 +67,7 @@ class Relay {
 
 class Host {
   private relay: Relay;
-  private enc = new QovEncoder(WIDTH, HEIGHT, 24, 1, 0x04 | 0x10, 0x10, true, 60, undefined, 0, 0);
+  private enc!: QovEncoder; // created synchronously in start() before any network event
   private sender: QovStreamSender;
   private controller = new QovAdaptationController(60);
   private captureCanvas = document.createElement('canvas');
@@ -84,12 +86,7 @@ class Host {
 
   constructor(relay: Relay, private logEl: HTMLElement) {
     this.relay = relay;
-    this.enc.writeHeader();
     this.sender = new QovStreamSender((packet) => this.relay.sendBinary(packet));
-    this.enc.onChunk = (chunk) => {
-      this.bytesThisSecond += chunk.length;
-      this.sender.sendChunk(chunk, false);
-    };
     this.controller.onQualityChanged = (q) => {
       this.enc.setQuality(q);
       log(this.logEl, `knob: setQuality(${q})`);
@@ -108,6 +105,50 @@ class Host {
     setInterval(() => this.tickSecond(), 1000);
   }
 
+  // The encoder (and therefore the QOV header) must exist before the guest's
+  // HELLO is answered, so it is created synchronously at Host start — the
+  // mic decision is read from the checkbox at that moment.
+  private initEncoder(withMic: boolean): void {
+    this.enc = new QovEncoder(WIDTH, HEIGHT, 24, 1, 0x04 | 0x10, 0x10, true, 60, undefined,
+      withMic ? 1 : 0, withMic ? QOV_AUDIO_RATE_SPEECH : 0);
+    this.enc.writeHeader();
+    this.enc.onChunk = (chunk) => {
+      this.bytesThisSecond += chunk.length;
+      this.sender.sendChunk(chunk, chunk[0] === 0x10);
+    };
+  }
+
+  private audioFrames = 0;
+
+  // Speech capture (spec section 5.3): 16 kHz mono QOA frames cut from the
+  // browser's audio processing chain (echo cancellation / noise suppression
+  // / AGC via getUserMedia constraints — product scope, not format).
+  private async startMic(): Promise<void> {
+    const astream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    const actx = new AudioContext({ sampleRate: QOV_AUDIO_RATE_SPEECH });
+    await actx.resume();
+    const src = actx.createMediaStreamSource(astream);
+    const proc = actx.createScriptProcessor(1024, 1, 1);
+    const sink = actx.createGain();
+    sink.gain.value = 0; // ScriptProcessor only fires when routed to a destination
+    const pending: number[] = [];
+    proc.onaudioprocess = (e) => {
+      if (!this.running || !this.enc) return;
+      for (const v of e.inputBuffer.getChannelData(0)) pending.push(v);
+      while (pending.length >= 256) {
+        const frame = new Float32Array(pending.splice(0, 256));
+        this.enc.encodeAudio(frame, Math.round(performance.now() * 1000));
+        this.audioFrames++;
+      }
+    };
+    src.connect(proc);
+    proc.connect(sink);
+    sink.connect(actx.destination);
+    log(this.logEl, `microphone open (${actx.sampleRate} Hz mono, browser AEC/NS/AGC)`);
+  }
+
   get fps(): number { return parseInt(($('fpsSlider') as HTMLInputElement).value, 10); }
 
   // The combobox is the operator's ceiling: "off" forces FEC off entirely,
@@ -118,6 +159,12 @@ class Host {
   }
 
   private synthetic = false;
+
+  async start(withMic: boolean): Promise<void> {
+    this.initEncoder(withMic);
+    if (withMic) await this.startMic().catch((e) => log(this.logEl, `mic error: ${(e as Error).message}`));
+    await this.openCamera();
+  }
 
   async openCamera(): Promise<void> {
     try {
@@ -224,6 +271,7 @@ class Host {
       ['dropReference', this.dropRefCount],
       ['retransmits', this.sender.retransmits],
       ['packets sent', this.sender.sentPackets],
+      ['audio frames sent', this.audioFrames],
     ]);
   }
 }
@@ -234,6 +282,10 @@ class Guest {
   private relay: Relay;
   private receiver: QovStreamReceiver;
   private gate = new QovPlaybackGate();
+  private readonly qoa = new QoaDecoder();
+  private readonly actx = new AudioContext({ sampleRate: QOV_AUDIO_RATE_SPEECH });
+  private nextAudioAt = 0;
+  private audioPlayed = 0;
   private decoder: QovStreamingDecoder | null = null;
   private buffer = new Uint8Array(8 << 20);
   private writePos = 0;
@@ -255,7 +307,11 @@ class Guest {
     this.ctx = canvas.getContext('2d')!;
 
     this.receiver = new QovStreamReceiver(
-      (chunk) => { this.decodeQueue.push(chunk); void this.pump(); },
+      (chunk, isAudio) => {
+        if (isAudio) { this.playAudio(chunk); return; }
+        this.decodeQueue.push(chunk);
+        void this.pump();
+      },
       (line) => this.relay.sendText(line),
       { frameIntervalMs: 100 }, // corrected from the QOV header fps on CONFIG
     );
@@ -327,6 +383,27 @@ class Guest {
     this.buffer = bigger;
   }
 
+  // QOA playout: schedule each decoded frame on the 16 kHz device clock,
+  // chaining from the previous frame so network jitter becomes buffer, not
+  // gap (timestamps only aligned the streams at session start — spec 5.3).
+  private playAudio(chunk: Uint8Array): void {
+    // chunk is a complete AUDIO chunk: strip the 10-byte QOV chunk header
+    // (audio is never compressed, spec section 5.3) to get the QOA frame
+    const frame = this.qoa.decodeFrame(chunk.subarray(10));
+    if (!frame) return;
+    void this.actx.resume();
+    const mono = frame.samples.length === frame.header.channels
+      ? frame.samples : frame.samples;
+    const buffer = this.actx.createBuffer(1, mono.length, this.actx.sampleRate);
+    buffer.getChannelData(0).set(mono);
+    const node = this.actx.createBufferSource();
+    node.buffer = buffer;
+    this.nextAudioAt = Math.max(this.actx.currentTime + 0.03, this.nextAudioAt);
+    node.start(this.nextAudioAt);
+    this.nextAudioAt += mono.length / this.actx.sampleRate;
+    this.audioPlayed++;
+  }
+
   private async pump(): Promise<void> {
     if (this.pumping || !this.decoder) return;
     this.pumping = true;
@@ -378,6 +455,7 @@ class Guest {
       ['report loss', `${this.receiver.lastReportLoss.toFixed(1)}%`],
       ['healed frames', this.healingCount],
       ['frozen total', `${(this.totalFreezeMs / 1000).toFixed(1)} s`],
+      ['audio played', this.audioPlayed],
     ]);
   }
 }
@@ -406,7 +484,8 @@ function main(): void {
   };
   $('btnHost').onclick = () => {
     join('host');
-    host.openCamera().catch((e) => log($('hostLog'), `camera error: ${e.message}`));
+    const withMic = ($('micCheck') as HTMLInputElement).checked;
+    host.start(withMic).catch((e) => log($('hostLog'), `start error: ${e.message}`));
   };
   $('btnGuest').onclick = () => join('guest');
 

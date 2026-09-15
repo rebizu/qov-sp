@@ -1691,6 +1691,7 @@ export class QovEncoder {
   // Alternate-codec passthrough (spec §5.3): payload is one Opus packet.
   // No QOA state involved; usable even when the header has no audio.
   encodeAudioOpus(packet: Uint8Array, timestamp: number): void {
+    const start = this.buffer.getSize();
     this.buffer.writeByte(QOV_CHUNK_AUDIO);
     this.buffer.writeByte(QOV_CHUNK_AUDIO_FLAG_OPUS);
     this.buffer.writeU32(packet.length);
@@ -1698,6 +1699,7 @@ export class QovEncoder {
     for (let i = 0; i < packet.length; i++) {
       this.buffer.writeByte(packet[i]);
     }
+    this.emitChunk(start);
   }
 
   encodeAudio(samples: Float32Array, timestamp: number): void {
@@ -1707,6 +1709,7 @@ export class QovEncoder {
     }
 
     const encodedData = this.qoaEncoder.encodeFrame(samples);
+    const chunkStart = this.buffer.getSize();
 
     // QOV_CHUNK_AUDIO using imported constant
     const chunkType = QOV_CHUNK_AUDIO;
@@ -1721,5 +1724,6 @@ export class QovEncoder {
     for (let i = 0; i < encodedData.length; i++) {
       this.buffer.writeByte(encodedData[i]);
     }
+    this.emitChunk(chunkStart);
   }
 }
