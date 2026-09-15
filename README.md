@@ -13,6 +13,27 @@ A simple, fast video format inspired by [QOI](https://qoiformat.org/) (Quite OK 
 - **Keyframe seeking** - Efficient random access via keyframe index
 - **Cross-platform** - TypeScript/JavaScript and C#/.NET implementations
 
+## Live 1:1 call demo (QOV-S)
+
+The repo includes a browser demo of the QOV-S v2.0 streaming protocol
+(`qov-streaming-spec.md`): camera -> QOV encode -> packetization -> relay ->
+decode, with the full feedback->knob loop visible in the UI — NACK
+retransmits, XOR FEC, freeze-and-heal on lost frames, and the adaptation
+ladder driving `setQuality` / `dropReference` / frame skip from receiver
+reports.
+
+```bash
+npm install
+npm run relay        # WebSocket relay on ws://localhost:8882
+npm run dev          # then open http://localhost:5173/call.html in TWO windows
+```
+
+Click **Host** in one window (grants camera; falls back to a synthetic
+pattern when denied) and **Guest** in the other. Use the guest's
+*simulate datagram loss* slider to watch NACK/FEC recover packets and the
+player freeze-and-heal over refresh bands instead of glitching. The TS
+machinery has its own lossy-wire test: `npm run selftest`.
+
 ## Implementations
 
 ### TypeScript/JavaScript (Web-based)

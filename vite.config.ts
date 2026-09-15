@@ -28,6 +28,7 @@ export default defineConfig({
         converter: resolve(__dirname, 'converter.html'),
         spec: resolve(__dirname, 'spec.html'),
         diagnose: resolve(__dirname, 'diagnose.html'),
+        call: resolve(__dirname, 'call.html'),
       },
     },
   },
