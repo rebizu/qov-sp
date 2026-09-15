@@ -272,6 +272,25 @@
    }
   },
   {
+   "id": "audio_stereo_yuv420_lossy",
+   "width": 96,
+   "height": 96,
+   "frames": 4,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "quality": 50,
+   "pattern": "noise",
+   "flags": [
+    "index",
+    "motion",
+    "ikf"
+   ],
+   "audio": {
+    "channels": 2,
+    "rate": 48000
+   }
+  },
+  {
    "id": "opus_audio_yuv420_lossy",
    "width": 96,
    "height": 96,

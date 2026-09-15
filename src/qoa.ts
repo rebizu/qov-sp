@@ -89,7 +89,9 @@ export class QoaDecoder {
         // frame_size = header(8) + lms(channels * 16) + slices * 8
         // slices * 8 = frame_size - 8 - channels * 16
         const dataSize = frameSize - 8 - (channels * 16);
-        const numSlices = Math.floor(dataSize / 8);
+        // numSlices counts ALL channels' slices; each loop round decodes one
+        // slice per channel
+        const slicesPerChannel = Math.floor(dataSize / 8 / channels);
 
         // Usually full frame is 256 slices per channel
         // samples = fsamples (usually 5120)
@@ -97,7 +99,7 @@ export class QoaDecoder {
         const outputSamples = new Float32Array(fsamples * channels);
         let sampleIdx = 0;
 
-        for (let s = 0; s < numSlices; s++) {
+        for (let s = 0; s < slicesPerChannel; s++) {
             for (let c = 0; c < channels; c++) {
                 // Read 64-bit slice
                 // In JS, read 2x 32-bit or 8 bytes.

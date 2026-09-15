@@ -251,13 +251,15 @@ public class QoaDecoder
         }
         
         int dataSize = frameSize - 8 - (channels * 16);
-        int numSlices = dataSize / 8;
+        // numSlices counts ALL channels' slices; each loop round decodes one
+        // slice per channel
+        int slicesPerChannel = dataSize / 8 / channels;
         
         float[] samples = new float[fsamples * channels];
         int sampleIdx = 0;
         
         // Slices
-        for (int s = 0; s < numSlices; s++)
+        for (int s = 0; s < slicesPerChannel; s++)
         {
             for (int c = 0; c < channels; c++)
             {
