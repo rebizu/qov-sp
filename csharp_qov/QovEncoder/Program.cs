@@ -81,8 +81,16 @@ class Program
         var encoder = new QovEncoder(stream, (ushort)width, (ushort)height,
             (ushort)fps, 1, (byte)flags, (byte)cs, compression, quality);
 
+        var adaptive = new List<(int Frame, int Quality)>();
+        if (json.TryGetProperty("adaptive", out var adEl) && adEl.ValueKind == JsonValueKind.Array)
+            foreach (var step in adEl.EnumerateArray())
+                adaptive.Add((step.GetProperty("frame").GetInt32(), step.GetProperty("quality").GetInt32()));
+
         for (int n = 0; n < frames; n++)
         {
+            foreach (var (adFrame, adQuality) in adaptive)
+                if (adFrame == n)
+                    encoder.SetQuality(adQuality);
             var pixels = MakeFrame(pattern, width, height, n, hasAlpha);
             uint timestamp = (uint)Math.Floor(n * 1000000.0 / fps + 0.5);
             if (n % keyframeInterval == 0)

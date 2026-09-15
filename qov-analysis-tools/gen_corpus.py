@@ -131,9 +131,14 @@ def main() -> int:
     manifest_path = CORPUS / "manifest.json"
     manifest = {"comment": "Frozen golden corpus. Regenerate with gen_corpus.py --force (approval test).",
                 "cases": {}}
-    if manifest_path.exists() and not force:
-        print(f"{manifest_path} already exists. Regenerating requires --force.")
-        return 1
+    if manifest_path.exists():
+        if not force and not only:
+            print(f"{manifest_path} already exists. Regenerating requires --force.")
+            return 1
+        if only:
+            # --only updates one entry in place, keeping the rest of the
+            # manifest intact (the additive-corpus workflow)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     node = shutil.which("node")
     if not node:

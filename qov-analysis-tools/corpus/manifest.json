@@ -2647,6 +2647,96 @@
      "note": "PR5 Exp-Golomb variant"
     }
    }
+  },
+  "adaptive_quality_yuv420_lossy": {
+   "file_sha256": "597965b1e91974348504cfca55741e24279064101756603a79dfe33b6dc9a51d",
+   "file_size": 37191,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 230,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 3,
+    "dct_chunks": 6,
+    "compressed_chunks": 6,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "d0c6b3777f22765119962060f5649d48e294be05f2831259f736bb9a877d3090",
+     "cb57987f29dca441fe30ad75514ee3c46a4978a6676a83f1b8d63a29df7e4e33",
+     "5bb18c68c32b6e239ada68d4a63ba212a46d537ba9a6f8dc2596c0ef91ddac2b",
+     "783f478b95df865412216211253f74776d65c195712ed69fd60023fbd740cdf2",
+     "186ba720cb9b524e66688d13e574b096f27b3e968fe8e51b6ecc68cf66b8f832",
+     "a478d98bc462299451bc4191d41f64c3571aaebe5c99b6ba11612fec2c86e0ce"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "d0c6b3777f22765119962060f5649d48e294be05f2831259f736bb9a877d3090",
+     "cb57987f29dca441fe30ad75514ee3c46a4978a6676a83f1b8d63a29df7e4e33",
+     "5bb18c68c32b6e239ada68d4a63ba212a46d537ba9a6f8dc2596c0ef91ddac2b",
+     "783f478b95df865412216211253f74776d65c195712ed69fd60023fbd740cdf2",
+     "186ba720cb9b524e66688d13e574b096f27b3e968fe8e51b6ecc68cf66b8f832",
+     "a478d98bc462299451bc4191d41f64c3571aaebe5c99b6ba11612fec2c86e0ce"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "adaptive_quality_yuv420_lossy",
+     "width": 128,
+     "height": 96,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "quality": 50,
+     "flags": [
+      "index",
+      "motion",
+      "ikf"
+     ],
+     "pattern": "noise",
+     "adaptive": [
+      {
+       "frame": 2,
+       "quality": 30
+      },
+      {
+       "frame": 4,
+       "quality": 85
+      }
+     ],
+     "note": "Phase 2 adaptive API: qov_set_quality mid-stream (down to 30, up to 85); decoder visibility via per-block qp_delta"
+    }
+   }
   }
  }
 }

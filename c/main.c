@@ -182,9 +182,31 @@ static void json_string(const char *js, const char *key, char *out, size_t cap)
     out[i] = 0;
 }
 
-static int json_present(const char *js, const char *key)
+/* Parses the case "adaptive" schedule: [{"frame":N,"quality":Q},...] into
+   parallel arrays (qov_set_quality is applied before encoding frame N).
+   Returns the entry count (0 when the key is absent). */
+static int json_adaptive(const char *js, int *frames, int *qualities, int cap)
 {
-    return json_value(js, key) != NULL;
+    const char *p = json_value(js, "adaptive");
+    if (!p) return 0;
+    int n = 0;
+    for (const char *q = p; *q && *q != ']' && n < cap; q++) {
+        if (*q != '{') continue;
+        const char *end = strchr(q, '}');
+        if (!end) break;
+        const char *f = strstr(q, "\"frame\"");
+        const char *ql = strstr(q, "\"quality\"");
+        if (!f || !ql || f > end || ql > end) { q = end; continue; }
+        frames[n] = (int)strtol(strchr(f, ':') + 1, NULL, 10);
+        qualities[n] = (int)strtol(strchr(ql, ':') + 1, NULL, 10);
+        n++;
+        q = end;
+    }
+    return n;
+}
+
+static int json_present(const char *js, const char *key)
+{    return json_value(js, key) != NULL;
 }
 
 /* ------------------------------------------------------------------ */
@@ -338,7 +360,15 @@ static int cmd_encode(const char *case_path, const char *out_path)
     uint8_t *px = (uint8_t *)malloc((size_t)width * height * 4);
     if (!px) return 2;
     int audio_ch = p.audio_channels;
+    int ad_frames[16], ad_quality[16];
+    int n_adaptive = json_adaptive(js, ad_frames, ad_quality, 16);
     for (int n = 0; n < frames; n++) {
+        for (int i = 0; i < n_adaptive; i++)
+            if (ad_frames[i] == n && qov_set_quality(e, ad_quality[i]) != QOV_OK) {
+                fprintf(stderr, "qov_cli ERROR: qov_set_quality(%d) at frame %d failed\n",
+                        ad_quality[i], n);
+                return 2;
+            }
         make_frame(px, width, height, pattern, n, has_alpha_flag);
         uint32_t ts = (uint32_t)floor(n * 1e6 / fps + 0.5);
         qov_result r = (n % kf == 0)

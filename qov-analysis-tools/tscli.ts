@@ -38,6 +38,7 @@ interface Case {
   pattern: string;             // gradient|stripes|scroll16|noise|checker
   keyframeInterval?: number;   // default 2
   audio?: { channels: number; rate: number } | null;
+  adaptive?: { frame: number; quality: number }[];  // qov_set_quality schedule
 }
 
 function makeFrame(c: Case, n: number): Uint8ClampedArray {
@@ -106,7 +107,11 @@ async function main(): Promise<void> {
     const enc = new QovEncoder(c.width, c.height, c.fps, 1, flags, colorspaceIds[c.colorspace], compression, c.quality, undefined, audio ? audio.channels : 0, audio ? audio.rate : 0);
     enc.writeHeader();
     const kf = c.keyframeInterval ?? 2;
+    const adaptive = c.adaptive ?? [];
     for (let n = 0; n < c.frames; n++) {
+      for (const step of adaptive) {
+        if (step.frame === n) enc.setQuality(step.quality);
+      }
       const frame = makeFrame(c, n);
       if (n % kf === 0) enc.encodeKeyframe(frame, Math.round((n * 1e6) / c.fps));
       else enc.encodePFrame(frame, Math.round((n * 1e6) / c.fps));

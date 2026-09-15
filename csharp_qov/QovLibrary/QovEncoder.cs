@@ -25,8 +25,10 @@ public class QovEncoder
     private readonly bool _intraDctKeyframes;
     private readonly bool _intraRefresh;
     private readonly bool _expGolob;
-    private readonly LossyParams _lossyParams;
+    private LossyParams _lossyParams;
     private readonly bool _motionEnabled;
+    private readonly int _dctQpBase;   // header dctQp: qp_delta is written relative to this
+    private int _quality;
     private readonly QoaEncoder? _qoaEncoder;
     private bool _isFinished;
 
@@ -58,6 +60,8 @@ public class QovEncoder
         _intraRefresh = (flags & QovTypes.FlagIntraRefresh) != 0;
         _expGolob = (flags & QovTypes.FlagExpGolob) != 0;
         _lossyParams = _lossyMode ? lp : default;
+        _dctQpBase = lp.DctQp;
+        _quality = quality;
         _motionEnabled = (flags & QovTypes.FlagHasMotion) != 0;
 
         _writer = new BinaryWriter(output, System.Text.Encoding.ASCII, leaveOpen: true);
@@ -146,6 +150,33 @@ public class QovEncoder
             // Better write 4 bytes of 0 explicitly to be safe about endianness of reserved bytes
             // though 0 is 0.
         }
+    }
+
+    /// <summary>
+    /// Adaptive streaming API (spec v3.6 §4.1): change the encoder quality
+    /// mid-stream. The file header keeps the start-time quality; the new
+    /// quality becomes decoder-visible through the per-block qp_delta of
+    /// subsequently coded DCT blocks. Lossy streams only (quality 1-99).
+    /// </summary>
+    public void SetQuality(int quality)
+    {
+        if (!_lossyMode) throw new InvalidOperationException("SetQuality: stream is not lossy");
+        if (quality < 1 || quality > 99) throw new ArgumentOutOfRangeException(nameof(quality), "quality outside lossy range 1-99");
+        _lossyParams = LossyParams.Derive(quality);
+        _quality = quality;
+    }
+
+    /// <summary>
+    /// Adaptive streaming API: drop the stored reference frame. The next
+    /// EncodePFrame call automatically emits a keyframe instead.
+    /// </summary>
+    public void DropReference()
+    {
+        _hasPrevFrame = false;
+        _prevYPlane = null;
+        _prevUPlane = null;
+        _prevVPlane = null;
+        _prevAPlane = null;
     }
 
     public void EncodeKeyframe(ReadOnlySpan<byte> pixels, uint timestamp)
@@ -1044,13 +1075,15 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
     // Quantize + write the op/delta/DC/AC stream (spec 3.4.2), then reconstruct
     // the dequantized block into blockBuf (IDCT result overwrites the residuals).
     // Shared by the inter, intra-keyframe and refresh-band block coders.
-    private static void WriteDctBlock(float[] blockBuf, int[] quant, byte opType, double scale, BinaryWriter writer, bool eg = false)
+    private static void WriteDctBlock(float[] blockBuf, int[] quant, byte opType, double scale, BinaryWriter writer, bool eg = false, int qpDelta = 0)
     {
         float[] coeffs = new float[64];
         Dct.ForwardDct(blockBuf, coeffs);
 
         writer.Write(opType);
-        writer.Write((byte)0x40); // qp delta 0
+        // qp delta (spec 3.4.2): bias-64 delta from the header base QP; zero
+        // unless SetQuality moved the working dctQp mid-stream
+        writer.Write((byte)(0x40 + qpDelta));
 
         if (eg)
         {
@@ -1138,8 +1171,9 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
 
     private void EncodeIntraPlaneDct(byte[] plane, int width, int height, int[] quant, byte opType, BinaryWriter writer, bool eg = false)
     {
-        int qpBase = _header.DctQpBase;
-        double scale = 1.0 / (0.1 + qpBase * 0.1);
+        // quantize at the CURRENT dctQp (SetQuality may have moved it);
+        // _header.DctQpBase only feeds the per-block qp_delta
+        double scale = 1.0 / (0.1 + _lossyParams.DctQp * 0.1);
         int blocksX = (width + 7) / 8;
         int blocksY = (height + 7) / 8;
         int skipCount = 0;
@@ -1167,7 +1201,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                     }
                 }
 
-                if (diffSum < 32 + qpBase * 8)
+                if (diffSum < 32 + _lossyParams.DctQp * 8)
                 {
                     for (int y = 0; y < 8; y++)
                     {
@@ -1190,7 +1224,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                     skipCount -= count;
                 }
 
-                WriteDctBlock(blockBuf, quant, opType, scale, writer, eg);
+                WriteDctBlock(blockBuf, quant, opType, scale, writer, eg, _lossyParams.DctQp - _dctQpBase);
                 for (int y = 0; y < 8; y++)
                 {
                     if (y0 + y >= height) break;
@@ -1237,9 +1271,9 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
 
     private void EncodePlaneDct(ReadOnlySpan<byte> curr, ReadOnlySpan<byte> prev, Span<byte> next, int width, int height, int[] quant, byte opType, float[] blockBuf, BinaryWriter writer, int bandR0 = -1, int bandR1 = -1, bool eg = false)
     {
-        int qpBase = _header.DctQpBase;
-        // TS uses double math here (1.0 / (0.1 + qp * 0.1)); float breaks bit-exactness
-        double scale = 1.0 / (0.1 + qpBase * 0.1);
+        // TS uses double math here (1.0 / (0.1 + qp * 0.1)); float breaks bit-exactness.
+        // Quantize at the CURRENT dctQp (SetQuality may have moved it mid-stream).
+        double scale = 1.0 / (0.1 + _lossyParams.DctQp * 0.1);
         int blocksX = (width + 7) / 8;
         int blocksY = (height + 7) / 8;
         int skipCount = 0;
@@ -1273,7 +1307,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                         }
                     }
 
-                    if (bandDiff < 32 + qpBase * 8)
+                    if (bandDiff < 32 + _lossyParams.DctQp * 8)
                     {
                         // prediction-only block inside the band
                         for (int y = 0; y < 8; y++)
@@ -1299,7 +1333,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                         skipCount -= count;
                     }
 
-                    WriteDctBlock(blockBuf, quant, opType, scale, writer, eg);
+                    WriteDctBlock(blockBuf, quant, opType, scale, writer, eg, _lossyParams.DctQp - _dctQpBase);
                     for (int y = 0; y < 8; y++)
                     {
                         int py = y0 + y;
@@ -1338,7 +1372,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
 
                 // 2. Threshold check (scales with QP so low-quality streams
                 // skip more aggressively)
-                if (diffSum < 32 + qpBase * 8) hasContent = false;
+                if (diffSum < 32 + _lossyParams.DctQp * 8) hasContent = false;
                 else hasContent = true;
 
                 if (!hasContent)
@@ -1370,7 +1404,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                 }
 
                 // 3-5. DCT transform, quantize + write, reconstruct (spec 3.4.2)
-                WriteDctBlock(blockBuf, quant, opType, scale, writer, eg); 
+                WriteDctBlock(blockBuf, quant, opType, scale, writer, eg, _lossyParams.DctQp - _dctQpBase); 
                 
                 // Add to prev and store in next
                 for (int y = 0; y < 8; y++)

@@ -181,6 +181,20 @@ qov_encoder *qov_encode_start(const qov_encode_params *params);
 qov_result qov_encode_keyframe(qov_encoder *e, const uint8_t *rgba, uint64_t timestamp_us);
 /* Encodes one full frame as a P-frame, predicted from the previous frame. */
 qov_result qov_encode_pframe(qov_encoder *e, const uint8_t *rgba, uint64_t timestamp_us);
+/* Adaptive streaming API: changes the encoder quality mid-stream (spec v3.6
+   §4.1). The file header keeps the START-time quality; the new quality becomes
+   decoder-visible through the per-block qp_delta of subsequently coded DCT
+   blocks (simple-mode pixel quantization and temporal_thresh are encoder-side
+   only). Only the standard §6.2 quality derivation is supported; custom
+   per-stream quant tables are unaffected by this API. quality must stay in
+   the lossy range 1-99 — the lossy/lossless mode is fixed by the file header.
+   Subsequent encoded blocks carry qp_delta = dct_qp - header dct_qp. */
+qov_result qov_set_quality(qov_encoder *e, int quality);
+/* Adaptive streaming API: drops the stored reference frame (previous frame /
+   planes). The next qov_encode_pframe automatically emits a keyframe instead.
+   Use when a receiver reports unrecoverable loss, or before resuming after a
+   pause, so stale prediction never leaks into the new stream state. */
+qov_result qov_drop_reference(qov_encoder *e);
 /* Encodes one AUDIO chunk: total_samples interleaved s16 samples become a
    single QOA frame (mirrors src/qov-encoder.ts encodeAudio: never LZ4
    compressed). Requires audio_channels/audio_rate in the encode params. */
@@ -2287,6 +2301,7 @@ struct qov_encoder {
     int has_prev_frame;
     int is_yuv, has_alpha, lossy, use_dct;
     int y_quant, uv_quant, temporal_thresh, dct_qp;
+    uint8_t dct_qp_base; /* header dct_qp: qp_delta is written relative to this */
     qov__kf_t *keyframes;
     size_t n_keyframes, key_cap;
     qov__qoa_lms qoa_lms[8];
@@ -2355,6 +2370,7 @@ qov_encoder *qov_encode_start(const qov_encode_params *params)
         e->uv_quant = (uint8_t)qov_clampi(2 + (100 - q) / 4, 1, 64);
         e->temporal_thresh = (uint8_t)qov_clampi((100 - q) / 12, 0, 32);
         e->dct_qp = (uint8_t)qov_clampi(51 - q * 51 / 100, 0, 51);
+        e->dct_qp_base = (uint8_t)e->dct_qp;
     }
 
     e->prev_frame = qov__u8malloc((size_t)e->p.width * e->p.height * 4);
@@ -2722,7 +2738,11 @@ static void qov__enc_dct_emit(qov_encoder *e, const float *res, const int *quant
     qov_forward_dct(res, coeffs);
     qov__buf_u8(&e->fb, op);
     e->stats.blocks_coded++;
-    qov__buf_u8(&e->fb, 0x40);
+    /* qp_delta (spec 3.4.2): 0x40 = bias-64 zero delta; mid-stream quality
+       changes (qov_set_quality) shift e->dct_qp, and the decoder recomputes
+       absolute qp as header dct_qp + delta. Range: delta in [-51,51] fits
+       the 7-bit biased field for any quality pair. */
+    qov__buf_u8(&e->fb, (uint8_t)(0x40 + (int)e->dct_qp - (int)e->dct_qp_base));
     int qv[64];
     qv[0] = qov_round((double)coeffs[0] * scale / quant[0]);
     for (int k = 1; k < 64; k++) {
@@ -3143,6 +3163,33 @@ qov_result qov_encode_pframe(qov_encoder *e, const uint8_t *rgba, uint64_t times
     e->frame_count++;
     if (e->is_yuv) qov__enc_yuv_pframe(e, rgba, ts);
     else qov__enc_rgb_pframe(e, rgba, ts);
+    return QOV_OK;
+}
+
+qov_result qov_set_quality(qov_encoder *e, int quality)
+{
+    if (!e || !e->lossy) return QOV_ERR_PARAM; /* lossy/lossless mode is fixed by the header */
+    if (quality < 1 || quality > 99) return QOV_ERR_PARAM;
+    int q = qov_clampi(quality, 0, 100);
+    e->y_quant = (uint8_t)qov_clampi(1 + (100 - q) / 8, 1, 64);
+    e->uv_quant = (uint8_t)qov_clampi(2 + (100 - q) / 4, 1, 64);
+    e->temporal_thresh = (uint8_t)qov_clampi((100 - q) / 12, 0, 32);
+    e->dct_qp = (uint8_t)qov_clampi(51 - q * 51 / 100, 0, 51);
+    e->p.quality = (uint8_t)q;
+    return QOV_OK;
+}
+
+qov_result qov_drop_reference(qov_encoder *e)
+{
+    if (!e) return QOV_ERR_PARAM;
+    e->has_prev_frame = 0; /* next qov_encode_pframe emits a keyframe */
+    size_t y_size = (size_t)e->p.width * e->p.height;
+    size_t uv_size = (size_t)qov_chroma_w(e->p.colorspace, e->p.width) * qov_chroma_h(e->p.colorspace, e->p.height);
+    if (e->prev_frame) memset(e->prev_frame, 0, y_size * 4);
+    if (e->prev_y) memset(e->prev_y, 0, y_size);
+    if (e->prev_u) memset(e->prev_u, 0, uv_size);
+    if (e->prev_v) memset(e->prev_v, 0, uv_size);
+    if (e->prev_a) memset(e->prev_a, 0, y_size);
     return QOV_OK;
 }
 

@@ -175,6 +175,8 @@ export class QovEncoder {
   // Lossy mode parameters
   private lossyMode = false;
   private quality = 0;
+  /** header dctQp: the per-block qp_delta is written relative to this */
+  private dctQpBase = 0;
   private lossyParams: LossyParams | null = null;
 
   private motionEnabled = false;
@@ -203,6 +205,7 @@ export class QovEncoder {
 
     // If lossy mode, derive or use custom parameters and set flag
     this.lossyParams = customParams ?? deriveLossyParams(this.quality);
+    this.dctQpBase = this.lossyParams.dctQp;
     // Enable DCT only if lossy
     if (this.lossyMode) {
       flags |= QOV_FLAG_LOSSY_MODE;
@@ -743,7 +746,9 @@ export class QovEncoder {
     forwardDCT(blockBuf, coeffs);
 
     this.writeU8(opType);
-    this.writeU8(0x40); // qp delta 0
+    // qp delta (spec 3.4.2): bias-64 delta from the header base QP; zero
+    // unless qov_set_quality moved the working dctQp mid-stream
+    this.writeU8(0x40 + (this.lossyParams!.dctQp - this.dctQpBase));
 
     if (eg) {
       // Exp-Golomb coefficient section (spec 3.4.5)
@@ -1219,6 +1224,35 @@ export class QovEncoder {
     }
 
     this.prevFrame = new Uint8ClampedArray(pixels);
+  }
+
+  /**
+   * Adaptive streaming API (spec v3.6 §4.1): change the encoder quality
+   * mid-stream. The file header keeps the start-time quality; the new quality
+   * becomes decoder-visible through the per-block qp_delta of subsequently
+   * coded DCT blocks. Lossy streams only (quality 1-99); switches to the
+   * standard §6.2 quality derivation.
+   */
+  setQuality(quality: number): void {
+    if (!this.lossyMode) throw new Error('setQuality: stream is not lossy');
+    if (!Number.isInteger(quality) || quality < 1 || quality > 99) {
+      throw new Error(`setQuality: quality ${quality} outside lossy range 1-99`);
+    }
+    this.lossyParams = deriveLossyParams(quality);
+    this.quality = quality;
+  }
+
+  /**
+   * Adaptive streaming API: drop the stored reference frame. The next
+   * encodePFrame call automatically emits a keyframe instead. Use when a
+   * receiver reports unrecoverable loss or before resuming after a pause.
+   */
+  dropReference(): void {
+    this.prevFrame = null;
+    this.prevYPlane = null;
+    this.prevUPlane = null;
+    this.prevVPlane = null;
+    this.prevAPlane = null;
   }
 
   encodeKeyframe(pixels: Uint8ClampedArray, timestamp: number): void {

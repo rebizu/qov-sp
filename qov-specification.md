@@ -428,6 +428,21 @@ toward zero). This table is informational.
 
 If header bytes 24-27 are zero, the decoder derives these parameters from the `quality` byte (byte 23) using §6.2.
 
+**Mid-stream quality changes (adaptive streaming, v3.6):** encoders MAY change
+the working quality at any frame boundary. The header always describes the
+**start-time** quality; a change becomes decoder-visible only through the
+bitstream itself:
+- DCT blocks (§3.4.2): each coded block's `qp_delta` is the bias-64 delta of
+  the block's absolute QP from the header base QP, so a quality change is
+  carried in subsequently coded blocks (`delta` stays within the 7-bit field
+  for any quality pair, since both QPs lie in 0-51).
+- Simple-mode pixel quantization (§4.2): quantized pixel/plane values are
+  stored directly, so no decoder signal is required.
+- `temporal_thresh` is encoder-side only (P-frame skip decisions).
+The lossy/lossless mode is fixed by the file header and MUST NOT change
+mid-stream. Decoders that ignore `qp_delta` keep decoding older streams
+unchanged, since encoders written to v3.2-v3.5 always emit delta 0.
+
 ### 4.2 Pixel Quantization (Simple Mode)
 Pixels are converted to YUV internally, quantized, and converted back to RGB (or left as YUV planes) before standard QOV encoding.
 
@@ -595,6 +610,12 @@ This specification is placed in the public domain.
 ## Changelog
 
 ### 3.6 (September 2026)
+- §4.1: mid-stream quality changes (adaptive streaming). Encoders may change
+  quality at frame boundaries; the header keeps the start-time quality and
+  the change rides the bitstream via per-block qp_delta (DCT) and stored
+  quantized values (simple mode). Encoder API: `qov_set_quality`,
+  `qov_drop_reference` (drop stored reference; next P-frame becomes a
+  keyframe). Lossy/lossless mode is fixed by the header.
 - §5.2: half-pel motion refinement. `block_size_id = 3` selects 16x16 blocks
   with signed half-pel-unit vectors (`u = 2*mv_x + h_x`, range ±127, so the
   integer component spans −64..+63). Compensation with `h = 1` bilinearly
