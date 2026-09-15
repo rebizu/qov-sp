@@ -1,7 +1,7 @@
-// Reference implementation of the RETIRED QOV-S v1.0 draft (TCP control +
-// raw UDP media, 16-byte packet header). Superseded by QOV-S v2.0
-// (WebTransport primary / WebSocket fallback, 20-byte header with seq) —
-// kept until the v2.0 transport workstream lands. Do not extend.
+// QOV-S v2.0 "Classic" binding reference (qov-streaming-spec.md section 1.2):
+// TCP control channel + raw UDP media in datagram mode. Packetization follows
+// v2.0 section 3 (20-byte header with version + seq). Session subset:
+// PLAY/PAUSE/KEYFRAME/PING/PONG/BYE; HELLO/CONFIG/REPORT/NACK pending.
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;
@@ -14,31 +14,37 @@ public enum QovPacketType : byte
 {
     Video = 0x00,
     Audio = 0x01,
+    Fec = 0x02,
     KeepAlive = 0xF0
 }
 
+// v2.0 packet header (spec section 3): magic(4) version(1) packet_type(1)
+// seq(4) frame_id(4) fragment_id(2) fragment_count(2) payload_size(2)
 public readonly struct QovPacketHeader
 {
     public const uint MagicValue = 0x514F5650; // "QOVP"
-    public const int Size = 16;
+    public const byte VersionValue = 0x02;
+    public const int Size = 20;
 
     public uint Magic { get; init; }
+    public byte Version { get; init; }
+    public QovPacketType PacketType { get; init; }
+    public uint Seq { get; init; }
     public uint FrameId { get; init; }
     public ushort FragmentId { get; init; }
     public ushort FragmentCount { get; init; }
     public ushort PayloadSize { get; init; }
-    public QovPacketType PacketType { get; init; }
-    public byte Reserved { get; init; }
 
     public void WriteTo(Span<byte> buffer)
     {
         BinaryPrimitives.WriteUInt32BigEndian(buffer[0..4], Magic);
-        BinaryPrimitives.WriteUInt32BigEndian(buffer[4..8], FrameId);
-        BinaryPrimitives.WriteUInt16BigEndian(buffer[8..10], FragmentId);
-        BinaryPrimitives.WriteUInt16BigEndian(buffer[10..12], FragmentCount);
-        BinaryPrimitives.WriteUInt16BigEndian(buffer[12..14], PayloadSize);
-        buffer[14] = (byte)PacketType;
-        buffer[15] = Reserved;
+        buffer[4] = Version;
+        buffer[5] = (byte)PacketType;
+        BinaryPrimitives.WriteUInt32BigEndian(buffer[6..10], Seq);
+        BinaryPrimitives.WriteUInt32BigEndian(buffer[10..14], FrameId);
+        BinaryPrimitives.WriteUInt16BigEndian(buffer[14..16], FragmentId);
+        BinaryPrimitives.WriteUInt16BigEndian(buffer[16..18], FragmentCount);
+        BinaryPrimitives.WriteUInt16BigEndian(buffer[18..20], PayloadSize);
     }
 
     public static QovPacketHeader Parse(ReadOnlySpan<byte> buffer)
@@ -47,16 +53,19 @@ public readonly struct QovPacketHeader
 
         uint magic = BinaryPrimitives.ReadUInt32BigEndian(buffer[0..4]);
         if (magic != MagicValue) throw new InvalidDataException("Invalid Magic Bytes");
+        byte version = buffer[4];
+        if (version != VersionValue) throw new InvalidDataException($"Unsupported QOV-S packet version {version}");
 
         return new QovPacketHeader
         {
             Magic = magic,
-            FrameId = BinaryPrimitives.ReadUInt32BigEndian(buffer[4..8]),
-            FragmentId = BinaryPrimitives.ReadUInt16BigEndian(buffer[8..10]),
-            FragmentCount = BinaryPrimitives.ReadUInt16BigEndian(buffer[10..12]),
-            PayloadSize = BinaryPrimitives.ReadUInt16BigEndian(buffer[12..14]),
-            PacketType = (QovPacketType)buffer[14],
-            Reserved = buffer[15]
+            Version = version,
+            PacketType = (QovPacketType)buffer[5],
+            Seq = BinaryPrimitives.ReadUInt32BigEndian(buffer[6..10]),
+            FrameId = BinaryPrimitives.ReadUInt32BigEndian(buffer[10..14]),
+            FragmentId = BinaryPrimitives.ReadUInt16BigEndian(buffer[14..16]),
+            FragmentCount = BinaryPrimitives.ReadUInt16BigEndian(buffer[16..18]),
+            PayloadSize = BinaryPrimitives.ReadUInt16BigEndian(buffer[18..20])
         };
     }
 }
@@ -70,8 +79,9 @@ public class QovStreamServer : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private uint _currentFrameId = 0;
     
-    // Config
-    private const int MaxUdpPayload = 1400;
+    // Config: v2.0 datagram-mode cap = 1200-byte packets (spec section 3)
+    private const int MaxUdpPayload = 1180;
+    private uint _seq = 0;
 
     public event Action<string>? OnLog;
     public event Action? OnPlay;
@@ -163,6 +173,8 @@ public class QovStreamServer : IDisposable
             var header = new QovPacketHeader
             {
                 Magic = QovPacketHeader.MagicValue,
+                Version = QovPacketHeader.VersionValue,
+                Seq = (uint)Interlocked.Increment(ref _seq),
                 FrameId = frameId,
                 FragmentId = i,
                 FragmentCount = (ushort)fragmentCount,

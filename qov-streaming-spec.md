@@ -2,51 +2,75 @@
 
 **Version:** 2.0
 **Date:** September 2026
-**Transports:** WebTransport (HTTP/3, QUIC datagrams) primary; WebSocket fallback
-**Supersedes:** QOV-S v1.0 (Draft, February 2026 — hybrid TCP control + UDP data)
+**Model:** carrier-agnostic — QOV-S is defined against two abstract channels
+(a reliable control stream and a media path), so it runs over any protocol
+stack that can provide them.
+**Supersedes:** QOV-S v1.0 (Draft, February 2026) — session, packetization,
+and loss machinery are upgraded in place; the classic TCP+UDP binding
+continues unchanged as one supported carrier.
 
 ---
 
 ## 1. Overview
 
 QOV-S transports QOV video (and QOA audio) chunks over a network with
-interactive latency (target < 250 ms glass-to-glass). Version 2.0 replaces the
-v1.0 split transport (TCP control + raw UDP media) with a single connection:
+interactive latency (target < 250 ms glass-to-glass). The protocol is split
+into a **carrier-independent core** (this document's §2–§6: session,
+packetization, chunk semantics, loss machinery, adaptation) and **carrier
+bindings** (§7) that map the core onto a concrete protocol stack. New
+carriers need no changes to the core.
 
-* **Primary: WebTransport** over HTTP/3. Media packets ride QUIC **unreliable
-  datagrams** (no head-of-line blocking, no retransmission delay); session
-  control rides a QUIC **stream** (reliable, ordered).
-* **Fallback: WebSocket.** When WebTransport is unavailable (corporate
-  proxies, old browsers), the identical session runs over one WebSocket:
-  control messages and length-prefixed packets share the byte stream.
-  Reliability is delegated to TCP — NACK/FEC logic is simply idle. No other
-  difference; the packetization (§3) and session state machine (§2) are
-  byte-identical.
+### 1.1 Carrier Requirements
 
-Rationale for the change from v1.0: two sockets doubled the handshake and
-NAT/state surface, TCP control could head-of-line-block behind nothing while
-UDP flooded, and QUIC gives per-packet loss signals (§5) for free.
+A carrier MUST provide:
+
+1. **Control channel** — a reliable, ordered byte stream between the
+   endpoints. (TCP, a QUIC stream, a WebSocket, a pipe, a serial line: any
+   byte stream works.)
+2. **Media channel** — one of:
+   - **datagram mode**: unordered, unreliable datagrams with a known maximum
+     payload (UDP, QUIC datagrams, DTLS, …). Full loss machinery (§5) is
+     active; or
+   - **stream mode**: the same reliable byte stream as the control channel.
+     Loss machinery is idle; reliability is delegated to the carrier.
+
+A binding additionally defines: how the two channels are established and
+authenticated, and — in datagram mode — how the receiver's media address is
+bound to the session (connect out, or learn from the first packet).
+
+### 1.2 Known Bindings (informative)
+
+| Binding | Media mode | Control runs over | Notes |
+| :--- | :--- | :--- | :--- |
+| **Classic** (reference: `csharp_qov/QovStreaming.cs`) | UDP datagrams | TCP | Native-to-native deployments; sockets are the natural API; protect with VPN/tunnel or DTLS (§7) |
+| **WebSocket** | stream mode (`wss`) | same WebSocket | Proxy- and browser-friendly; loss machinery idle |
+| **WebTransport** | QUIC datagrams | QUIC stream | Browser-grade HTTP/3 infrastructure; per-packet loss signals without head-of-line blocking |
+
+Any other stack that satisfies §1.1 (raw QUIC, SCTP, Unix sockets for local
+IPC, an in-process queue for tests) is a valid carrier.
 
 ## 2. Session
 
 ### 2.1 Connection Flow
 
-1. Client connects (WebTransport URL `https://host/qovs`, or
-   `wss://host/qovs`).
-2. Client sends `HELLO` (auth token, protocol version).
-3. Server validates and replies with `CONFIG` carrying the **QOV file header**
-   (24/32 bytes, spec v3.6 §1) — the receiver initializes its decoder from it.
+1. Establish the control channel per the binding; client sends `HELLO`
+   (auth token, protocol version).
+2. Server validates and replies with `CONFIG` followed by the **QOV file
+   header** (24/32 bytes, spec v3.6 §1) — the receiver initializes its
+   decoder from it.
+3. In datagram mode, the binding's media-address handshake completes (client
+   connects its UDP flow, or sends one empty probe packet the server learns).
 4. `PLAY` / media flows / `PAUSE` / `BYE`.
 
 ### 2.2 Control Messages
 
-Text lines (UTF-8, `\n`-terminated) on the reliable channel. `k=v` arguments
+Text lines (UTF-8, `\n`-terminated) on the control channel. `k=v` arguments
 after the verb.
 
 | Message | Dir | Description |
 | :--- | :--- | :--- |
 | `HELLO token=T v=2` | C→S | Auth + protocol version. Server closes on mismatch. |
-| `CONFIG` | S→C | Followed by the raw QOV file header bytes on the stream. |
+| `CONFIG` | S→C | Followed by the raw QOV file header bytes. |
 | `PLAY` / `PAUSE` | C→S | Start/stop media flow. |
 | `KEYFRAME` | C→S | Request immediate keyframe (rate-limited: server MUST cap at 1/s). |
 | `REPORT loss=P rtt=US buf=MS since=SEQ` | C→S | Receiver report, every 500 ms (§6). |
@@ -56,7 +80,7 @@ after the verb.
 
 ## 3. Packetization
 
-One page, one header, both transports.
+One page, one header, every carrier.
 
 ```
 Offset  Size  Name            Description
@@ -73,21 +97,24 @@ Offset  Size  Name            Description
 20      N     payload         Fragment of the QOV chunk
 ```
 
-All integers big-endian. **Every packet (header + payload) MUST be ≤ 1200
-bytes** — safe inside QUIC datagrams without IP fragmentation on any common
-link. (v1.0's 16-byte header is retired; the 16-byte layout cannot carry
-`seq`, which the loss machinery in §5 requires.)
+All integers big-endian. In **datagram mode** every packet (header + payload)
+MUST be ≤ 1200 bytes and fragment payloads ≤ 1180 — safe inside UDP and QUIC
+datagrams on any common link. In **stream mode** senders SHOULD keep the same
+fragmentation (one code path everywhere); a stream carrier MAY use larger
+packets (the field allows 65535), and receivers MUST accept any declared
+`payload_size` regardless of carrier. (v1.0's 16-byte header is retired; it
+cannot carry `seq`, which §5 requires.)
 
 **Sender:** split each QOV chunk (video keyframe/P-frame, or audio QOA frame)
-into `ceil(len / 1180)` fragments; emit one datagram per fragment with a
+into `ceil(len / frag_size)` fragments; emit one packet per fragment with a
 shared `frame_id`, incrementing `seq` across all packets. Fragments are sent
 in order; the last one may be short. Audio frames typically fit one packet.
 
 **Receiver:** buffer by `frame_id`; a frame is decodable when all
 `fragment_count` fragments have arrived; assemble by `fragment_id` order
-(concatenate payloads). A frame whose fragments do not arrive within its
-playback slot (one frame interval, hard cap 100 ms later) is **dropped** —
-never decoded partially (§6).
+(concatenate payloads). In datagram mode, a frame whose fragments do not
+arrive within its playback slot (one frame interval, hard cap 100 ms later)
+is **dropped** — never decoded partially (§6).
 
 ## 4. Chunk Semantics
 
@@ -100,7 +127,7 @@ never decoded partially (§6).
 * Audio chunks are independent; loss only gaps audio (receivers fill silence
   or stretch the previous QOA frame).
 
-## 5. Loss Recovery (WebTransport/datagram path only)
+## 5. Loss Recovery (datagram mode only)
 
 ### 5.1 NACK
 
@@ -111,7 +138,7 @@ already dropped receiver-side).
 
 ### 5.2 XOR FEC
 
-Senders MAY add parity datagrams over groups of consecutive media packets of
+Senders MAY add parity packets over groups of consecutive media packets of
 the **same frame**: group sizes 4 (light, `1:4`) or 3 (aggressive, `1:3`),
 one XOR parity packet per group. Parity packets use `packet_type = 0x02`, the
 group's first `seq` in the `seq` field, and payload = XOR of the group's
@@ -129,9 +156,9 @@ displaying the last good frame and waits. Recovery order:
    scratch state; resume display when the rolling band has repainted the
    affected rows (at most one GOP segment).
 2. Otherwise send `KEYFRAME` (≤ 1/s).
-3. On a stream stall > 1 s: send `BYE`-and-reconnect semantics — the sender
-   MUST `qov_drop_reference()` and open with a keyframe, so stale prediction
-   never leaks into the new state.
+3. On a stream stall > 1 s: reconnect semantics — the sender MUST
+   `qov_drop_reference()` and open with a keyframe, so stale prediction never
+   leaks into the new state.
 
 **Receiver report** (`REPORT`, every 500 ms): packet loss %, RTT (from
 PING/PONG), playout buffer depth, and the highest contiguous `seq`.
@@ -149,22 +176,34 @@ Adaptation is **by subtraction**: never add machinery (B-frames, larger
 motion search, second passes) mid-call; only remove work (frames, coefficients,
 references).
 
-## 7. Security
+## 7. Carrier Bindings & Security
 
-* WebTransport requires TLS 1.3 + a valid origin certificate; the `HELLO`
-  token is an application-scoped capability (short-lived, single-use).
+A binding is a short document (or code) answering three questions: how the
+control channel is established, how the media channel is established and
+address-bound (datagram mode), and how `HELLO` authenticates.
+
+* **Classic (TCP + UDP):** control on a TCP stream (default port 8880); media
+  datagrams from the client's UDP socket to the server's media port (default
+  8881); the server binds the session to the first datagram source address.
+  No TLS in the binding itself — protect with a VPN/tunnel, add DTLS as a
+  future binding, or run inside a trusted network. `HELLO` token authenticates.
+* **WebSocket:** everything over one `wss://` stream (stream mode). TLS via
+  the carrier.
+* **WebTransport:** `https://…/qovs`; media on QUIC datagrams, control on a
+  bidirectional stream. TLS 1.3 required by the carrier.
 * Servers MUST rate-limit `KEYFRAME` (≤ 1/s) and drop clients exceeding it.
-* Datagrams are authenticated by QUIC; no additional CRC. WebSocket fallback
-  inherits TLS via `wss://`.
 
 ## 8. Changes from v1.0
 
-* Transports: TCP+UDP hybrid → WebTransport primary, WebSocket fallback.
+* **Carrier-agnostic core**: the session and packetization are defined
+  against two abstract channels (§1.1); TCP+UDP, WebSocket, and
+  WebTransport are bindings, and others can be added without touching the
+  core. The v1.0 architecture continues as the Classic binding.
 * Packet header: 16 → 20 bytes; added `version` and monotonic `seq`
   (required for NACK/FEC and the receiver report). `reserved` byte removed.
-* Fragment target size 1400 → 1180 bytes (1200-byte packet cap).
-* Control: text protocol kept on the reliable channel; added
-  `HELLO`/`CONFIG`/`REPORT`/`NACK`; `KEYFRAME` is now rate-limited and the
-  recovery path of last resort (refresh bands first).
+* Fragment target 1400 → 1180 bytes (1200-byte packet cap in datagram mode).
+* Control: text protocol kept; added `HELLO`/`CONFIG`/`REPORT`/`NACK`;
+  `KEYFRAME` is rate-limited and the recovery path of last resort (refresh
+  bands first).
 * Added the adaptation ladder binding receiver reports to
   `qov_set_quality` / `qov_drop_reference` (spec v3.6 §4.1).
