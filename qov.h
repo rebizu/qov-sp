@@ -82,6 +82,13 @@ enum { QOV_F_HAS_ALPHA = 0x01, QOV_F_HAS_MOTION = 0x02, QOV_F_HAS_INDEX = 0x04,
    P-frames (~400 ms at 30 fps); one band is intra-coded per P-frame */
 #define QOV_REFRESH_BANDS 12
 
+/* AUDIO chunk flags (spec section 5.3): flags != 0 selects an alternate
+ * codec; decoders skip chunks whose codec they do not implement. */
+#define QOV_CHUNK_AUDIO_FLAG_OPUS 0x01  /* payload is one Opus packet (48 kHz) */
+
+/* Recommended speech capture mode (spec section 5.3): 16 kHz mono QOA. */
+#define QOV_AUDIO_RATE_SPEECH 16000
+
 typedef struct {
     uint8_t version;        /* 1, 2 or 3 */
     uint8_t flags;
@@ -200,6 +207,9 @@ qov_result qov_drop_reference(qov_encoder *e);
    compressed). Requires audio_channels/audio_rate in the encode params. */
 qov_result qov_encode_audio(qov_encoder *e, const int16_t *samples,
                             size_t total_samples, uint64_t timestamp_us);
+/* Alternate-codec passthrough (spec section 5.3): one Opus packet per chunk. */
+qov_result qov_encode_audio_opus(qov_encoder *e, const uint8_t *packet,
+                                 size_t len, uint64_t timestamp_us);
 /* Takes the chunk bytes encoded so far (everything after the file header)
    out of the internal buffer, so an incremental consumer can stream them.
    The encoder keeps running; qov_encode_finish still writes the index and
@@ -2018,6 +2028,11 @@ static qov_result qov__dec_feed(qov_decoder *dec, uint8_t ctype, uint8_t cflags,
     }
 
     if (ctype == 0x10) {
+        if (cflags != 0) {
+            /* alternate codec (spec section 5.3): skip gracefully */
+            qov__free(decomp);
+            return QOV_OK;
+        }
         /* AUDIO: one or more QOA frames back to back (mirrors src/qoa.ts:
            LMS state reloads from each frame header) */
         size_t pos = 0;
@@ -3193,6 +3208,10 @@ qov_result qov_drop_reference(qov_encoder *e)
     return QOV_OK;
 }
 
+/* Alternate-codec passthrough (spec section 5.3): one Opus packet per chunk. */
+qov_result qov_encode_audio_opus(qov_encoder *e, const uint8_t *packet,
+                                 size_t len, uint64_t timestamp_us);
+
 qov_result qov_encode_audio(qov_encoder *e, const int16_t *samples,
                             size_t total_samples, uint64_t timestamp_us)
 {
@@ -3215,6 +3234,21 @@ qov_result qov_encode_audio(qov_encoder *e, const int16_t *samples,
     qov__buf_be32(&e->out, (uint32_t)frame_len);
     qov__buf_be32(&e->out, ts);
     qov__buf_bytes(&e->out, buf, frame_len);
+    return QOV_OK;
+}
+
+/* Alternate-codec passthrough (spec section 5.3): payload is one Opus
+ * packet. No QOA state involved; usable even when the header has no audio. */
+qov_result qov_encode_audio_opus(qov_encoder *e, const uint8_t *packet,
+                                 size_t len, uint64_t timestamp_us)
+{
+    if (!e || !packet || len == 0 || len > 0xffffff) return QOV_ERR_PARAM;
+    uint32_t ts = (uint32_t)timestamp_us;
+    qov__buf_u8(&e->out, 0x10);
+    qov__buf_u8(&e->out, QOV_CHUNK_AUDIO_FLAG_OPUS);
+    qov__buf_be32(&e->out, (uint32_t)len);
+    qov__buf_be32(&e->out, ts);
+    qov__buf_bytes(&e->out, packet, len);
     return QOV_OK;
 }
 

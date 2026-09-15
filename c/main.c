@@ -378,7 +378,20 @@ static int cmd_encode(const char *case_path, const char *out_path)
             fprintf(stderr, "qov_cli ERROR: encode frame %d failed (%d)\n", n, r);
             return 2;
         }
-        if (audio_ch > 0) {
+        if (audio_ch > 0 && json_bool(js, "opusAudio", 0)) {
+            /* mirrors tscli.ts opusPayload: 120 LCG bytes seeded per frame */
+            uint8_t pay[120];
+            uint32_t ls = 1000u + (uint32_t)n;
+            for (int i = 0; i < 120; i++) {
+                ls = (uint32_t)(((uint64_t)ls * 1103515245u + 12345u) & 0x7fffffffu);
+                pay[i] = (uint8_t)(ls & 0xffu);
+            }
+            r = qov_encode_audio_opus(e, pay, sizeof(pay), ts);
+            if (r != QOV_OK) {
+                fprintf(stderr, "qov_cli ERROR: encode opus %d failed (%d)\n", n, r);
+                return 2;
+            }
+        } else if (audio_ch > 0) {
             /* mirrors tscli.ts: 256 samples/channel deterministic sine */
             int16_t samples[256 * 8];
             for (int i = 0; i < 256; i++) {
@@ -458,8 +471,10 @@ static int cmd_decode(const char *path, const char *raw_dir)
        concatenated interleaved s16 PCM (little-endian, as decoded) */
     uint8_t *pcm_all = NULL;
     size_t pcm_len = 0, pcm_cap = 0;
-    int audio_chunks = (int)stats.audio_chunks;
-    if (audio_chunks > 0) {
+    /* audioFrames counts DECODED QOA frames; alternate-codec chunks
+       (AUDIO flags != 0, spec section 5.3) are skipped, not counted */
+    int audio_chunks = 0;
+    if (stats.audio_chunks > 0) {
         qov_decoder *dec = NULL;
         if (qov_decoder_new(&hdr, &dec) == QOV_OK) {
             size_t pos = hdr.header_size;
@@ -475,6 +490,7 @@ static int cmd_decode(const char *path, const char *raw_dir)
                     qov_audio aud;
                     if (qov_decoder_feed(dec, ctype, cflags, data + pos + chunk_hdr, csize, 0,
                                          NULL, &aud) == QOV_OK && aud.sample_count > 0) {
+                        audio_chunks++;
                         size_t bytes = aud.sample_count * aud.channels * 2;
                         if (pcm_len + bytes > pcm_cap) {
                             size_t ncap = pcm_cap ? pcm_cap * 2 : bytes * 4;
@@ -506,8 +522,8 @@ static int cmd_decode(const char *path, const char *raw_dir)
         sha256_hex(frames[i].rgba, (size_t)frames[i].width * frames[i].height * 4, sha);
         printf("%s\"%s\"", i ? "," : "", sha);
     }
-    printf("],\"audioFrames\":%d,\"audioPcmSha256\":", (int)stats.audio_chunks);
-    if (audio_chunks > 0) {
+    printf("],\"audioFrames\":%d,\"audioPcmSha256\":", audio_chunks);
+    if (pcm_len > 0) {
         sha256_hex(pcm_all, pcm_len, sha);
         printf("\"%s\"", sha);
     } else {

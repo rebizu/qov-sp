@@ -193,6 +193,18 @@ public class QovEncoder
         }
     }
 
+    // Alternate-codec passthrough (spec §5.3): payload is one Opus packet.
+    public void EncodeAudioOpus(ReadOnlySpan<byte> packet, uint timestamp)
+    {
+        if (_isFinished) return;
+
+        _writer.Write(QovTypes.ChunkTypeAudio);
+        _writer.Write(QovTypes.ChunkAudioFlagOpus);
+        WriteBigEndian((uint)packet.Length);
+        WriteBigEndian(timestamp);
+        _writer.Write(packet);
+    }
+
     public void EncodeAudio(ReadOnlySpan<float> samples, uint timestamp)
     {
         if (_isFinished || _qoaEncoder == null) return;

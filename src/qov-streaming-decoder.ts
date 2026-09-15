@@ -570,7 +570,8 @@ export class QovStreamingDecoder {
 
     if (this.header!.audioChannels === 0) return null;
 
-    const audioChunks = this.chunks.filter(c => c.type === QOV_CHUNK_AUDIO);
+    // flags != 0 selects an alternate codec (spec §5.3) — not decodable here
+    const audioChunks = this.chunks.filter(c => c.type === QOV_CHUNK_AUDIO && c.flags === 0);
     if (audioChunks.length === 0) return null;
 
     const qoa = new QoaDecoder();

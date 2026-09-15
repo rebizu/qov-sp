@@ -1,6 +1,6 @@
 # QOV (Quite OK Video) Format Specification
 
-**Version:** 3.6 (Unified)
+**Version:** 3.7 (Unified)
 **Date:** September 2026
 **Based on:** QOI (Quite OK Image) and QOA (Quite OK Audio)
 
@@ -524,10 +524,47 @@ Pixels are converted to YUV internally, quantized, and converted back to RGB (or
       uses motion vectors; individual P-frames still choose per chunk via
       chunk flag bit 1.
 
-### 5.3 Audio (QOA)
-- **Header**: Type `0x10`.
-- **Format**: A standard QOA frame as defined by the QOA specification.
-- **Structure**: `[frame header (8b: channels (1b), sample_rate (3b), samples_per_channel (2b), frame_size (2b), all big-endian)]` + `[LMS State (16b per channel)]` + `[Slices (8b per slice per channel, interleaved per channel)]`.
+### 5.3 Audio
+
+**Chunk layout.** Type `0x10`, followed by the ordinary chunk header
+(`flags (1b)`, `size (4b)`, `timestamp (4b)` — see §2). The payload codec is
+selected by the AUDIO flags byte (video chunk flag bits do not apply):
+
+| flags | payload |
+| :---- | :------ |
+| `0x00` | QOA (default): one or more QOA frames back to back |
+| `0x01` | Opus: exactly one Opus packet (Opus carries 48 kHz internally) |
+| other | reserved — decoders MUST skip the chunk gracefully |
+
+**QOA payload** (flags `0x00`): a standard QOA frame as defined by the QOA
+specification — `[frame header (8b: channels (1b), sample_rate (3b),
+samples_per_channel (2b), frame_size (2b), all big-endian)]` + `[LMS State
+(16b per channel)]` + `[Slices (8b per slice per channel, interleaved per
+channel)]`. AUDIO chunks are never LZ4-compressed.
+
+**Speech mode.** The header's `audio_channels`/`audio_rate` fields (§1.1)
+carry the capture format; the 3-byte rate field admits any value up to
+16,777,215 Hz. For interactive speech, encoders SHOULD capture **16 kHz
+mono** (`audio_rate = 16000`, the recommended `QOV_AUDIO_RATE_SPEECH`);
+QOA frame sizes are independent of the rate (256 samples per channel per
+frame, ≈16 ms at 16 kHz).
+
+**Alternate codecs.** The Opus flag lets an encoder inject Opus packets —
+e.g. from a platform audio encoder — without changing the container.
+Reference implementations do not decode Opus: on seeing flags `0x01` (or
+any unknown nonzero flags value) they skip the payload and continue.
+AUDIO timestamps use the same microsecond clock as video chunks.
+
+**Capture-clock semantics.** Video and audio timestamps in a QOV file (and
+on a QOV-S stream) are microseconds from a single monotonic clock sampled
+at capture time on the sending device; the format carries no separate
+audio clock. A capture thread that cannot sample both media on one clock
+SHOULD stamp audio chunks with the video clock's value at the moment the
+QOA frame is handed to the encoder (256-sample frames give ≈16 ms
+granularity at 16 kHz). Decoders resample to their playout clock: they
+must tolerate jitter of a few ms between consecutive chunk timestamps and
+SHOULD drive audio playout from the audio device clock, using timestamps
+only to align audio to the video timeline at session start.
 
 ### 5.4 Sync Marker
 - **Header**: Type `0x00`, Size 8.
@@ -608,6 +645,17 @@ This specification is placed in the public domain.
 ---
 
 ## Changelog
+
+### 3.7 (September 2026)
+- §5.3: audio chunk codec flags. The AUDIO chunk flags byte (previously
+  always 0) selects the payload codec: `0x00` QOA (default), `0x01` Opus
+  (one packet per chunk), other values reserved. Decoders MUST skip
+  chunks whose codec they do not implement. Encoder passthrough APIs:
+  `encodeAudioOpus` / `qov_encode_audio_opus` / `EncodeAudioOpus`.
+- §5.3: recommended speech capture mode, 16 kHz mono
+  (`QOV_AUDIO_RATE_SPEECH`), and capture-clock semantics: one monotonic
+  microsecond clock for video and audio; decoders resample to the
+  playout clock.
 
 ### 3.6 (September 2026)
 - §4.1: mid-stream quality changes (adaptive streaming). Encoders may change

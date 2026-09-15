@@ -1320,6 +1320,12 @@ export class QovDecoder {
           break;
 
         case QOV_CHUNK_AUDIO: {
+          // flags != 0 selects an alternate codec (spec §5.3); not
+          // implemented here — skip the chunk gracefully
+          if (chunkHeader.chunkFlags !== 0) {
+            this.pos += chunkHeader.chunkSize;
+            break;
+          }
           const audioData = this.data.subarray(this.pos, this.pos + chunkHeader.chunkSize);
           const result = this.qoaDecoder.decodeFrame(audioData);
           this.pos += chunkHeader.chunkSize;

@@ -20,6 +20,7 @@ import {
   QOV_CHUNK_KEYFRAME,
   QOV_CHUNK_PFRAME,
   QOV_CHUNK_AUDIO,
+  QOV_CHUNK_AUDIO_FLAG_OPUS,
   QOV_CHUNK_INDEX,
   QOV_CHUNK_END,
   QOV_CHUNK_FLAG_YUV,
@@ -1685,6 +1686,18 @@ export class QovEncoder {
 
   getFrameCount(): number {
     return this.frameCount;
+  }
+
+  // Alternate-codec passthrough (spec §5.3): payload is one Opus packet.
+  // No QOA state involved; usable even when the header has no audio.
+  encodeAudioOpus(packet: Uint8Array, timestamp: number): void {
+    this.buffer.writeByte(QOV_CHUNK_AUDIO);
+    this.buffer.writeByte(QOV_CHUNK_AUDIO_FLAG_OPUS);
+    this.buffer.writeU32(packet.length);
+    this.buffer.writeU32(timestamp);
+    for (let i = 0; i < packet.length; i++) {
+      this.buffer.writeByte(packet[i]);
+    }
   }
 
   encodeAudio(samples: Float32Array, timestamp: number): void {

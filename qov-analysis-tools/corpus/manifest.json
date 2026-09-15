@@ -2737,6 +2737,166 @@
      "note": "Phase 2 adaptive API: qov_set_quality mid-stream (down to 30, up to 85); decoder visibility via per-block qp_delta"
     }
    }
+  },
+  "audio_speech_yuv420_lossy": {
+   "file_sha256": "d55442a16994e56db5dbca1cf696d72f544c77b73fc1f37f7a4aa9dfef1155dd",
+   "file_size": 14114,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 230,
+    "width": 96,
+    "height": 96,
+    "totalFrames": 4,
+    "audioChannels": 1
+   },
+   "structure": {
+    "chunk_count": 12,
+    "type_counts": {
+     "SYNC": 2,
+     "KEYFRAME": 2,
+     "AUDIO": 4,
+     "PFRAME": 2,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 4,
+    "keyframes": 2,
+    "pframes": 2,
+    "motion_chunks": 2,
+    "dct_chunks": 4,
+    "compressed_chunks": 4,
+    "audio_chunks": 4,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 4,
+    "frame_sha256": [
+     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
+     "749b969cc212e6a090fa4ed3a7330e62b1cd5a177d498261a62cfcd19115f892",
+     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
+     "341586c4b5e0701d6dd18caeb015f4ce9e2dd8c1cde27c3b3ee79af7009f376d"
+    ],
+    "audio_frames": 4,
+    "audio_pcm_sha256": "c61bddb9f8eab9821e2672b13831788dd8d9128a58479b94c59d9c0016661280",
+    "audio_samples": 1024
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 4,
+    "frame_sha256": [
+     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
+     "749b969cc212e6a090fa4ed3a7330e62b1cd5a177d498261a62cfcd19115f892",
+     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
+     "341586c4b5e0701d6dd18caeb015f4ce9e2dd8c1cde27c3b3ee79af7009f376d"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "audio_speech_yuv420_lossy",
+     "width": 96,
+     "height": 96,
+     "frames": 4,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "quality": 50,
+     "pattern": "noise",
+     "flags": [
+      "index",
+      "motion",
+      "ikf"
+     ],
+     "audio": {
+      "channels": 1,
+      "rate": 16000
+     }
+    }
+   }
+  },
+  "opus_audio_yuv420_lossy": {
+   "file_sha256": "59e34b36d8045a319ec1744ce8e50631481371199afefed18a5927cb4d2ae995",
+   "file_size": 14597,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 228,
+    "width": 96,
+    "height": 96,
+    "totalFrames": 4,
+    "audioChannels": 1
+   },
+   "structure": {
+    "chunk_count": 12,
+    "type_counts": {
+     "SYNC": 2,
+     "KEYFRAME": 2,
+     "AUDIO": 4,
+     "PFRAME": 2,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 4,
+    "keyframes": 2,
+    "pframes": 2,
+    "motion_chunks": 0,
+    "dct_chunks": 4,
+    "compressed_chunks": 4,
+    "audio_chunks": 4,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 4,
+    "frame_sha256": [
+     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
+     "50f1b63374e541993287b907c8eadf0f2f71112d893abbe03fbd59c783976078",
+     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
+     "c42158860d06916e90fb277cfd2aaa8e458d9449a29ec9b3f14bbe4a942c3ac1"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 4,
+    "frame_sha256": [
+     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
+     "50f1b63374e541993287b907c8eadf0f2f71112d893abbe03fbd59c783976078",
+     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
+     "c42158860d06916e90fb277cfd2aaa8e458d9449a29ec9b3f14bbe4a942c3ac1"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "opus_audio_yuv420_lossy",
+     "width": 96,
+     "height": 96,
+     "frames": 4,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "quality": 50,
+     "pattern": "noise",
+     "flags": [
+      "index",
+      "ikf"
+     ],
+     "audio": {
+      "channels": 1,
+      "rate": 48000
+     },
+     "opusAudio": true
+    }
+   }
   }
  }
 }

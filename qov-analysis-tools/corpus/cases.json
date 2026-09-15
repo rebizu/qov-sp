@@ -1,485 +1,523 @@
 {
-  "comment": "Golden corpus case list. Each case is encoded by tscli.ts (TS codec) and frozen with a SHA-256 manifest. Defaults: flags=[index], keyframeInterval=2, compression=true, audio=null.",
-  "cases": [
+ "comment": "Golden corpus case list. Each case is encoded by tscli.ts (TS codec) and frozen with a SHA-256 manifest. Defaults: flags=[index], keyframeInterval=2, compression=true, audio=null.",
+ "cases": [
+  {
+   "id": "rgb_lossless_lz4",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "srgb",
+   "pattern": "stripes"
+  },
+  {
+   "id": "rgb_lossless_nolz4",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "srgb",
+   "pattern": "stripes",
+   "compression": false
+  },
+  {
+   "id": "srgba_lossless",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "srgba",
+   "flags": [
+    "index",
+    "alpha"
+   ],
+   "pattern": "gradient"
+  },
+  {
+   "id": "linear_lossless",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "linear",
+   "pattern": "gradient"
+  },
+  {
+   "id": "yuv420_lossless",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "pattern": "gradient"
+  },
+  {
+   "id": "yuv422_lossless",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuv422",
+   "pattern": "gradient"
+  },
+  {
+   "id": "yuv444_lossless",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuv444",
+   "pattern": "gradient"
+  },
+  {
+   "id": "yuva420_lossless",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuva420",
+   "flags": [
+    "index",
+    "alpha"
+   ],
+   "pattern": "gradient"
+  },
+  {
+   "id": "yuv420_lossy_dct_lz4",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "quality": 50,
+   "pattern": "noise",
+   "flags": [
+    "index",
+    "ikf"
+   ]
+  },
+  {
+   "id": "yuv420_lossy_dct_nolz4",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "quality": 50,
+   "compression": false,
+   "pattern": "noise"
+  },
+  {
+   "id": "yuv422_lossy_dct",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuv422",
+   "quality": 50,
+   "pattern": "noise"
+  },
+  {
+   "id": "yuv444_lossy_dct",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuv444",
+   "quality": 50,
+   "pattern": "noise"
+  },
+  {
+   "id": "yuva420_lossy_dct",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuva420",
+   "flags": [
+    "index",
+    "alpha",
+    "ikf"
+   ],
+   "quality": 50,
+   "pattern": "noise"
+  },
+  {
+   "id": "yuv420_nearlossless",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "quality": 95,
+   "pattern": "gradient"
+  },
+  {
+   "id": "rgb_lossy_quant",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "srgb",
+   "quality": 40,
+   "pattern": "noise"
+  },
+  {
+   "id": "motion_yuv420_lossless",
+   "width": 128,
+   "height": 96,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index",
+    "motion"
+   ],
+   "pattern": "scroll16"
+  },
+  {
+   "id": "motion_rgb_lossless",
+   "width": 128,
+   "height": 96,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "srgb",
+   "flags": [
+    "index",
+    "motion"
+   ],
+   "pattern": "scroll16"
+  },
+  {
+   "id": "motion_yuv420_lossy_dct",
+   "width": 128,
+   "height": 96,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index",
+    "motion",
+    "ikf"
+   ],
+   "quality": 50,
+   "pattern": "scroll16"
+  },
+  {
+   "id": "motion_static_420",
+   "width": 128,
+   "height": 96,
+   "frames": 4,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index",
+    "motion"
+   ],
+   "pattern": "gradient",
+   "expect": {
+    "motion_chunks": 0
+   }
+  },
+  {
+   "id": "index_reuse_yuv420_lossless",
+   "width": 64,
+   "height": 64,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "compression": false,
+   "pattern": "checker"
+  },
+  {
+   "id": "index_reuse_rgb_lossless",
+   "width": 64,
+   "height": 64,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "srgb",
+   "compression": false,
+   "pattern": "checker"
+  },
+  {
+   "id": "audio_srgb_lossless",
+   "width": 128,
+   "height": 96,
+   "frames": 4,
+   "fps": 30,
+   "colorspace": "srgb",
+   "pattern": "stripes",
+   "audio": {
+    "channels": 1,
+    "rate": 48000
+   }
+  },
+  {
+   "id": "audio_speech_yuv420_lossy",
+   "width": 96,
+   "height": 96,
+   "frames": 4,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "quality": 50,
+   "pattern": "noise",
+   "flags": [
+    "index",
+    "motion",
+    "ikf"
+   ],
+   "audio": {
+    "channels": 1,
+    "rate": 16000
+   }
+  },
+  {
+   "id": "opus_audio_yuv420_lossy",
+   "width": 96,
+   "height": 96,
+   "frames": 4,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "quality": 50,
+   "pattern": "noise",
+   "flags": [
+    "index",
+    "ikf"
+   ],
+   "audio": {
+    "channels": 1,
+    "rate": 48000
+   },
+   "opusAudio": true
+  },
+  {
+   "id": "intra_kf_yuv420_lossy",
+   "width": 64,
+   "height": 64,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index",
+    "ikf"
+   ],
+   "quality": 50,
+   "compression": false,
+   "pattern": "checker"
+  },
+  {
+   "id": "refresh_motion_yuv420_lossy",
+   "width": 128,
+   "height": 96,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index",
+    "motion",
+    "refresh"
+   ],
+   "quality": 50,
+   "pattern": "scroll16",
+   "note": "PR6 intra refresh bands + motion vectors"
+  },
+  {
+   "id": "refresh_static_yuv420_lossy",
+   "width": 64,
+   "height": 64,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index",
+    "refresh"
+   ],
+   "quality": 50,
+   "pattern": "checker",
+   "note": "PR6 intra refresh bands, static content, band-skip path"
+  },
+  {
+   "id": "intra_kf_yuv420_lossy_eg",
+   "width": 64,
+   "height": 64,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "eg",
+    "ikf",
+    "index"
+   ],
+   "quality": 50,
+   "compression": false,
+   "pattern": "checker",
+   "note": "PR5 Exp-Golomb variant"
+  },
+  {
+   "id": "motion_yuv420_lossy_dct_eg",
+   "width": 128,
+   "height": 96,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "eg",
+    "ikf",
+    "index",
+    "motion"
+   ],
+   "quality": 50,
+   "pattern": "scroll16",
+   "note": "PR5 Exp-Golomb variant"
+  },
+  {
+   "id": "refresh_motion_yuv420_lossy_eg",
+   "width": 128,
+   "height": 96,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "eg",
+    "index",
+    "motion",
+    "refresh"
+   ],
+   "quality": 50,
+   "pattern": "scroll16",
+   "note": "PR6 intra refresh bands + motion vectors | PR5 Exp-Golomb variant"
+  },
+  {
+   "id": "refresh_static_yuv420_lossy_eg",
+   "width": 64,
+   "height": 64,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "eg",
+    "index",
+    "refresh"
+   ],
+   "quality": 50,
+   "pattern": "checker",
+   "note": "PR6 intra refresh bands, static content, band-skip path | PR5 Exp-Golomb variant"
+  },
+  {
+   "id": "yuv420_lossy_dct_lz4_eg",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "quality": 50,
+   "pattern": "noise",
+   "flags": [
+    "eg",
+    "ikf",
+    "index"
+   ],
+   "note": "PR5 Exp-Golomb variant"
+  },
+  {
+   "id": "yuv420_lossy_dct_nolz4_eg",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "quality": 50,
+   "compression": false,
+   "pattern": "noise",
+   "flags": [
+    "eg"
+   ],
+   "note": "PR5 Exp-Golomb variant"
+  },
+  {
+   "id": "yuv420_nearlossless_eg",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "quality": 95,
+   "pattern": "gradient",
+   "flags": [
+    "eg"
+   ],
+   "note": "PR5 Exp-Golomb variant"
+  },
+  {
+   "id": "yuv422_lossy_dct_eg",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuv422",
+   "quality": 50,
+   "pattern": "noise",
+   "flags": [
+    "eg"
+   ],
+   "note": "PR5 Exp-Golomb variant"
+  },
+  {
+   "id": "yuv444_lossy_dct_eg",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuv444",
+   "quality": 50,
+   "pattern": "noise",
+   "flags": [
+    "eg"
+   ],
+   "note": "PR5 Exp-Golomb variant"
+  },
+  {
+   "id": "yuva420_lossy_dct_eg",
+   "width": 128,
+   "height": 96,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuva420",
+   "flags": [
+    "alpha",
+    "eg",
+    "ikf",
+    "index"
+   ],
+   "quality": 50,
+   "pattern": "noise",
+   "note": "PR5 Exp-Golomb variant"
+  },
+  {
+   "id": "adaptive_quality_yuv420_lossy",
+   "width": 128,
+   "height": 96,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "quality": 50,
+   "flags": [
+    "index",
+    "motion",
+    "ikf"
+   ],
+   "pattern": "noise",
+   "adaptive": [
     {
-      "id": "rgb_lossless_lz4",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "srgb",
-      "pattern": "stripes"
+     "frame": 2,
+     "quality": 30
     },
     {
-      "id": "rgb_lossless_nolz4",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "srgb",
-      "pattern": "stripes",
-      "compression": false
-    },
-    {
-      "id": "srgba_lossless",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "srgba",
-      "flags": [
-        "index",
-        "alpha"
-      ],
-      "pattern": "gradient"
-    },
-    {
-      "id": "linear_lossless",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "linear",
-      "pattern": "gradient"
-    },
-    {
-      "id": "yuv420_lossless",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "pattern": "gradient"
-    },
-    {
-      "id": "yuv422_lossless",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuv422",
-      "pattern": "gradient"
-    },
-    {
-      "id": "yuv444_lossless",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuv444",
-      "pattern": "gradient"
-    },
-    {
-      "id": "yuva420_lossless",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuva420",
-      "flags": [
-        "index",
-        "alpha"
-      ],
-      "pattern": "gradient"
-    },
-    {
-      "id": "yuv420_lossy_dct_lz4",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "quality": 50,
-      "pattern": "noise",
-      "flags": [
-        "index",
-        "ikf"
-      ]
-    },
-    {
-      "id": "yuv420_lossy_dct_nolz4",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "quality": 50,
-      "compression": false,
-      "pattern": "noise"
-    },
-    {
-      "id": "yuv422_lossy_dct",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuv422",
-      "quality": 50,
-      "pattern": "noise"
-    },
-    {
-      "id": "yuv444_lossy_dct",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuv444",
-      "quality": 50,
-      "pattern": "noise"
-    },
-    {
-      "id": "yuva420_lossy_dct",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuva420",
-      "flags": [
-        "index",
-        "alpha",
-        "ikf"
-      ],
-      "quality": 50,
-      "pattern": "noise"
-    },
-    {
-      "id": "yuv420_nearlossless",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "quality": 95,
-      "pattern": "gradient"
-    },
-    {
-      "id": "rgb_lossy_quant",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "srgb",
-      "quality": 40,
-      "pattern": "noise"
-    },
-    {
-      "id": "motion_yuv420_lossless",
-      "width": 128,
-      "height": 96,
-      "frames": 6,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "flags": [
-        "index",
-        "motion"
-      ],
-      "pattern": "scroll16"
-    },
-    {
-      "id": "motion_rgb_lossless",
-      "width": 128,
-      "height": 96,
-      "frames": 6,
-      "fps": 30,
-      "colorspace": "srgb",
-      "flags": [
-        "index",
-        "motion"
-      ],
-      "pattern": "scroll16"
-    },
-    {
-      "id": "motion_yuv420_lossy_dct",
-      "width": 128,
-      "height": 96,
-      "frames": 6,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "flags": [
-        "index",
-        "motion",
-        "ikf"
-      ],
-      "quality": 50,
-      "pattern": "scroll16"
-    },
-    {
-      "id": "motion_static_420",
-      "width": 128,
-      "height": 96,
-      "frames": 4,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "flags": [
-        "index",
-        "motion"
-      ],
-      "pattern": "gradient",
-      "expect": {
-        "motion_chunks": 0
-      }
-    },
-    {
-      "id": "index_reuse_yuv420_lossless",
-      "width": 64,
-      "height": 64,
-      "frames": 6,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "compression": false,
-      "pattern": "checker"
-    },
-    {
-      "id": "index_reuse_rgb_lossless",
-      "width": 64,
-      "height": 64,
-      "frames": 6,
-      "fps": 30,
-      "colorspace": "srgb",
-      "compression": false,
-      "pattern": "checker"
-    },
-    {
-      "id": "audio_srgb_lossless",
-      "width": 128,
-      "height": 96,
-      "frames": 4,
-      "fps": 30,
-      "colorspace": "srgb",
-      "pattern": "stripes",
-      "audio": {
-        "channels": 1,
-        "rate": 48000
-      }
-    },
-    {
-      "id": "intra_kf_yuv420_lossy",
-      "width": 64,
-      "height": 64,
-      "frames": 6,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "flags": [
-        "index",
-        "ikf"
-      ],
-      "quality": 50,
-      "compression": false,
-      "pattern": "checker"
-    },
-    {
-      "id": "refresh_motion_yuv420_lossy",
-      "width": 128,
-      "height": 96,
-      "frames": 6,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "flags": [
-        "index",
-        "motion",
-        "refresh"
-      ],
-      "quality": 50,
-      "pattern": "scroll16",
-      "note": "PR6 intra refresh bands + motion vectors"
-    },
-    {
-      "id": "refresh_static_yuv420_lossy",
-      "width": 64,
-      "height": 64,
-      "frames": 6,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "flags": [
-        "index",
-        "refresh"
-      ],
-      "quality": 50,
-      "pattern": "checker",
-      "note": "PR6 intra refresh bands, static content, band-skip path"
-    },
-    {
-      "id": "intra_kf_yuv420_lossy_eg",
-      "width": 64,
-      "height": 64,
-      "frames": 6,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "flags": [
-        "eg",
-        "ikf",
-        "index"
-      ],
-      "quality": 50,
-      "compression": false,
-      "pattern": "checker",
-      "note": "PR5 Exp-Golomb variant"
-    },
-    {
-      "id": "motion_yuv420_lossy_dct_eg",
-      "width": 128,
-      "height": 96,
-      "frames": 6,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "flags": [
-        "eg",
-        "ikf",
-        "index",
-        "motion"
-      ],
-      "quality": 50,
-      "pattern": "scroll16",
-      "note": "PR5 Exp-Golomb variant"
-    },
-    {
-      "id": "refresh_motion_yuv420_lossy_eg",
-      "width": 128,
-      "height": 96,
-      "frames": 6,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "flags": [
-        "eg",
-        "index",
-        "motion",
-        "refresh"
-      ],
-      "quality": 50,
-      "pattern": "scroll16",
-      "note": "PR6 intra refresh bands + motion vectors | PR5 Exp-Golomb variant"
-    },
-    {
-      "id": "refresh_static_yuv420_lossy_eg",
-      "width": 64,
-      "height": 64,
-      "frames": 6,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "flags": [
-        "eg",
-        "index",
-        "refresh"
-      ],
-      "quality": 50,
-      "pattern": "checker",
-      "note": "PR6 intra refresh bands, static content, band-skip path | PR5 Exp-Golomb variant"
-    },
-    {
-      "id": "yuv420_lossy_dct_lz4_eg",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "quality": 50,
-      "pattern": "noise",
-      "flags": [
-        "eg",
-        "ikf",
-        "index"
-      ],
-      "note": "PR5 Exp-Golomb variant"
-    },
-    {
-      "id": "yuv420_lossy_dct_nolz4_eg",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "quality": 50,
-      "compression": false,
-      "pattern": "noise",
-      "flags": [
-        "eg"
-      ],
-      "note": "PR5 Exp-Golomb variant"
-    },
-    {
-      "id": "yuv420_nearlossless_eg",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "quality": 95,
-      "pattern": "gradient",
-      "flags": [
-        "eg"
-      ],
-      "note": "PR5 Exp-Golomb variant"
-    },
-    {
-      "id": "yuv422_lossy_dct_eg",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuv422",
-      "quality": 50,
-      "pattern": "noise",
-      "flags": [
-        "eg"
-      ],
-      "note": "PR5 Exp-Golomb variant"
-    },
-    {
-      "id": "yuv444_lossy_dct_eg",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuv444",
-      "quality": 50,
-      "pattern": "noise",
-      "flags": [
-        "eg"
-      ],
-      "note": "PR5 Exp-Golomb variant"
-    },
-    {
-      "id": "yuva420_lossy_dct_eg",
-      "width": 128,
-      "height": 96,
-      "frames": 5,
-      "fps": 30,
-      "colorspace": "yuva420",
-      "flags": [
-        "alpha",
-        "eg",
-        "ikf",
-        "index"
-      ],
-      "quality": 50,
-      "pattern": "noise",
-      "note": "PR5 Exp-Golomb variant"
-    },
-    {
-      "id": "adaptive_quality_yuv420_lossy",
-      "width": 128,
-      "height": 96,
-      "frames": 6,
-      "fps": 30,
-      "colorspace": "yuv420",
-      "quality": 50,
-      "flags": [
-        "index",
-        "motion",
-        "ikf"
-      ],
-      "pattern": "noise",
-      "adaptive": [
-        {
-          "frame": 2,
-          "quality": 30
-        },
-        {
-          "frame": 4,
-          "quality": 85
-        }
-      ],
-      "note": "Phase 2 adaptive API: qov_set_quality mid-stream (down to 30, up to 85); decoder visibility via per-block qp_delta"
+     "frame": 4,
+     "quality": 85
     }
-  ]
+   ],
+   "note": "Phase 2 adaptive API: qov_set_quality mid-stream (down to 30, up to 85); decoder visibility via per-block qp_delta"
+  }
+ ]
 }

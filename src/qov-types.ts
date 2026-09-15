@@ -68,6 +68,13 @@ export const QOV_CHUNK_FLAG_DCT_BLOCKS = 0x20;  // bit 5: DCT blocks
 export const QOV_CHUNK_FLAG_EXP_GOLOB = 0x40;   // bit 6: Exp-Golomb coefficient section
 export const QOV_CHUNK_FLAG_REFRESH_BAND = 0x80; // bit 7: P-frame payload starts with a refresh band byte
 
+// AUDIO chunk flags (spec §5.3): flags != 0 selects an alternate codec;
+// decoders skip chunks whose codec they do not implement.
+export const QOV_CHUNK_AUDIO_FLAG_OPUS = 0x01;  // payload is one Opus packet (48 kHz)
+
+// Recommended speech capture mode (spec §5.3): 16 kHz mono QOA.
+export const QOV_AUDIO_RATE_SPEECH = 16000;
+
 // Intra refresh (spec §3.4.4): one band is intra-coded per lossy DCT P-frame;
 // the whole frame is refreshed every QOV_INTRA_REFRESH_BANDS P-frames.
 export const QOV_INTRA_REFRESH_BANDS = 12;

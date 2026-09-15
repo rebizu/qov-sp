@@ -285,6 +285,9 @@ public class QovDecoder
 
                     case QovTypes.ChunkTypeAudio:
                         byte[] audioBytes = ReadBytes((int)chunkSize);
+                        // flags != 0 selects an alternate codec (spec §5.3);
+                        // not implemented here — skip the chunk gracefully
+                        if (chunkFlags != 0) break;
                         if (_qoaDecoder != null)
                         {
                             var result = _qoaDecoder.DecodeFrame(audioBytes);

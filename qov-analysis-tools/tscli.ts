@@ -38,7 +38,20 @@ interface Case {
   pattern: string;             // gradient|stripes|scroll16|noise|checker
   keyframeInterval?: number;   // default 2
   audio?: { channels: number; rate: number } | null;
+  opusAudio?: boolean;          // audio chunks carry Opus-flagged payloads
   adaptive?: { frame: number; quality: number }[];  // qov_set_quality schedule
+}
+
+// Deterministic Opus passthrough payload for corpus cases (mirrored by
+// c/main.c): 120 LCG bytes seeded from the frame index.
+function opusPayload(n: number): Uint8Array {
+  let s = 1000 + n;
+  const out = new Uint8Array(120);
+  for (let i = 0; i < out.length; i++) {
+    s = lcgNext(s);
+    out[i] = s & 0xff;
+  }
+  return out;
 }
 
 function makeFrame(c: Case, n: number): Uint8ClampedArray {
@@ -122,7 +135,8 @@ async function main(): Promise<void> {
           const v = Math.round(Math.sin((2 * Math.PI * 440 * (n * 256 + i)) / audio.rate) * 16000) / 32768;
           for (let ch = 0; ch < audio.channels; ch++) samples[i * audio.channels + ch] = v;
         }
-        enc.encodeAudio(samples, Math.round((n * 1e6) / c.fps));
+        if (c.opusAudio) enc.encodeAudioOpus(opusPayload(n), Math.round((n * 1e6) / c.fps));
+        else enc.encodeAudio(samples, Math.round((n * 1e6) / c.fps));
       }
     }
     fs.writeFileSync(b, enc.finish());

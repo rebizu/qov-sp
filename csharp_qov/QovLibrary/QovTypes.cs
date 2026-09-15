@@ -38,6 +38,13 @@ public static partial class QovTypes
     public const byte ChunkFlagExpGolob = 0x40; // DCT coefficient section is Exp-Golomb coded (reclaims the never-implemented ADAPTIVE_Q)
     public const byte ChunkFlagRefreshBand = 0x80; // P-frame payload starts with a refresh band byte
 
+    // AUDIO chunk flags (spec §5.3): flags != 0 selects an alternate codec;
+    // decoders skip chunks whose codec they do not implement.
+    public const byte ChunkAudioFlagOpus = 0x01; // payload is one Opus packet (48 kHz)
+
+    // Recommended speech capture mode (spec §5.3): 16 kHz mono QOA.
+    public const int AudioRateSpeech = 16000;
+
     // Intra refresh (spec 3.4.4): one band per lossy DCT P-frame
     public const int IntraRefreshBands = 12;
 
