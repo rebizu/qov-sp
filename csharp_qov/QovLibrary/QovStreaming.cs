@@ -874,11 +874,13 @@ public class QovStreamClient : IDisposable
             }
         }
 
+        // Drop notifications reach the app BEFORE later frames are delivered:
+        // the playback gate must be healing while the post-loss frames arrive.
+        foreach (var id in droppedIds) OnFrameDropped?.Invoke(id);
         if (audioReady != null)
             foreach (var chunk in audioReady) OnFrameReceived?.Invoke(chunk, QovPacketType.Audio);
         if (videoReady != null)
             foreach (var chunk in videoReady) OnFrameReceived?.Invoke(chunk, QovPacketType.Video);
-        foreach (var id in droppedIds) OnFrameDropped?.Invoke(id);
     }
 
     // Spec section 6: video chunks are delivered in decode order; a dropped

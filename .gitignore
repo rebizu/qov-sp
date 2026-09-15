@@ -587,6 +587,8 @@ install.sh
 !qov-analysis-tools/corpus/*.qov
 # tscli esbuild bundle is a build artifact
 qov-analysis-tools/tscli.cjs
+# QOV-S self-test bundle is a build artifact
+qov-analysis-tools/qovs_selftest.cjs
 
 # C conformance CLI build output
 qov-analysis-tools/.build/

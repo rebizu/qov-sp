@@ -146,6 +146,25 @@ class GrowableBuffer {
     result.set(this.currentChunk.subarray(0, this.currentPos), offset);
     return result;
   }
+
+  // Bytes from pos to the end, copied in O(tail) not O(buffer) (streaming hook)
+  sliceFrom(pos: number): Uint8Array {
+    const out = new Uint8Array(this.totalSize - pos);
+    let outPos = 0;
+    let offset = 0;
+    const scan = (buf: Uint8Array, len: number) => {
+      const start = Math.max(pos, offset);
+      const end = offset + len;
+      if (end > start) {
+        out.set(buf.subarray(start - offset, end - offset), outPos);
+        outPos += end - start;
+      }
+      offset = end;
+    };
+    for (const chunk of this.chunks) scan(chunk, chunk.length);
+    scan(this.currentChunk, this.currentPos);
+    return out;
+  }
 }
 
 export class QovEncoder {
@@ -306,6 +325,8 @@ export class QovEncoder {
       return;
     }
 
+    const chunkStart = this.buffer.getSize();
+
     // Get the frame data
     const frameData = this.frameBuffer.toUint8Array();
     const uncompressedSize = frameData.length;
@@ -332,6 +353,7 @@ export class QovEncoder {
       for (let i = 0; i < compressed.length; i++) {
         this.buffer.writeByte(compressed[i]);
       }
+      this.emitChunk(chunkStart);
     } else {
       // Compression not effective, write uncompressed
       const chunkFlags = baseFlags;
@@ -347,6 +369,7 @@ export class QovEncoder {
       for (let i = 0; i < frameData.length; i++) {
         this.buffer.writeByte(frameData[i]);
       }
+      this.emitChunk(chunkStart);
     }
   }
 
@@ -467,6 +490,7 @@ export class QovEncoder {
   }
 
   private writeSync(frameNumber: number, timestamp: number): void {
+    const start = this.buffer.getSize();
     this.writeU8(QOV_CHUNK_SYNC); // type
     this.writeU8(0x00);           // flags
     this.writeU32(8);             // size (32-bit)
@@ -478,6 +502,24 @@ export class QovEncoder {
     this.writeU8(0x56); // 'V'
     this.writeU8(0x53); // 'S'
     this.writeU32(frameNumber);
+    this.emitChunk(start);
+  }
+
+  // Streaming hook: complete QOV chunk bytes as they are written to the
+  // main buffer (sync markers and frame-buffer-path chunks — i.e. all video
+  // chunks when compression is enabled). Observers must not modify the array.
+  public onChunk?: (chunk: Uint8Array, chunkType: number) => void;
+
+  // The QOV file header bytes (24/32) — call right after writeHeader(),
+  // before any frame is encoded (QOV-S CONFIG payload, spec section 2.1).
+  public headerBytes(): Uint8Array {
+    return this.buffer.sliceFrom(0);
+  }
+
+  private emitChunk(start: number): void {
+    if (!this.onChunk) return;
+    const bytes = this.buffer.sliceFrom(start);
+    this.onChunk(bytes, bytes[0]);
   }
 
   private writeEndMarker(): void {

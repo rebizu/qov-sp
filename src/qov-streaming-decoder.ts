@@ -235,6 +235,9 @@ export class QovStreamingDecoder {
   private headerParsed = false;
   private indexBuilt = false;
 
+  // Frames known to the index (live sources: grows via extendIndex())
+  get frameCount(): number { return this.totalFrames; }
+
   // Decoder state
   private index: QovRGBA[] = new Array(64);
   private prevPixel: QovRGBA = { r: 0, g: 0, b: 0, a: 255 };
@@ -390,7 +393,17 @@ export class QovStreamingDecoder {
   }
 
   // Build chunk index by scanning file
-  async buildIndex(): Promise<void> {
+  // Live sources: (re)walk the index without waiting for more data. Safe to
+  // call as chunks arrive — the chunk list is rebuilt from scratch and
+  // offsets are stable for append-only data. Marks the index built so
+  // decodeFrame does not trigger the blocking buildIndex().
+  async extendIndex(): Promise<void> {
+    if (!this.header) await this.parseHeader();
+    this.indexBuilt = false;
+    await this.buildIndex(false);
+  }
+
+  async buildIndex(wait: boolean = true): Promise<void> {
     if (this.indexBuilt) return;
     if (!this.header) await this.parseHeader();
 
@@ -405,6 +418,7 @@ export class QovStreamingDecoder {
       // Wait for chunk header to be available
       const headerSize = this.use32BitChunkSize ? 10 : 8;
       if (!this.source.isAvailable(offset, headerSize)) {
+        if (!wait) { this.indexBuilt = true; return; } // live: stop at the tail
         // Wait for more data
         await new Promise(resolve => setTimeout(resolve, 100));
         continue;
@@ -422,6 +436,14 @@ export class QovStreamingDecoder {
       } else {
         chunkSize = (headerData[2] << 8) | headerData[3];
         timestamp = ((headerData[4] << 24) | (headerData[5] << 16) | (headerData[6] << 8) | headerData[7]) >>> 0;
+      }
+
+      // The whole chunk must be available before indexing it; an open-ended
+      // (live) source stops at the trailing partial chunk.
+      if (!this.source.isAvailable(offset, headerSize + chunkSize)) {
+        if (!wait) { this.indexBuilt = true; return; }
+        await new Promise(resolve => setTimeout(resolve, 100));
+        continue;
       }
 
       // Handle compressed chunks - uncompressed size is at start of data

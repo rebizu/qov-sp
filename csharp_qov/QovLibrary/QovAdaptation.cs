@@ -151,11 +151,13 @@ public class QovAdaptationController
         // FEC ratio (spec section 5.2): none below 0.5% loss, 1:3 above 2%.
         _fecGroupSize = lossPercent < 0.5 ? 0 : lossPercent > 2.0 ? 3 : 4;
 
-        // Buffer draining (< 2 frame intervals) -> skip every other frame.
+        // Buffer draining (< 2 frame intervals) under real channel pressure
+        // -> skip every other frame (a healthy loopback keeps a near-empty
+        // buffer without needing to shed frames).
         if (frameIntervalMs > 0)
         {
-            if (bufferMs < 2 * frameIntervalMs) _skipActive = true;
-            else if (bufferMs > 4 * frameIntervalMs) _skipActive = false;
+            if (bufferMs < 2 * frameIntervalMs && deliveredRatio < 0.98) _skipActive = true;
+            else if (bufferMs > 4 * frameIntervalMs || deliveredRatio >= 0.98) _skipActive = false;
         }
 
         // Sustained loss > 8% -> drop the reference; the next P-frame
@@ -200,8 +202,10 @@ public class QovAdaptationController
     {
         long now = Environment.TickCount64;
         if (now - _lastQualityChangeMs < _qualityChangeCooldownMs) return;
+        var next = Math.Clamp(_quality + delta, 20, _startQuality);
+        if (next == _quality) return;
         _lastQualityChangeMs = now;
-        _quality = Math.Clamp(_quality + delta, 20, _startQuality);
+        _quality = next;
         QualityChanged?.Invoke(CurrentQuality);
     }
 }

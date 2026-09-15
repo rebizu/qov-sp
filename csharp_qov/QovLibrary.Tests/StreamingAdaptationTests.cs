@@ -231,15 +231,19 @@ public class QovAdaptationControllerTests
     public void BufferDrain_SkipsEveryOtherFrame()
     {
         var c = new QovAdaptationController(60);
-        c.OnReport(0, 20, bufferMs: 20, frameIntervalMs: 33, deliveredRatio: 0.99);
+        // buffer draining AND channel pressure -> skip; healthy ratio -> no skip
+        c.OnReport(0, 20, bufferMs: 20, frameIntervalMs: 33, deliveredRatio: 0.9);
         Assert.True(c.FrameSkipActive);
 
         bool a = c.ShouldSkipFrame(), b = c.ShouldSkipFrame(), d = c.ShouldSkipFrame();
         Assert.NotEqual(a, b);
         Assert.Equal(a, d);
 
-        c.OnReport(0, 20, bufferMs: 200, frameIntervalMs: 33, deliveredRatio: 0.99);
+        c.OnReport(0, 20, bufferMs: 20, frameIntervalMs: 33, deliveredRatio: 0.99);
         Assert.False(c.FrameSkipActive);
         Assert.False(c.ShouldSkipFrame());
+
+        c.OnReport(0, 20, bufferMs: 200, frameIntervalMs: 33, deliveredRatio: 0.9);
+        Assert.False(c.FrameSkipActive);
     }
 }
