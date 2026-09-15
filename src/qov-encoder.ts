@@ -1076,6 +1076,7 @@ export class QovEncoder {
         sadSkipThreshold: temporalThresh > 0 ? temporalThresh * 5 : 0,
         useDiamond: this.lossyMode,
         minMovedBlocks: Math.max(4, Math.ceil(0.005 * Math.ceil(width / 16) * Math.ceil(height / 16))),
+        halfPel: this.lossyMode && this.isYuvMode,
       });
       if (mv) {
         const cm = chromaMotionParams(colorspace);
@@ -1405,6 +1406,7 @@ export class QovEncoder {
         sadSkipThreshold: temporalThresh > 0 ? temporalThresh * 5 : 0,
         useDiamond: this.lossyMode,
         minMovedBlocks: Math.max(4, Math.ceil(0.005 * Math.ceil(this.header.width / 16) * Math.ceil(this.header.height / 16))),
+        halfPel: false, // half-pel is YUV-mode only (spec v3.6 §5.2)
       });
       if (mv) {
         const comp = new Uint8ClampedArray(refFrame.length);

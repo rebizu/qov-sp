@@ -1,0 +1,45 @@
+{
+  "comment": "PR4 half-pel refinement before/after (spec v3.6 section 5.2). cam720 = 60s of real webcam footage captured on the Linux machine (corpus-real is per-machine; FFV1 source, 1280x720@30, 1800 frames). Before rows: pre-PR4 build (integer-pel MC, commit cdf3877 codec). After rows: half-pel refinement with full-block-SAD rescoring and (0,0) fallback. Bitrate formula size_bytes*8/(frames/fps).",
+  "rows": [
+    {
+      "name": "cam720",
+      "codec": "qov",
+      "setting": "quality=60",
+      "colorspace": "yuv420",
+      "motion": true,
+      "lz4": true,
+      "refresh": false,
+      "ikf": false,
+      "eg": false,
+      "halfpel": false,
+      "frames": 1800,
+      "size_bytes": 84539484,
+      "bitrate_kbps": 11271.9,
+      "ssim_all": 0.864818,
+      "enc_ms_per_frame": 69.27,
+      "dec_ms_per_frame": 34.07,
+      "blocks_skip": 16702268,
+      "blocks_coded": 22048132
+    },
+    {
+      "name": "cam720",
+      "codec": "qov",
+      "setting": "quality=60",
+      "colorspace": "yuv420",
+      "motion": true,
+      "lz4": true,
+      "refresh": false,
+      "ikf": false,
+      "eg": false,
+      "halfpel": true,
+      "frames": 1800,
+      "size_bytes": 32482526,
+      "bitrate_kbps": 4331.0,
+      "ssim_all": 0.928716,
+      "enc_ms_per_frame": 47.31,
+      "dec_ms_per_frame": 18.98,
+      "blocks_skip": 27698710,
+      "blocks_coded": 11051690
+    }
+  ]
+}

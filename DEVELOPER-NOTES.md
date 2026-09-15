@@ -17,11 +17,13 @@ execution status lives in `CONFERENCE-ROADMAP.md`.)
   c_encode hash). Symptom worth recognizing: c_decode passes (decoder
   math unaffected) while c_encode fails everywhere.
 - **Missing link libs fall back silently.** On Linux, `c/main.c` needs
-  `-lm` (`sin()`); MinGW links math implicitly. If the gcc candidate in
-  `conformance.py build_c()` fails to link, the runner quietly tries
-  `zig cc` next — a *different* compiler with different FP defaults, so
-  the suite can go red from a toolchain substitution that never prints a
-  warning. If C legs behave oddly on a new machine, first verify
+  `-lm` (`sin()`); MinGW links math implicitly. And `-lm` must come AFTER
+  the source file — ld resolves left-to-right, so `gcc -lm main.c` still
+  leaves `sin` undefined. Either way the gcc candidate in
+  `conformance.py build_c()` fails to link and the runner quietly tries
+  `zig cc` next — a *different* compiler, so the suite can go red from a
+  toolchain substitution that never prints a warning. If C legs behave
+  oddly on a new machine, first verify
   `qov-analysis-tools/.build/qov_cli.exe` was actually built by gcc.
 - **esbuild's bin shim is platform-shaped**: on Windows
   `node_modules/esbuild/bin/esbuild` is a JS file you run *under node*; on

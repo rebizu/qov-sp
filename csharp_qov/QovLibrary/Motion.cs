@@ -9,8 +9,9 @@ public struct MotionVectors
     public int BlockSize;
     public int GridW;
     public int GridH;
-    public int[] Vx;
+    public int[] Vx;   // half-pel mode: u = 2*vx + hx displacement in half-pel units
     public int[] Vy;
+    public bool HalfPel;
 }
 
 public static class Motion
@@ -81,11 +82,46 @@ public static class Motion
     }
 
     /// <summary>
+    /// Full-block SAD at a displacement in half-pel units (u, v): the integer
+    /// part floors (u >> 1) and the odd bit selects bilinear interpolation
+    /// between neighbouring reference pixels. Border-clamped on all four taps.
+    /// Normative refinement metric (spec v3.6 §5.2).
+    /// </summary>
+    private static long SadFullAt(byte[] curr, byte[] prev, int w, int h,
+        int bx, int by, int bw, int bh, int u, int v)
+    {
+        int fx = u >> 1, fy = v >> 1;
+        int hx = u & 1, hy = v & 1;
+        long sum = 0;
+        for (int y = 0; y < bh; y++)
+        {
+            int baseY = by + y + fy;
+            int sy0 = Clamp(baseY, 0, h - 1);
+            int sy1 = Clamp(baseY + 1, 0, h - 1);
+            for (int x = 0; x < bw; x++)
+            {
+                int baseX = bx + x + fx;
+                int sx0 = Clamp(baseX, 0, w - 1);
+                int sx1 = Clamp(baseX + 1, 0, w - 1);
+                int a = prev[sy0 * w + sx0];
+                int s;
+                if (hx == 0 && hy == 0) s = a;
+                else if (hx == 0) s = (a + prev[sy1 * w + sx0] + 1) >> 1;
+                else if (hy == 0) s = (a + prev[sy0 * w + sx1] + 1) >> 1;
+                else s = (a + prev[sy0 * w + sx1] + prev[sy1 * w + sx0] + prev[sy1 * w + sx1] + 2) >> 2;
+                int d = curr[(by + y) * w + (bx + x)] - s;
+                sum += d < 0 ? -d : d;
+            }
+        }
+        return sum;
+    }
+
+    /// <summary>
     /// Estimate 16x16 motion vectors between two single-channel planes.
     /// Returns null when too few blocks move — the caller emits a plain P-frame.
     /// </summary>
     public static MotionVectors? EstimateMotion(byte[] curr, byte[] prev, int w, int h,
-        int sadSkipThreshold, bool useDiamond, int minMovedBlocks)
+        int sadSkipThreshold, bool useDiamond, int minMovedBlocks, bool halfPel)
     {
         int gridW = (w + BlockSize - 1) / BlockSize;
         int gridH = (h + BlockSize - 1) / BlockSize;
@@ -158,6 +194,34 @@ public static class Motion
                     }
                 }
 
+                if (halfPel)
+                {
+                    // Half-pel refinement (spec v3.6 §5.2): rescore the chosen
+                    // integer vector, the (0,0) prediction, and its eight
+                    // half-pel neighbours with the full-block SAD; strict
+                    // improvement only, center first, so ties keep the integer
+                    // vector. Order of the neighbour loop is normative.
+                    int cu = Clamp(bestVx * 2, -127, 127);
+                    int cv = Clamp(bestVy * 2, -127, 127);
+                    int bestU = cu, bestV = cv;
+                    long bestFull = SadFullAt(curr, prev, w, h, bx, by, bw, bh, cu, cv);
+                    long s00 = SadFullAt(curr, prev, w, h, bx, by, bw, bh, 0, 0);
+                    if (s00 < bestFull) { bestFull = s00; bestU = 0; bestV = 0; }
+                    for (int hv = -1; hv <= 1; hv++)
+                    {
+                        for (int hu = -1; hu <= 1; hu++)
+                        {
+                            if (hu == 0 && hv == 0) continue;
+                            int nu = cu + hu, nv = cv + hv;
+                            if (nu < -127 || nu > 127 || nv < -127 || nv > 127) continue;
+                            long s = SadFullAt(curr, prev, w, h, bx, by, bw, bh, nu, nv);
+                            if (s < bestFull) { bestFull = s; bestU = nu; bestV = nv; }
+                        }
+                    }
+                    bestVx = bestU;
+                    bestVy = bestV;
+                }
+
                 if (bestVx != 0 || bestVy != 0)
                 {
                     vx[gbY * gridW + gbX] = bestVx;
@@ -168,7 +232,7 @@ public static class Motion
         }
 
         if (moved < minMovedBlocks) return null;
-        return new MotionVectors { BlockSize = BlockSize, GridW = gridW, GridH = gridH, Vx = vx, Vy = vy };
+        return new MotionVectors { BlockSize = BlockSize, GridW = gridW, GridH = gridH, Vx = vx, Vy = vy, HalfPel = halfPel };
     }
 
     /// <summary>
@@ -176,7 +240,8 @@ public static class Motion
     /// </summary>
     public static void WriteMvBlock(MotionVectors mv, BinaryWriter writer)
     {
-        byte id = mv.BlockSize switch { 8 => 0, 32 => 2, _ => 1 };
+        // id 3 = 16x16 with half-pel-unit vectors (spec v3.6 §5.2)
+        byte id = mv.HalfPel ? (byte)3 : (byte)(mv.BlockSize switch { 8 => 0, 32 => 2, _ => 1 });
         writer.Write(id);
         int last = 0;
         for (int i = 0; i < mv.Vx.Length; i++)
@@ -200,6 +265,7 @@ public static class Motion
     public static MotionVectors ParseMvBlock(byte[] data, ref int pos, int width, int height)
     {
         byte id = data[pos++];
+        bool halfPel = id == 3;
         int blockSize = id switch { 0 => 8, 2 => 32, _ => 16 };
         int count = (data[pos] << 8) | data[pos + 1];
         pos += 2;
@@ -218,7 +284,22 @@ public static class Motion
                 vy[i] = (sbyte)by;
             }
         }
-        return new MotionVectors { BlockSize = blockSize, GridW = gridW, GridH = gridH, Vx = vx, Vy = vy };
+        return new MotionVectors { BlockSize = blockSize, GridW = gridW, GridH = gridH, Vx = vx, Vy = vy, HalfPel = halfPel };
+    }
+
+    /// <summary>
+    /// Bilinear half-pel sample of prev at (sx,sy)+(hx,hy); all four taps are
+    /// border-clamped. Matches SadFullAt's arithmetic exactly (spec v3.6 §5.2).
+    /// </summary>
+    private static int HalfPelSample(byte[] prev, int w, int h, int sx, int sy, int hx, int hy)
+    {
+        int sx0 = Clamp(sx, 0, w - 1), sx1 = Clamp(sx + 1, 0, w - 1);
+        int sy0 = Clamp(sy, 0, h - 1), sy1 = Clamp(sy + 1, 0, h - 1);
+        int a = prev[sy0 * w + sx0];
+        if (hx == 0 && hy == 0) return a;
+        if (hx == 0) return (a + prev[sy1 * w + sx0] + 1) >> 1;
+        if (hy == 0) return (a + prev[sy0 * w + sx1] + 1) >> 1;
+        return (a + prev[sy0 * w + sx1] + prev[sy1 * w + sx0] + prev[sy1 * w + sx1] + 2) >> 2;
     }
 
     /// <summary>
@@ -238,17 +319,33 @@ public static class Motion
                 int lumX = Math.Min(mv.GridW - 1, gbX * B * sampleScaleX / mv.BlockSize);
                 int lumY = Math.Min(mv.GridH - 1, gbY * B * sampleScaleY / mv.BlockSize);
                 int li = lumY * mv.GridW + lumX;
-                int vx = mv.Vx[li] >> shiftX, vy = mv.Vy[li] >> shiftY;
+                int u = mv.Vx[li], v = mv.Vy[li];
+                bool luma = shiftX == 0 && shiftY == 0;
+                int hx = luma && mv.HalfPel ? (u & 1) : 0;
+                int hy = luma && mv.HalfPel ? (v & 1) : 0;
+                int vx = mv.HalfPel ? (u >> (shiftX + 1)) : (u >> shiftX);
+                int vy = mv.HalfPel ? (v >> (shiftY + 1)) : (v >> shiftY);
                 int bw = Math.Min(B, w - gbX * B), bh = Math.Min(B, h - gbY * B);
+                bool half = hx != 0 || hy != 0;
                 for (int y = 0; y < bh; y++)
                 {
-                    int sy = Clamp(gbY * B + y + vy, 0, h - 1);
                     int oRow = (gbY * B + y) * w + gbX * B;
-                    int sRow = sy * w;
-                    for (int x = 0; x < bw; x++)
+                    if (!half)
                     {
-                        int sx = Clamp(gbX * B + x + vx, 0, w - 1);
-                        output[oRow + x] = prev[sRow + sx];
+                        int sy = Clamp(gbY * B + y + vy, 0, h - 1);
+                        int sRow = sy * w;
+                        for (int x = 0; x < bw; x++)
+                        {
+                            int sx = Clamp(gbX * B + x + vx, 0, w - 1);
+                            output[oRow + x] = prev[sRow + sx];
+                        }
+                    }
+                    else
+                    {
+                        for (int x = 0; x < bw; x++)
+                        {
+                            output[oRow + x] = (byte)HalfPelSample(prev, w, h, gbX * B + x + vx, gbY * B + y + vy, hx, hy);
+                        }
                     }
                 }
             }
@@ -267,21 +364,42 @@ public static class Motion
             for (int gbX = 0; gbX < gw; gbX++)
             {
                 int li = gbY * mv.GridW + gbX;
-                int vx = mv.Vx[li], vy = mv.Vy[li];
+                int u = mv.Vx[li], v = mv.Vy[li];
+                int hx = mv.HalfPel ? (u & 1) : 0, hy = mv.HalfPel ? (v & 1) : 0;
+                int vx = mv.HalfPel ? (u >> 1) : u;
+                int vy = mv.HalfPel ? (v >> 1) : v;
                 int bw = Math.Min(B, w - gbX * B), bh = Math.Min(B, h - gbY * B);
+                bool half = hx != 0 || hy != 0;
                 for (int y = 0; y < bh; y++)
                 {
-                    int sy = Clamp(gbY * B + y + vy, 0, h - 1);
                     int oRow = ((gbY * B + y) * w + gbX * B) * 4;
-                    int sRow = (sy * w) * 4;
                     for (int x = 0; x < bw; x++)
                     {
-                        int sx = Clamp(gbX * B + x + vx, 0, w - 1);
-                        int o = oRow + x * 4, s = sRow + sx * 4;
-                        output[o] = prev[s];
-                        output[o + 1] = prev[s + 1];
-                        output[o + 2] = prev[s + 2];
-                        output[o + 3] = prev[s + 3];
+                        int o = oRow + x * 4;
+                        if (!half)
+                        {
+                            int sy = Clamp(gbY * B + y + vy, 0, h - 1);
+                            int sx = Clamp(gbX * B + x + vx, 0, w - 1);
+                            int s = (sy * w) * 4 + sx * 4;
+                            output[o] = prev[s];
+                            output[o + 1] = prev[s + 1];
+                            output[o + 2] = prev[s + 2];
+                            output[o + 3] = prev[s + 3];
+                        }
+                        else
+                        {
+                            for (int ch = 0; ch < 4; ch++)
+                            {
+                                int sx0 = Clamp(gbX * B + x + vx, 0, w - 1), sx1 = Clamp(gbX * B + x + vx + 1, 0, w - 1);
+                                int sy0 = Clamp(gbY * B + y + vy, 0, h - 1), sy1 = Clamp(gbY * B + y + vy + 1, 0, h - 1);
+                                int a = prev[(sy0 * w + sx0) * 4 + ch];
+                                int s2;
+                                if (hx == 0) s2 = (a + prev[(sy1 * w + sx0) * 4 + ch] + 1) >> 1;
+                                else if (hy == 0) s2 = (a + prev[(sy0 * w + sx1) * 4 + ch] + 1) >> 1;
+                                else s2 = (a + prev[(sy0 * w + sx1) * 4 + ch] + prev[(sy1 * w + sx0) * 4 + ch] + prev[(sy1 * w + sx1) * 4 + ch] + 2) >> 2;
+                                output[o + ch] = (byte)s2;
+                            }
+                        }
                     }
                 }
             }

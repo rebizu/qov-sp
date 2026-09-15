@@ -1247,8 +1247,8 @@
    }
   },
   "motion_yuv420_lossy_dct": {
-   "file_sha256": "1281c73b1c1343e3a1a671e7b465134298eb463ccbecdcf5212b23f51e523bf0",
-   "file_size": 10123,
+   "file_sha256": "c5fd30de08f5160d2aad45d2cdf8dd1315a874502575e7b7d8effc30d8ad97fd",
+   "file_size": 9970,
    "header": {
     "version": 3,
     "colorspace": 16,
@@ -1283,11 +1283,11 @@
     "frames": 6,
     "frame_sha256": [
      "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
-     "0b3bfd22d4b66d83f7896e76555f8ac161d365c618181eb8acea5b815fb188dc",
+     "9ac5d88399fd0af017f1f4a93d295650c8311177c229ec114a53b5399344f106",
      "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
-     "fbd9a1089a1d56709ff727ca9e0a1aaff20e4e49cfc7aede513df6227f80c9e0",
+     "bbe1ffe0f2b0a1edc52880dabd5dbc7faa605352ef1676c6d8114955866bb987",
      "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
-     "4b10a9f4df9c7cfe072858f19c438b07bd4c52cf7dd3993a33a92ace3b424bc2"
+     "7cbbc531e3f198d8d7da9dc90474cfa188ba9897087450c807d07902ace9f718"
     ],
     "audio_frames": 0,
     "audio_pcm_sha256": null,
@@ -1298,11 +1298,11 @@
     "frames": 6,
     "frame_sha256": [
      "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
-     "0b3bfd22d4b66d83f7896e76555f8ac161d365c618181eb8acea5b815fb188dc",
+     "9ac5d88399fd0af017f1f4a93d295650c8311177c229ec114a53b5399344f106",
      "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
-     "fbd9a1089a1d56709ff727ca9e0a1aaff20e4e49cfc7aede513df6227f80c9e0",
+     "bbe1ffe0f2b0a1edc52880dabd5dbc7faa605352ef1676c6d8114955866bb987",
      "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
-     "4b10a9f4df9c7cfe072858f19c438b07bd4c52cf7dd3993a33a92ace3b424bc2"
+     "7cbbc531e3f198d8d7da9dc90474cfa188ba9897087450c807d07902ace9f718"
     ]
    },
    "expect": {},
@@ -1705,8 +1705,8 @@
    }
   },
   "refresh_motion_yuv420_lossy": {
-   "file_sha256": "8bb43361877c626084f5ffa36900f6b22d6714b8b1eafd4acea5e6bddfb029c0",
-   "file_size": 30065,
+   "file_sha256": "a8b5fecbf770190f7aaf7d28a88268ba21d28105fa34fbf6fb1478c6a1f9a5f9",
+   "file_size": 30556,
    "header": {
     "version": 3,
     "colorspace": 16,
@@ -1741,11 +1741,11 @@
     "frames": 6,
     "frame_sha256": [
      "f7d0f52d8a4b2468249f80c5525bbd84846a03aac2ae3bfcc2a7cb225353de38",
-     "a72843b2b560bbdee4cf83296da3650d673530178590c77b03e22796b71548d7",
+     "ab0e2f04d57a26f1330f85eda28eb24dcc85999e2d1028e2900f60b901813c86",
      "9e212cd6675f50ef73591930ad56ec3165c85c8c84659f63afebf5a9f2ab1b80",
-     "9585f13b45536871de84982fe116514f50b8635abb6a58df0580fc957818f3a7",
+     "06c68a141177f8decaa07540a482aebd613a9a6d7331d0ea9944131f40bd1ea0",
      "1d1b871d74c9577dd2b6b11f1d35148fa6ba8a1a4d2fc19801c3bbe862b9af58",
-     "4e196c9a8b14641db20c1ba05b1de28c9bb87587d5ff49898d058d87c0ea1ef2"
+     "0002d5a0bd8bf9670c541f7095ac0cea907d6e8ba17f899d31fb7ef98d0ba8ab"
     ],
     "audio_frames": 0,
     "audio_pcm_sha256": null,
@@ -1756,11 +1756,11 @@
     "frames": 6,
     "frame_sha256": [
      "f7d0f52d8a4b2468249f80c5525bbd84846a03aac2ae3bfcc2a7cb225353de38",
-     "a72843b2b560bbdee4cf83296da3650d673530178590c77b03e22796b71548d7",
+     "ab0e2f04d57a26f1330f85eda28eb24dcc85999e2d1028e2900f60b901813c86",
      "9e212cd6675f50ef73591930ad56ec3165c85c8c84659f63afebf5a9f2ab1b80",
-     "9585f13b45536871de84982fe116514f50b8635abb6a58df0580fc957818f3a7",
+     "06c68a141177f8decaa07540a482aebd613a9a6d7331d0ea9944131f40bd1ea0",
      "1d1b871d74c9577dd2b6b11f1d35148fa6ba8a1a4d2fc19801c3bbe862b9af58",
-     "4e196c9a8b14641db20c1ba05b1de28c9bb87587d5ff49898d058d87c0ea1ef2"
+     "0002d5a0bd8bf9670c541f7095ac0cea907d6e8ba17f899d31fb7ef98d0ba8ab"
     ]
    },
    "expect": {},
@@ -1945,8 +1945,8 @@
    }
   },
   "motion_yuv420_lossy_dct_eg": {
-   "file_sha256": "83a0d19fb3a7cca4aed066164c957b08aa19a8f658ead888166ee2fd5316f21f",
-   "file_size": 9611,
+   "file_sha256": "514b23bbe1f1a7e7f4eb46345684b2032c0686343c00a099ec370235d51dc24e",
+   "file_size": 9063,
    "header": {
     "version": 3,
     "colorspace": 16,
@@ -1970,7 +1970,7 @@
     "pframes": 3,
     "motion_chunks": 3,
     "dct_chunks": 6,
-    "compressed_chunks": 5,
+    "compressed_chunks": 6,
     "audio_chunks": 0,
     "has_end": true,
     "timestamp_regressions": 0,
@@ -1981,11 +1981,11 @@
     "frames": 6,
     "frame_sha256": [
      "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
-     "0b3bfd22d4b66d83f7896e76555f8ac161d365c618181eb8acea5b815fb188dc",
+     "9ac5d88399fd0af017f1f4a93d295650c8311177c229ec114a53b5399344f106",
      "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
-     "fbd9a1089a1d56709ff727ca9e0a1aaff20e4e49cfc7aede513df6227f80c9e0",
+     "bbe1ffe0f2b0a1edc52880dabd5dbc7faa605352ef1676c6d8114955866bb987",
      "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
-     "4b10a9f4df9c7cfe072858f19c438b07bd4c52cf7dd3993a33a92ace3b424bc2"
+     "7cbbc531e3f198d8d7da9dc90474cfa188ba9897087450c807d07902ace9f718"
     ],
     "audio_frames": 0,
     "audio_pcm_sha256": null,
@@ -1996,11 +1996,11 @@
     "frames": 6,
     "frame_sha256": [
      "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
-     "0b3bfd22d4b66d83f7896e76555f8ac161d365c618181eb8acea5b815fb188dc",
+     "9ac5d88399fd0af017f1f4a93d295650c8311177c229ec114a53b5399344f106",
      "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
-     "fbd9a1089a1d56709ff727ca9e0a1aaff20e4e49cfc7aede513df6227f80c9e0",
+     "bbe1ffe0f2b0a1edc52880dabd5dbc7faa605352ef1676c6d8114955866bb987",
      "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
-     "4b10a9f4df9c7cfe072858f19c438b07bd4c52cf7dd3993a33a92ace3b424bc2"
+     "7cbbc531e3f198d8d7da9dc90474cfa188ba9897087450c807d07902ace9f718"
     ]
    },
    "expect": {},
@@ -2026,8 +2026,8 @@
    }
   },
   "refresh_motion_yuv420_lossy_eg": {
-   "file_sha256": "604ec1b8647960b717521ba0b1282066da5bfc13736d0020abae02eb5c9af9b9",
-   "file_size": 29999,
+   "file_sha256": "d84927aa1d4e0d80d9bf0dcaf728f3e9facc8a5bdc1346ca055b9efd18b1ae9f",
+   "file_size": 30450,
    "header": {
     "version": 3,
     "colorspace": 16,
@@ -2062,11 +2062,11 @@
     "frames": 6,
     "frame_sha256": [
      "f7d0f52d8a4b2468249f80c5525bbd84846a03aac2ae3bfcc2a7cb225353de38",
-     "a72843b2b560bbdee4cf83296da3650d673530178590c77b03e22796b71548d7",
+     "ab0e2f04d57a26f1330f85eda28eb24dcc85999e2d1028e2900f60b901813c86",
      "9e212cd6675f50ef73591930ad56ec3165c85c8c84659f63afebf5a9f2ab1b80",
-     "9585f13b45536871de84982fe116514f50b8635abb6a58df0580fc957818f3a7",
+     "06c68a141177f8decaa07540a482aebd613a9a6d7331d0ea9944131f40bd1ea0",
      "1d1b871d74c9577dd2b6b11f1d35148fa6ba8a1a4d2fc19801c3bbe862b9af58",
-     "4e196c9a8b14641db20c1ba05b1de28c9bb87587d5ff49898d058d87c0ea1ef2"
+     "0002d5a0bd8bf9670c541f7095ac0cea907d6e8ba17f899d31fb7ef98d0ba8ab"
     ],
     "audio_frames": 0,
     "audio_pcm_sha256": null,
@@ -2077,11 +2077,11 @@
     "frames": 6,
     "frame_sha256": [
      "f7d0f52d8a4b2468249f80c5525bbd84846a03aac2ae3bfcc2a7cb225353de38",
-     "a72843b2b560bbdee4cf83296da3650d673530178590c77b03e22796b71548d7",
+     "ab0e2f04d57a26f1330f85eda28eb24dcc85999e2d1028e2900f60b901813c86",
      "9e212cd6675f50ef73591930ad56ec3165c85c8c84659f63afebf5a9f2ab1b80",
-     "9585f13b45536871de84982fe116514f50b8635abb6a58df0580fc957818f3a7",
+     "06c68a141177f8decaa07540a482aebd613a9a6d7331d0ea9944131f40bd1ea0",
      "1d1b871d74c9577dd2b6b11f1d35148fa6ba8a1a4d2fc19801c3bbe862b9af58",
-     "4e196c9a8b14641db20c1ba05b1de28c9bb87587d5ff49898d058d87c0ea1ef2"
+     "0002d5a0bd8bf9670c541f7095ac0cea907d6e8ba17f899d31fb7ef98d0ba8ab"
     ]
    },
    "expect": {},

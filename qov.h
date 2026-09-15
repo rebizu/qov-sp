@@ -924,12 +924,45 @@ static void qov_inverse_dct_raw(const float *coeffs, float *block)
 
 typedef struct {
     int block_size, grid_w, grid_h;
-    int *vx, *vy;
+    int *vx, *vy;      /* half_pel: u = 2*vx + hx displacement in half-pel units */
+    int half_pel;
 } qov__mv;
 
 static int qov__clampi(int v, int lo, int hi)
 {
     return v < lo ? lo : (v > hi ? hi : v);
+}
+
+/* Full-block SAD at a half-pel-unit displacement (u,v); integer part floors
+ * (u >> 1), odd bit selects bilinear interpolation with border-clamped taps.
+ * Normative refinement metric (spec v3.6 §5.2) — must match the TS/C# code
+ * operation for operation. */
+static long long qov__mv_sad_full(const uint8_t *curr, const uint8_t *prev, int w, int h,
+                                  int bx, int by, int bw, int bh, int u, int v)
+{
+    int fx = u >> 1, fy = v >> 1;
+    int hx = u & 1, hy = v & 1;
+    long long sum = 0;
+    for (int y = 0; y < bh; y++) {
+        int base_y = by + y + fy;
+        int sy0 = qov__clampi(base_y, 0, h - 1);
+        int sy1 = qov__clampi(base_y + 1, 0, h - 1);
+        const uint8_t *crow = curr + (size_t)(by + y) * w + bx;
+        for (int x = 0; x < bw; x++) {
+            int base_x = bx + x + fx;
+            int sx0 = qov__clampi(base_x, 0, w - 1);
+            int sx1 = qov__clampi(base_x + 1, 0, w - 1);
+            int a = prev[sy0 * w + sx0];
+            int s;
+            if (hx == 0 && hy == 0) s = a;
+            else if (hx == 0) s = (a + prev[sy1 * w + sx0] + 1) >> 1;
+            else if (hy == 0) s = (a + prev[sy0 * w + sx1] + 1) >> 1;
+            else s = (a + prev[sy0 * w + sx1] + prev[sy1 * w + sx0] + prev[sy1 * w + sx1] + 2) >> 2;
+            int d = crow[x] - s;
+            sum += d < 0 ? -d : d;
+        }
+    }
+    return sum;
 }
 
 static void qov__mv_sample(int i, int bw, int bh, int *ox, int *oy)
@@ -1035,7 +1068,7 @@ static qov__mv_entry *qov__mv_map_find(qov__mv_map *m, int key)
 
 static qov_result qov__mv_estimate(const uint8_t *curr, const uint8_t *prev, int w, int h,
                                    int sad_skip, int use_diamond, int min_moved,
-                                   qov__mv *out)
+                                   int half_pel, qov__mv *out)
 {
     int grid_w = (w + QOV_MV_BLOCK - 1) / QOV_MV_BLOCK;
     int grid_h = (h + QOV_MV_BLOCK - 1) / QOV_MV_BLOCK;
@@ -1104,6 +1137,31 @@ static qov_result qov__mv_estimate(const uint8_t *curr, const uint8_t *prev, int
                 }
             }
 
+            if (half_pel) {
+                /* Half-pel refinement (spec v3.6 §5.2): rescore the chosen
+                   integer vector, the (0,0) prediction, and its eight half-pel
+                   neighbours with the full-block SAD; strict improvement only,
+                   center first, so ties keep the integer vector. Order of the
+                   neighbour loop is normative. */
+                int cu = qov__clampi(best_vx * 2, -127, 127);
+                int cv = qov__clampi(best_vy * 2, -127, 127);
+                int best_u = cu, best_v = cv;
+                long long best_full = qov__mv_sad_full(curr, prev, w, h, bx, by, bw, bh, cu, cv);
+                long long s00 = qov__mv_sad_full(curr, prev, w, h, bx, by, bw, bh, 0, 0);
+                if (s00 < best_full) { best_full = s00; best_u = 0; best_v = 0; }
+                for (int hv = -1; hv <= 1; hv++) {
+                    for (int hu = -1; hu <= 1; hu++) {
+                        if (hu == 0 && hv == 0) continue;
+                        int nu = cu + hu, nv = cv + hv;
+                        if (nu < -127 || nu > 127 || nv < -127 || nv > 127) continue;
+                        long long s = qov__mv_sad_full(curr, prev, w, h, bx, by, bw, bh, nu, nv);
+                        if (s < best_full) { best_full = s; best_u = nu; best_v = nv; }
+                    }
+                }
+                best_vx = best_u;
+                best_vy = best_v;
+            }
+
             if (best_vx != 0 || best_vy != 0) {
                 vx[gbY * grid_w + gbX] = best_vx;
                 vy[gbY * grid_w + gbX] = best_vy;
@@ -1124,12 +1182,14 @@ static qov_result qov__mv_estimate(const uint8_t *curr, const uint8_t *prev, int
     out->grid_h = grid_h;
     out->vx = vx;
     out->vy = vy;
+    out->half_pel = half_pel;
     return QOV_OK;
 }
 
 static void qov__mv_write(const qov__mv *mv, qov__buf *b)
 {
-    qov__buf_u8(b, 1); /* block_size_id = 1 (16x16) */
+    /* id 3 = 16x16 with half-pel-unit vectors (spec v3.6 §5.2) */
+    qov__buf_u8(b, mv->half_pel ? 3 : 1); /* block_size_id (only 16x16 exists) */
     int last = 0;
     for (int i = 0; i < mv->grid_w * mv->grid_h; i++)
         if (mv->vx[i] != 0 || mv->vy[i] != 0) last = i;
@@ -1145,6 +1205,7 @@ static void qov__mv_parse(const uint8_t *data, size_t size, size_t *pos, int wid
                           qov__mv *out)
 {
     uint8_t id = data[(*pos)++];
+    int half_pel = id == 3;
     int block_size = (id == 0) ? 8 : (id == 2) ? 32 : 16;
     int count = (int)((data[*pos] << 8) | data[*pos + 1]);
     *pos += 2;
@@ -1154,6 +1215,7 @@ static void qov__mv_parse(const uint8_t *data, size_t size, size_t *pos, int wid
     out->block_size = block_size;
     out->grid_w = grid_w;
     out->grid_h = grid_h;
+    out->half_pel = half_pel;
     out->vx = (int *)qov__malloc(sizeof(int) * (size_t)(total ? total : 1));
     out->vy = (int *)qov__malloc(sizeof(int) * (size_t)(total ? total : 1));
     for (int i = 0; i < total; i++) { out->vx[i] = 0; out->vy[i] = 0; }
@@ -1184,16 +1246,37 @@ static void qov__mv_compensate_plane(const uint8_t *prev, int w, int h, const qo
             int lum_x = qov__clampi(gbX * B * scale_x / mv->block_size, 0, mv->grid_w - 1);
             int lum_y = qov__clampi(gbY * B * scale_y / mv->block_size, 0, mv->grid_h - 1);
             int li = lum_y * mv->grid_w + lum_x;
-            int vx = mv->vx[li] >> shift_x, vy = mv->vy[li] >> shift_y;
+            int u = mv->vx[li], v = mv->vy[li];
+            int luma = shift_x == 0 && shift_y == 0;
+            int hx = (luma && mv->half_pel) ? (u & 1) : 0;
+            int hy = (luma && mv->half_pel) ? (v & 1) : 0;
+            int vx = mv->half_pel ? (u >> (shift_x + 1)) : (u >> shift_x);
+            int vy = mv->half_pel ? (v >> (shift_y + 1)) : (v >> shift_y);
             int bw = (gbX + 1) * B <= w ? B : w - gbX * B;
             int bh = (gbY + 1) * B <= h ? B : h - gbY * B;
+            int half = hx != 0 || hy != 0;
             for (int y = 0; y < bh; y++) {
-                int sy = qov__clampi(gbY * B + y + vy, 0, h - 1);
                 int o_row = (gbY * B + y) * w + gbX * B;
-                int s_row = sy * w;
-                for (int x = 0; x < bw; x++) {
-                    int sx = qov__clampi(gbX * B + x + vx, 0, w - 1);
-                    out[o_row + x] = prev[s_row + sx];
+                if (!half) {
+                    int sy = qov__clampi(gbY * B + y + vy, 0, h - 1);
+                    int s_row = sy * w;
+                    for (int x = 0; x < bw; x++) {
+                        int sx = qov__clampi(gbX * B + x + vx, 0, w - 1);
+                        out[o_row + x] = prev[s_row + sx];
+                    }
+                } else {
+                    for (int x = 0; x < bw; x++) {
+                        int sx0 = qov__clampi(gbX * B + x + vx, 0, w - 1);
+                        int sx1 = qov__clampi(gbX * B + x + vx + 1, 0, w - 1);
+                        int sy0 = qov__clampi(gbY * B + y + vy, 0, h - 1);
+                        int sy1 = qov__clampi(gbY * B + y + vy + 1, 0, h - 1);
+                        int a = prev[sy0 * w + sx0];
+                        int s;
+                        if (hx == 0) s = (a + prev[sy1 * w + sx0] + 1) >> 1;
+                        else if (hy == 0) s = (a + prev[sy0 * w + sx1] + 1) >> 1;
+                        else s = (a + prev[sy0 * w + sx1] + prev[sy1 * w + sx0] + prev[sy1 * w + sx1] + 2) >> 2;
+                        out[o_row + x] = (uint8_t)s;
+                    }
                 }
             }
         }
@@ -1207,20 +1290,42 @@ static void qov__mv_compensate_frame(const uint8_t *prev, int w, int h, const qo
     for (int gbY = 0; gbY < gh; gbY++) {
         for (int gbX = 0; gbX < gw; gbX++) {
             int li = gbY * mv->grid_w + gbX;
-            int vx = mv->vx[li], vy = mv->vy[li];
+            int u = mv->vx[li], v = mv->vy[li];
+            int hx = mv->half_pel ? (u & 1) : 0, hy = mv->half_pel ? (v & 1) : 0;
+            int vx = mv->half_pel ? (u >> 1) : u;
+            int vy = mv->half_pel ? (v >> 1) : v;
             int bw = (gbX + 1) * B <= w ? B : w - gbX * B;
             int bh = (gbY + 1) * B <= h ? B : h - gbY * B;
+            int half = hx != 0 || hy != 0;
             for (int y = 0; y < bh; y++) {
-                int sy = qov__clampi(gbY * B + y + vy, 0, h - 1);
                 int o_row = ((gbY * B + y) * w + gbX * B) * 4;
-                int s_row = (sy * w) * 4;
-                for (int x = 0; x < bw; x++) {
-                    int sx = qov__clampi(gbX * B + x + vx, 0, w - 1);
-                    int o = o_row + x * 4, s = s_row + sx * 4;
-                    out[o] = prev[s];
-                    out[o + 1] = prev[s + 1];
-                    out[o + 2] = prev[s + 2];
-                    out[o + 3] = prev[s + 3];
+                if (!half) {
+                    int sy = qov__clampi(gbY * B + y + vy, 0, h - 1);
+                    int s_row = (sy * w) * 4;
+                    for (int x = 0; x < bw; x++) {
+                        int sx = qov__clampi(gbX * B + x + vx, 0, w - 1);
+                        int o = o_row + x * 4, s = s_row + sx * 4;
+                        out[o] = prev[s];
+                        out[o + 1] = prev[s + 1];
+                        out[o + 2] = prev[s + 2];
+                        out[o + 3] = prev[s + 3];
+                    }
+                } else {
+                    for (int x = 0; x < bw; x++) {
+                        int o = o_row + x * 4;
+                        int sx0 = qov__clampi(gbX * B + x + vx, 0, w - 1);
+                        int sx1 = qov__clampi(gbX * B + x + vx + 1, 0, w - 1);
+                        int sy0 = qov__clampi(gbY * B + y + vy, 0, h - 1);
+                        int sy1 = qov__clampi(gbY * B + y + vy + 1, 0, h - 1);
+                        for (int ch = 0; ch < 4; ch++) {
+                            int a = prev[(sy0 * w + sx0) * 4 + ch];
+                            int s2;
+                            if (hx == 0) s2 = (a + prev[(sy1 * w + sx0) * 4 + ch] + 1) >> 1;
+                            else if (hy == 0) s2 = (a + prev[(sy0 * w + sx1) * 4 + ch] + 1) >> 1;
+                            else s2 = (a + prev[(sy0 * w + sx1) * 4 + ch] + prev[(sy1 * w + sx0) * 4 + ch] + prev[(sy1 * w + sx1) * 4 + ch] + 2) >> 2;
+                            out[o + ch] = (uint8_t)s2;
+                        }
+                    }
                 }
             }
         }
@@ -2518,7 +2623,7 @@ static void qov__enc_rgb_pframe(qov_encoder *e, const uint8_t *pixels, uint32_t 
         }
         if (qov__mv_estimate(curr_luma, prev_luma, (int)e->p.width, (int)e->p.height,
                              temporal_thresh > 0 ? temporal_thresh * 5 : 0,
-                             e->lossy, min_moved, &mv) == QOV_OK)
+                             e->lossy, min_moved, 0, &mv) == QOV_OK) /* half-pel is YUV-mode only */
             have_mv = 1;
         qov__free(curr_luma);
         qov__free(prev_luma);
@@ -2863,7 +2968,7 @@ static void qov__enc_yuv_pframe(qov_encoder *e, const uint8_t *pixels, uint32_t 
         }
         int tt = e->lossy ? e->temporal_thresh : 0;
         if (qov__mv_estimate(yp, e->prev_y, (int)w, (int)h,
-                             tt > 0 ? tt * 5 : 0, e->lossy, min_moved, &mv) == QOV_OK)
+                             tt > 0 ? tt * 5 : 0, e->lossy, min_moved, e->lossy, &mv) == QOV_OK)
             have_mv = 1;
     }
 

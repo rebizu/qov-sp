@@ -15,14 +15,15 @@
 | PR3 intra DCT keyframes (ikf) | SHIPPED — a67c83e; opt-in, keyframe −83.5% on camera; screen regression → opt-in |
 | PR6 intra refresh bands | SHIPPED — b57e653; spec v3.4 §3.4.4; opt-in, cam −5.5% bitrate +0.083 SSIM, screen 19× → camera-only |
 | PR5 Exp-Golomb (optional) | SHIPPED — 5582257; spec v3.5 §3.4.5; −13.6%/−20% at equal SSIM, corpus twins to −28% |
-| PR4 half-pel refinement | NOT STARTED — scoreboard-gate before building |
+| PR4 half-pel refinement | SHIPPED — spec v3.6 §5.2; gate PASSED on real webcam footage (residual SSD −40%, SAD −14%; integer MC measured net-harmful on real footage, half-pel + full-SAD rescoring flips it net-positive); cam720 q60: −61.6% bitrate (11272→4331 kbps), SSIM 0.865→0.929, enc −32%, dec −44% (scoreboard-pr4.json); synthetic scroll corpus: motion cases −1.5%/−5.7%, refresh twins +1.5% |
 | VLC plugin workstream | NOT STARTED — aenc QOA, mux total_frames, GUI seek; v4 compat rebuild after |
 | Phase 2 streaming | NOT STARTED — qov_set_quality/qov_drop_reference, packetization, demo call |
 | Phase 3 audio | NOT STARTED — 16 kHz speech mode, Opus flag |
 | Phase 4 v4 subtraction/freeze | NOT STARTED |
 
-Conformance state: GREEN, 35 cases × 8 steps, expected_failures.json empty.
-Spec version: 3.5. Remotes: push target is `rebizu` (github.com/rebizu/qov-sp), branch `master`.
+Conformance state: GREEN, 35 cases × 8 steps, expected_failures.json empty (verified
+across all three implementations on Windows and Linux).
+Spec version: 3.6. Remotes: push target is `rebizu` (github.com/rebizu/qov-sp), branch `master`.
 
 ---
 

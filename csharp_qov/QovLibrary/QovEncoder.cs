@@ -542,7 +542,8 @@ public class QovEncoder
             mv = Motion.EstimateMotion(currLuma, prevLuma, _header.Width, _header.Height,
                 temporalThresh > 0 ? temporalThresh * 5 : 0,
                 _lossyMode,
-                Math.Max(4, (int)Math.Ceiling(0.005 * ((_header.Width + 15) / 16) * ((_header.Height + 15) / 16))));
+                Math.Max(4, (int)Math.Ceiling(0.005 * ((_header.Width + 15) / 16) * ((_header.Height + 15) / 16))),
+                halfPel: false); // half-pel is YUV-mode only (spec v3.6 §5.2)
             if (mv != null)
             {
                 var comp = new byte[refFrame.Length];
@@ -722,7 +723,8 @@ public class QovEncoder
             mv = Motion.EstimateMotion(yPlane, _prevYPlane!, width, height,
                 temporalThresh > 0 ? temporalThresh * 5 : 0,
                 _lossyMode,
-                Math.Max(4, (int)Math.Ceiling(0.005 * ((width + 15) / 16) * ((height + 15) / 16))));
+                Math.Max(4, (int)Math.Ceiling(0.005 * ((width + 15) / 16) * ((height + 15) / 16))),
+                halfPel: _lossyMode);
             if (mv != null)
             {
                 var cm = Motion.ChromaMotionParams(_header.Colorspace);

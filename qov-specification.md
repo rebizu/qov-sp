@@ -1,6 +1,6 @@
 # QOV (Quite OK Video) Format Specification
 
-**Version:** 3.5 (Unified)
+**Version:** 3.6 (Unified)
 **Date:** September 2026
 **Based on:** QOI (Quite OK Image) and QOA (Quite OK Audio)
 
@@ -469,11 +469,41 @@ Pixels are converted to YUV internally, quantized, and converted back to RGB (or
       pixel, shifted per subsampled axis with an arithmetic shift:
       `mv_c = mv_luma >> 1` — both axes for 4:2:0/YUVA420, horizontal only
       for 4:2:2, unchanged for 4:4:4. The alpha plane uses luma vectors at
-      luma resolution.
-    - Vectors are **integer-pel** with range ±127 pixels. Half-pel vectors
-      are reserved for a future extension (no flag is defined in v3.2).
-    - Decoders MUST honor all three `block_size_id` values. v3.2 encoders
-      emit `block_size_id = 1` (16x16).
+      luma resolution. In half-pel mode (below) the stored luma value is the
+      half-pel-unit `u` and the shift becomes `mv_c = u >> (1 + 1)` per
+      subsampled axis, i.e. the chroma vector stays whole-pel and the
+      fractional luma bit is dropped.
+    - **Vectors are integer-pel** with range ±127 pixels (`block_size_id`
+      0–2). `block_size_id = 3` selects **16x16 blocks with half-pel-unit
+      vectors** (v3.6): each written byte is the signed half-pel-unit
+      displacement `u = 2*mv_x + h_x` (`h_x = 1` marks a half-pel offset;
+      range ±127, so the integer component is limited to −64..+63 pixels).
+      Decoding: `mv_x = u >> 1` (arithmetic shift), `h_x = u & 1`. A block
+      whose compensation uses a half-pel offset samples the reference plane
+      **bilinearly**, border-clamped on all four taps, with integer-only
+      arithmetic:
+      `a = ref(y0, x0)`, `b = ref(y0, x0+1)`, `c = ref(y1, x0)`,
+      `d = ref(y1, x0+1)` (indices clamped to the plane),
+      `h-only: (a+b+1)>>1`, `v-only: (a+c+1)>>1`,
+      `diagonal: (a+b+c+d+2)>>2`.
+      Blocks with even `u` and `v` compensate exactly as in integer-pel mode.
+      Half-pel mode is a **lossy-YUV encoder option**: lossless P-frames
+      always compensate with exact copies (integer vectors).
+    - **Half-pel refinement (encoder-side normative rule, v3.6):** after the
+      integer search selects a vector for an active block (a block not
+      skipped by the SAD threshold), the encoder re-scores candidates with
+      the **full-block SAD** `S(u,v) = Σ |curr(x,y) − ref(x + u/2, y + v/2)|`
+      (bilinear reference sampling as above, border-clamped, all pixels of
+      the block): the candidates are the chosen integer vector scaled to
+      half-pel units (clamped to ±127), the (0,0) prediction, and the eight
+      half-pel neighbours of the chosen vector, evaluated in row-major order
+      `hv = −1..1`, `hu = −1..1` (skipping out-of-range). A candidate
+      replaces the incumbent only on **strict** improvement, with the scaled
+      integer center evaluated first — ties keep the integer vector. The
+      winning `(u, v)` is stored directly; `(0,0)` winners mark the block
+      unmoved.
+    - Decoders MUST honor all four `block_size_id` values. v3.2–v3.5
+      encoders emit `block_size_id = 1` (16x16).
     - The MV block appears **at most once per chunk**, before all pixel and
       plane streams. Header flag `HAS_MOTION` (bit 3) declares that a file
       uses motion vectors; individual P-frames still choose per chunk via
@@ -563,6 +593,19 @@ This specification is placed in the public domain.
 ---
 
 ## Changelog
+
+### 3.6 (September 2026)
+- §5.2: half-pel motion refinement. `block_size_id = 3` selects 16x16 blocks
+  with signed half-pel-unit vectors (`u = 2*mv_x + h_x`, range ±127, so the
+  integer component spans −64..+63). Compensation with `h = 1` bilinearly
+  interpolates the border-clamped reference with integer-only arithmetic
+  (`(a+b+1)>>1`, `(a+c+1)>>1`, `(a+b+c+d+2)>>2`); chroma stays whole-pel via
+  `mv_c = u >> 2` per subsampled axis. A lossy-YUV encoder-side normative
+  refinement rule rescores the integer vector, the (0,0) prediction, and the
+  eight half-pel neighbours with the full-block SAD (strict improvement,
+  center first); lossless P-frames are unchanged. Measured on real webcam
+  footage (1280x720@30, quality 60): residual SSD −40%, and motion
+  compensation becomes net-beneficial where the integer search was not.
 
 ### 3.5 (September 2026)
 - §3.4.5: optional Exp-Golomb coefficient coding for DCT chunks, marked

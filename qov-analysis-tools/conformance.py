@@ -83,7 +83,8 @@ def find_csharp_tool(name: str) -> Path | None:
     base = ROOT / "csharp_qov" / name / "bin" / "Release"
     if not base.exists():
         return None
-    exes = sorted(base.glob(f"*/{name}.exe"))
+    exes = sorted(base.glob(f"*/{name}.exe")) or sorted(
+        p for p in base.glob(f"*/{name}") if os.access(p, os.X_OK))
     return exes[-1] if exes else None
 
 
@@ -116,11 +117,11 @@ def build_c() -> Path | None:
         # -ffp-contract=off is REQUIRED for bit-exactness: gcc's default
         # fast contraction rewrites the a*b+c chains in qov_rgb_to_yuv_px and
         # diverges from TS by ±1 on knife-edge pixels (Linux gcc 15, -O2).
-        # -lm: main.c uses sin(); MinGW links math implicitly, glibc does not —
-        # without it the gcc build fails and the runner silently falls back
-        # to zig cc, whose defaults still contract.
+        # -lm goes AFTER the source: ld resolves libraries left-to-right, so
+        # libm before main.c leaves sin undefined and the gcc candidate fails,
+        # silently falling back to zig cc.
         p = subprocess.run(cc + ["-O2", "-std=c99", "-Wall", "-w", "-ffp-contract=off",
-                                 "-lm", "-o", str(out), str(src)],
+                                 "-o", str(out), str(src), "-lm"],
                            capture_output=True, text=True, cwd=ROOT, env=env)
         if p.returncode == 0 and out.exists():
             return out
