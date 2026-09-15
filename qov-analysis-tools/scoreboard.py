@@ -50,8 +50,9 @@ def run(cmd, **kw):
 
 def find_bench():
     if not os.path.exists(BENCH):
-        die(f"{BENCH} missing — build with: gcc -O2 -o c/bench.exe c/bench.c "
-            "(export PATH=/c/msys64/mingw64/bin:$PATH first, gcc fails silently otherwise)")
+        die(f"{BENCH} missing — build with: gcc -O2 -ffp-contract=off -o c/bench.exe c/bench.c "
+            "(export PATH=/c/msys64/mingw64/bin:$PATH first, gcc fails silently otherwise; "
+            "-ffp-contract=off is required for bit-exact parity with TS)")
     return BENCH
 
 

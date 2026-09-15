@@ -15,6 +15,7 @@ Usage:
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -28,6 +29,20 @@ NODE_ESBUILD = ROOT / "node_modules" / "esbuild" / "bin" / "esbuild"
 
 def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def esbuild_cmd(node: str) -> list:
+    """npm ships node_modules/esbuild/bin/esbuild as a JS shim on Windows but
+    as the native ELF binary on POSIX; node can only run the former. Peek at
+    the magic bytes so both machines bundle the same way."""
+    try:
+        with open(NODE_ESBUILD, "rb") as f:
+            magic = f.read(4)
+    except OSError:
+        magic = b""
+    if os.name != "nt" and (magic[:4] == b"\x7fELF" or magic[:2] == b"#!"):
+        return [str(NODE_ESBUILD)]
+    return [node, str(NODE_ESBUILD)]
 
 
 def run(cmd: list, **kw) -> str:
@@ -46,7 +61,7 @@ def ensure_bundle(node: str, force: bool) -> Path:
     deps = [src] + list((Path(__file__).resolve().parent.parent / "src").glob("*.ts"))
     newest = max(p.stat().st_mtime for p in deps)
     if force or not bundle.exists() or bundle.stat().st_mtime < newest:
-        run([node, str(NODE_ESBUILD), str(src),
+        run([*esbuild_cmd(node), str(src),
              "--bundle", "--platform=node", "--format=cjs",
              f"--outfile={bundle}", "--log-level=warning"])
     return bundle

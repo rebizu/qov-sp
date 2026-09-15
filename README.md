@@ -116,10 +116,14 @@ Custom allocators: `qov_set_allocator()`. Audio chunks are skipped on decode
 A small CLI used by the conformance suite lives in `c/main.c`:
 
 ```bash
-gcc -O2 -std=c99 -o qov_cli c/main.c
+gcc -O2 -std=c99 -ffp-contract=off -o qov_cli c/main.c
 ./qov_cli encode case.json out.qov    # corpus case JSON, same as tscli
 ./qov_cli decode video.qov            # JSON report with per-frame SHA-256
 ```
+
+`-ffp-contract=off` is required: the encoder's float math must match the
+TypeScript implementation bit-for-bit, and gcc's default contraction
+produces ±1 rounding differences on knife-edge pixels.
 
 ## Specification
 

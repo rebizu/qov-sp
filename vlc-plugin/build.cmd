@@ -25,7 +25,9 @@ if errorlevel 1 (
 
 if not exist obj mkdir obj
 
-%GCC% -O2 -Wall -std=gnu99 -shared -o qovplug.dll ^
+rem -ffp-contract=off is required for bit-exact parity with the TS codec
+rem (see DEVELOPER-NOTES.md: gcc fast contraction shifts knife-edge pixels)
+%GCC% -O2 -Wall -std=gnu99 -ffp-contract=off -shared -o qovplug.dll ^
   -I"%SDKDIR%\include\vlc\plugins" -I"%~dp0.." ^
   -D__PLUGIN__ -DHAVE_POLL=1 -DMODULE_STRING='"qov"' ^
   qov_codec.c qov_poll.c qov-demux.c qov-decoder.c qov-audio.c qov-encoder.c qov-mux.c ^

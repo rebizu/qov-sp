@@ -39,6 +39,20 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def esbuild_cmd(node: str) -> list:
+    """npm ships node_modules/esbuild/bin/esbuild as a JS shim on Windows but
+    as the native ELF binary on POSIX; node can only run the former. Peek at
+    the magic bytes so both machines bundle the same way."""
+    try:
+        with open(NODE_ESBUILD, "rb") as f:
+            magic = f.read(4)
+    except OSError:
+        magic = b""
+    if os.name != "nt" and (magic[:4] == b"\x7fELF" or magic[:2] == b"#!"):
+        return [str(NODE_ESBUILD)]
+    return [node, str(NODE_ESBUILD)]
+
+
 def run(cmd: list, **kw) -> str:
     p = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, **kw)
     return p
@@ -60,7 +74,7 @@ def ensure_bundle(node: str) -> Path:
     deps = [src] + list((ROOT / "src").glob("*.ts"))
     newest = max(p.stat().st_mtime for p in deps)
     if not bundle.exists() or bundle.stat().st_mtime < newest:
-        must_run([node, str(NODE_ESBUILD), str(src), "--bundle", "--platform=node",
+        must_run([*esbuild_cmd(node), str(src), "--bundle", "--platform=node",
                   "--format=cjs", f"--outfile={bundle}", "--log-level=warning"])
     return bundle
 
@@ -99,8 +113,14 @@ def build_c() -> Path | None:
         if cc_dir:
             # MinGW gcc needs its bin dir on PATH to run cc1 (DLL deps)
             env["PATH"] = cc_dir + os.pathsep + env.get("PATH", "")
-        p = subprocess.run(cc + ["-O2", "-std=c99", "-Wall", "-w",
-                                 "-o", str(out), str(src)],
+        # -ffp-contract=off is REQUIRED for bit-exactness: gcc's default
+        # fast contraction rewrites the a*b+c chains in qov_rgb_to_yuv_px and
+        # diverges from TS by ±1 on knife-edge pixels (Linux gcc 15, -O2).
+        # -lm: main.c uses sin(); MinGW links math implicitly, glibc does not —
+        # without it the gcc build fails and the runner silently falls back
+        # to zig cc, whose defaults still contract.
+        p = subprocess.run(cc + ["-O2", "-std=c99", "-Wall", "-w", "-ffp-contract=off",
+                                 "-lm", "-o", str(out), str(src)],
                            capture_output=True, text=True, cwd=ROOT, env=env)
         if p.returncode == 0 and out.exists():
             return out

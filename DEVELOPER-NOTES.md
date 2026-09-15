@@ -10,6 +10,27 @@ execution status lives in `CONFERENCE-ROADMAP.md`.)
 - **gcc fails silently** when `/c/msys64/mingw64/bin` is not on PATH: exit 1,
   empty stderr. `export PATH="/c/msys64/mingw64/bin:$PATH"` before every
   hand-built binary.
+- **gcc flags are load-bearing for bit-exactness.** Always build `qov.h`
+  code with `-ffp-contract=off`: gcc's default fast contraction rewrites the
+  `a*b+c` chains in `qov_rgb_to_yuv_px` and shifts ±1 on knife-edge luma
+  pixels (3 pixels of 12288 on the gradient case — enough to fail every
+  c_encode hash). Symptom worth recognizing: c_decode passes (decoder
+  math unaffected) while c_encode fails everywhere.
+- **Missing link libs fall back silently.** On Linux, `c/main.c` needs
+  `-lm` (`sin()`); MinGW links math implicitly. If the gcc candidate in
+  `conformance.py build_c()` fails to link, the runner quietly tries
+  `zig cc` next — a *different* compiler with different FP defaults, so
+  the suite can go red from a toolchain substitution that never prints a
+  warning. If C legs behave oddly on a new machine, first verify
+  `qov-analysis-tools/.build/qov_cli.exe` was actually built by gcc.
+- **esbuild's bin shim is platform-shaped**: on Windows
+  `node_modules/esbuild/bin/esbuild` is a JS file you run *under node*; on
+  POSIX npm puts the native ELF binary there and node refuses to execute
+  it. `conformance.py` / `gen_corpus.py` peek at the magic bytes and pick
+  the right invocation — keep that when adding new bundling code.
+- **`python` vs `python3`**: the npm scripts try `python3` then `python`
+  (`||` chains work in both npm shells). Debian/Ubuntu ships only
+  `python3`; Windows only `python`.
 - **Stale binaries are the recurring failure mode.** The conformance runner
   rebuilds its own tools, but these are manual and go stale after editing
   `qov.h` or `src/*.ts`:
