@@ -31,11 +31,13 @@ COLORSPACE_NAMES = {
 }
 
 FLAG_NAMES = {0x01: "HAS_ALPHA", 0x02: "HAS_MOTION", 0x04: "HAS_INDEX",
-              0x08: "HAS_BFRAMES", 0x10: "ENHANCED_COMP", 0x20: "LOSSY_MODE",
-              0x40: "DCT_ENABLED"}
+              0x08: "EXP_GOLOB", 0x10: "INTRA_REFRESH", 0x20: "LOSSY_MODE",
+              0x40: "DCT_ENABLED", 0x80: "INTRA_DCT_KF"}
 
-CHUNK_FLAG_NAMES = [(0x01, "YUV"), (0x02, "MOTION"), (0x10, "COMPRESSED"),
-                    (0x20, "DCT_BLOCKS")]
+CHUNK_FLAG_NAMES = [(0x01, "YUV"), (0x02, "MOTION"), (0x04, "STRUCTURED"),
+                    (0x08, "RANGE"), (0x10, "COMPRESSED"),
+                    (0x20, "DCT_BLOCKS"), (0x40, "EXP_GOLOB"),
+                    (0x80, "REFRESH_BAND")]
 
 VALID_COLORSPACES = {0x00, 0x01, 0x02, 0x03, 0x10, 0x11, 0x12, 0x13}
 
