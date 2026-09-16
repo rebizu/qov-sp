@@ -102,6 +102,38 @@ into type-0x03 datagrams of 8 chunks (spec v2.1 §3.1).
 
 Raw rows in `scoreboard-phase3.6-call.json`.
 
+## 1c. Structured P-frames (v3.9, measured 2026-09-16)
+
+The structured P-frame grammar (spec §3.4.6, chunk flag 0x04) removes the
+per-block opcode, per-block qp delta and SKIP-tag bytes the order-0 range
+coder cannot exploit — measured at ~35% of the RC'd payload (exact
+byte-attribution profile, `qov-analysis-tools/pframe-explore/`). The
+decoded pixels are bit-identical to the v1 grammar by construction; only
+the framing changes.
+
+| quality | P-frame bytes/frame v1 | structured | delta |
+|---|---:|---:|---:|
+| q30 | 1745.9 | 910.9 | −47.8% |
+| q50 | 2009.7 | 1108.3 | −44.9% |
+| q60 (call default) | 2316.3 | 1301.0 | **−43.8%** |
+| q85 | 3590.1 | 2335.7 | −34.9% |
+
+- Video payload at call settings: **451.5 → 258.2 kbps (−42.8%)**,
+  keyframes unchanged. Stacked with the §1b rung + batching, the quiet
+  call estimate drops to roughly ~230 kbps wire.
+- SSIM is unchanged (identical pixels): 0.809 at q60.
+- The 2% worst-case q85 gap vs lower qualities is the skip-run chains:
+  high-quality frames code more blocks, so the per-block chain bytes are
+  a bigger share.
+- Decode speed is unchanged within noise (same coefficient path; only
+  byte framing moved). Measured 720-frame roundtrips at q30–q85,
+  bit-exact in all cases.
+
+Format exploration history, the dead ends (DC delta prediction, Exp-Golomb
+under the range coder) and the two decoder defects the work exposed (EOB
+swallowed at zigzag 63; 255-chain accumulation) are documented in
+`PFRAME-EXPLORATION.md`.
+
 ## 2. Speed (C reference, single thread)
 
 | stage | LZ4 | range coder |

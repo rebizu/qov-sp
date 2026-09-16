@@ -4,6 +4,12 @@ Question: can P-frames be made lighter by changing the **format** rather than
 squeezing entropy — in a way that fits the QOI philosophy (simple, integer,
 one-pass, deterministic, bit-exact)?
 
+> **STATUS (shipped as spec v3.9):** the grammar below is implemented in
+> all three reference implementations (C `qov.h`, TypeScript, C#) behind
+> chunk flag `0x04`, covered by 6 new conformance cases, and enabled in
+> the call demo. Implementation also exposed two pre-existing decoder
+> defects — see "The two decoder bugs this shipped" at the end.
+
 **TL;DR: yes.** A restructured P-frame grammar (chunk flag `0x04`) removes
 ~35% of P-frame bytes that were pure structure (per-block opcodes, per-block
 qp deltas, skip-run tags) which the order-0 range coder cannot exploit.
@@ -125,7 +131,32 @@ perceptual tuning (skip threshold, dead zone), not byte layout.
   spans 2 QOV-S packets at the 1180 B fragment cap — the win is bytes, not
   packet count.
 
-## 6. Repro
+## 6. The two decoder bugs this shipped
+
+Profiling against a checker-pattern corpus case surfaced two pre-existing
+decoder defects in **both** grammars, present identically in C, TypeScript
+and C#:
+
+1. **EOB swallowed at zigzag 63.** The coefficient-section EOB is written
+   unconditionally, but the decoder AC loop `while (k < 64)` exits early
+   when the last coded AC lands exactly on zigzag index 63 — leaving the
+   EOB to be eaten as the next item. The plane desynchronizes; with busy
+   content (checker at q50) this fired constantly. Conformance missed it
+   because the manifest froze each implementation's own decode.
+   Fix: the AC loop runs until the EOB is consumed (run-overshoot keeps
+   its defensive break).
+2. **255-chain accumulation.** The structured skip chain treats 255 as
+   "255 skipped, chain continues"; all three decoders applied only the
+   final byte's count and dropped every earlier 255. Static-content tests
+   masked it (wrong skip fills still copy identical pixels); a new
+   256x256 all-skip case and C# test now cover it. Fix: accumulate every
+   chain byte.
+
+Both fixes are decoder-side only — encoded bytes are unchanged — and are
+documented normatively in spec §3.4.6. The 6 pre-existing corpus cases
+whose decode hashes moved were regenerated as the approval event.
+
+## 7. Repro
 
 ```bash
 cd qov-analysis-tools/pframe-explore

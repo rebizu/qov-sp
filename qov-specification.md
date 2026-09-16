@@ -152,6 +152,9 @@ Bit  Name        Description
                  - NEW in v3.4, see 3.4.4
 8    RANGE       Chunk data is adaptive range-coder compressed (0x08)
                  - NEW in v3.8, see 2.1.1
+2    STRUCTURED  DCT P-frame payload uses the structured grammar (0x04)
+                 - NEW in v3.9, see 3.4.6 (reclaims the never-implemented
+                 ENHANCED_COMP)
 ```
 
 **LZ4 Compression (Bit 4):**
@@ -448,6 +451,63 @@ coding. Bit 3 reclaims the never-implemented `HAS_BFRAMES`/`ADAPTIVE_Q`
 names; files using those meanings do not exist. Decoders MUST implement
 both codings.
 
+#### 3.4.6 Structured P-frame Grammar (optional, v3.9)
+
+A lossy DCT **PFRAME** chunk MAY set the `STRUCTURED` chunk flag (bit 2)
+to replace the per-block framing of §3.4.2 with a plane-structured
+grammar. The opcode bytes, per-block QP deltas and `SKIP` opcodes are
+dropped; the coefficient sections, zigzag scan, quantization, dead-zone,
+reconstruction and decoded pixels are **identical** to §3.4.2. On real
+webcam content at call settings this removes ~35% of P-frame bytes
+(bytes −43.8% at q60, −47.8% at q30, −34.9% at q85, bit-identical
+decoded pixels). `STRUCTURED` combines freely with `RANGE` (§2.1.1),
+`EXP_GOLOB` (§3.4.5), `HAS_MOTION` and `REFRESH_BAND`.
+
+After the optional band byte (§3.4.4) and motion vectors (§5.2), the
+payload is exactly three plane sections in Y, U, V order (plus a fourth,
+alpha, when the file has YUV alpha):
+
+```
+plane_section := qp_delta (1 byte)
+                 [ run_count (1+ bytes) coded_section ] ...
+                 run_count (1+ bytes)        # plane terminator
+```
+
+- `qp_delta` is the bias-64 delta from the header DCT QP (§3.4.2), one
+  per plane. It applies to every coded block of the plane; mid-stream
+  quality changes (§4.1) ride this byte instead of per-block deltas.
+- `run_count` is the number of blocks skipped before the next coded
+  section. Value 0 means a coded section follows immediately. Value 255
+  means "255 skipped, the chain continues with the next byte"; a chain
+  therefore codes any skip count as `ceil(n / 255)` bytes.
+- The plane's final chain byte is always < 255 (0 when the plane ends on
+  a coded block). It terminates the plane; no end marker or block count
+  is needed.
+- `coded_section` is the §3.4.2 coefficient section without its leading
+  opcode and QP delta bytes: `DC (u16 BE, two's complement)` + AC
+  `(run<<4)|size` pairs + `size` level bytes + `0x00` EOB. The Exp-Golomb
+  variant (§3.4.5) replaces this section bit-for-bit as usual, with no
+  byte-alignment padding between sections (the pad bits after the
+  sentinel remain).
+
+Skip semantics are unchanged: outside the refresh band a skipped block
+copies the reference; inside the band (§3.4.4) it fills with the DC
+prediction. A chain MAY straddle a band boundary; the decoder applies
+the per-block semantics of each skipped block's own row.
+
+Rollout is identical to the range coder (§2.1.1): the sender emits
+`STRUCTURED` only to peers that advertise support. Decoders that do not
+implement this section MUST reject PFRAME chunks carrying bit 2 rather
+than misparse them.
+
+**v3.9 decoder fix (applies to both grammars):** the coefficient section
+EOB is written unconditionally, including when the last coded AC lands
+exactly on zigzag index 63. A decoder whose AC loop stops at `k == 64`
+without consuming the EOB desynchronizes the whole plane; conforming
+decoders MUST consume the EOB in that case. The skip-chain byte 255
+accumulates 255 skipped blocks and continues the chain; decoders MUST
+accumulate every chain byte, not only the final one.
+
 ---
 
 ## 4. Lossy Quality & Quantization
@@ -691,6 +751,20 @@ This specification is placed in the public domain.
 ---
 
 ## Changelog
+
+### 3.9 (September 2026)
+- §3.4.6: structured P-frame grammar, selected per chunk by the
+  STRUCTURED flag (bit 2, reclaims the never-implemented ENHANCED_COMP).
+  One qp byte per plane and bare run-chain/coded-section alternation
+  instead of per-block opcodes, qp deltas and SKIP opcodes; decoded
+  pixels are identical to §3.4.2. Measured on 30 s of real webcam
+  footage: P-frame chunk bytes −43.8% at q60 (−47.8% q30, −34.9% q85),
+  video payload 451.5 → 258.2 kbps at call settings.
+- §3.4.2 (both grammars): decoder fix — the block EOB is consumed even
+  when the last AC lands on zigzag 63, and 255-continue skip chains
+  accumulate every chain byte. Both defects previously desynchronized
+  the plane; all reference implementations (C, TypeScript, C#) are
+  fixed and the corpus decode hashes were regenerated as the approval.
 
 ### 3.8 (September 2026)
 - §2.1.1: order-0 adaptive range coder as an alternative chunk compressor,
