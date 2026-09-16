@@ -72,6 +72,36 @@ the demo; the fix it forced — phantom `frame_id` holes now adopt the
 retransmitted packet's media type — closed a latent out-of-order
 delivery bug on any async network.
 
+## 1b. Phase 3.6 call configuration (measured 2026-09-16)
+
+The three shipped knobs stack. Same fixture, same method as above; the
+letterbox row is the step-down rung's actual encoder input (source
+pre-scaled to 256x192, padded to 320x240), and "batched" groups speech
+into type-0x03 datagrams of 8 chunks (spec v2.1 §3.1).
+
+| call configuration | wire, FEC off | wire, FEC 1:4 | packets/s |
+|---|---:|---:|---:|
+| full 320x240, plain audio (Phase 3 baseline) | 541.9 kbps | 544.2 kbps | 122 |
+| full 320x240, batched audio | 536.8 kbps | 539.1 kbps | 83 |
+| letterbox rung, plain audio | 423.9 kbps | 425.8 kbps | 111 |
+| letterbox rung, batched audio | **418.7 kbps** | **420.6 kbps** | **72** |
+
+- The step-down rung cuts video bytes **−25.6%** (453.5 → 337.1 kbps)
+  at identical content quality: content-region SSIM 0.8093 vs the
+  full-frame 0.809 — the picture gets smaller, not worse. (Whole-frame
+  SSIM on a letterboxed stream reads low purely from the zero-variance
+  black border; ignore it.)
+- Batching saves ~5 kbps of QOV-S header at speech cadence and ~38–50
+  packets/s — on a real network another ~12 kbps of IP/UDP headers.
+- With the Opus+DTX demo path (silence suppressed to ~6 keep-alive
+  packets/s, measured), a quiet-room call is ~458 kbps wire, and
+  ~341 kbps with the rung engaged — inside the ~350–400 kbps target
+  from the Phase 3.6 plan.
+- Small frames also change FEC economics: at letterbox size, 1:3 costs
+  almost nothing (~2 kbps parity) because frames fit one packet.
+
+Raw rows in `scoreboard-phase3.6-call.json`.
+
 ## 2. Speed (C reference, single thread)
 
 | stage | LZ4 | range coder |

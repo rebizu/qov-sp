@@ -1,0 +1,32 @@
+{
+ "comment": "Phase 3.6 call-configuration benchmark: letterbox step-down rung + audio batching + Opus silence suppression, measured on 30s of cam720 at call settings (320x240@24 q60 yuv420 motion+ikf+refresh, range coder, keyframe every 120, mono 16 kHz speech). Wire math per bench_bandwidth.py; batched rows group consecutive QOA chunks into type-0x03 datagrams of <=1180 B (8 chunks each for speech cadence). Letterbox = source pre-scaled to 256x192 and padded to 320x240 (the rung's actual encoder input); content-region SSIM vs the letterboxed source is 0.809 (identical to full-frame q60). Reproduce with bench_stream.c + the letterbox ffmpeg pipeline in BENCHMARKS.md.",
+ "settings": {
+  "fps": 24.0,
+  "seconds": 30.0,
+  "audio_rate": 16000,
+  "audio_ch": 1
+ },
+ "rows": {
+  "video kbps full 320x240": 453.5,
+  "video kbps letterbox 256x192": 337.1,
+  "letterbox video reduction pct": 25.6,
+  "content-region SSIM (letterbox)": 0.809,
+  "wire plain FEC off kbps": 541.9,
+  "wire batched FEC off kbps": 536.8,
+  "wire letterbox plain FEC off kbps": 423.9,
+  "wire letterbox batched FEC off kbps": 418.7,
+  "wire letterbox batched FEC 1:4 kbps": 420.6,
+  "wire letterbox batched FEC 1:3 kbps": 422.6,
+  "packets per second plain -> batched (full)": [
+   121.8,
+   83.3
+  ],
+  "packets per second plain -> batched (letterbox)": [
+   110.8,
+   72.3
+  ],
+  "opus speech with DTX, quiet-room wire kbps (measured in demo)": 4.3,
+  "demo call wire estimate: video + Opus+DTX, batched, FEC off": 457.8,
+  "demo call with downscale rung engaged": 341.40000000000003
+ }
+}
