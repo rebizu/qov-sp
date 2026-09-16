@@ -40,11 +40,18 @@ export function decodeDctBlockInto(
   qpBase: number,
   out: Float32Array,
   eg = false,
+  bare = false,
 ): void {
-  // 1. QP delta (1 byte: | 0 | delta (7 bits, bias 64) | )
-  const qpByte = readU8();
-  const qpDelta = (qpByte & 0x7F) - 64;
-  const finalQp = Math.max(0, Math.min(100, qpBase + qpDelta));
+  // 1. QP delta (1 byte: | 0 | delta (7 bits, bias 64) | ) — omitted in the
+  // structured grammar, where qpBase arrives already absolute (spec §3.4.6)
+  let finalQp: number;
+  if (bare) {
+    finalQp = qpBase;
+  } else {
+    const qpByte = readU8();
+    const qpDelta = (qpByte & 0x7F) - 64;
+    finalQp = Math.max(0, Math.min(100, qpBase + qpDelta));
+  }
 
   // Inverse of the encoder's quantization scale (encoder divides by this).
   const scale = 0.1 + (finalQp * 0.1);
@@ -75,9 +82,11 @@ export function decodeDctBlockInto(
 
   coeffs[0] = dc * quantTable[0] * scale;
 
-  // 3. AC Coeffs (Run-Level)
+  // 3. AC Coeffs (Run-Level). The EOB is written unconditionally, also when
+  // the last AC lands on zigzag 63 — so the loop keeps consuming until the
+  // EOB is seen (v3.9 fix: a plain k<64 guard swallowed it and desynced).
   let k = 1;
-  while (k < 64) {
+  for (;;) {
     const b1 = readU8();
 
     if (b1 === 0x00) {
@@ -135,11 +144,58 @@ export function decodePlaneDctInto(
   bandR0 = -1,
   bandR1 = -1,
   eg = false,
+  structured = false,
 ): void {
   const blocksX = Math.ceil(w / 8);
   const blocksY = Math.ceil(h / 8);
   let blockIdx = 0;
   const totalBlocks = blocksX * blocksY;
+
+  if (structured) {
+    // Structured grammar (spec §3.4.6): one qp byte per plane, then an
+    // alternating chain of skip counts (255 = continue) and bare coded
+    // sections — no opcode, no per-block qp. The final chain byte (<255,
+    // 0 when the plane ends on a coded block) terminates the plane.
+    let qpAbs = Math.max(0, Math.min(100, qpBase + (readU8() - 64)));
+    for (;;) {
+      let byte: number, run = 0;
+      do { byte = readU8(); run += byte; } while (byte === 255); // 255 = chain continues
+      for (let n = 0; n < run && blockIdx < totalBlocks; n++, blockIdx++) {
+        const blockRow = Math.floor(blockIdx / blocksX);
+        if (blockRow < bandR0 || blockRow >= bandR1) continue;
+        const bx = (blockIdx % blocksX) * 8;
+        const by = blockRow * 8;
+        const pred = intraPred(plane, w, h, bx, by);
+        for (let y = 0; y < 8; y++) {
+          if (by + y >= h) break;
+          for (let x = 0; x < 8; x++) {
+            if (bx + x >= w) break;
+            plane[(by + y) * w + bx + x] = pred;
+          }
+        }
+      }
+      if (blockIdx >= totalBlocks) break;
+      const bx = (blockIdx % blocksX) * 8;
+      const by = Math.floor(blockIdx / blocksX) * 8;
+      const blockRow = Math.floor(blockIdx / blocksX);
+      const inBand = blockRow >= bandR0 && blockRow < bandR1;
+      const pred = inBand ? intraPred(plane, w, h, bx, by) : 0;
+      decodeDctBlockInto(readU8, quant, qpAbs, blockBuf, eg, true);
+
+      for (let y = 0; y < 8; y++) {
+        if (by + y >= h) break;
+        for (let x = 0; x < 8; x++) {
+          if (bx + x >= w) break;
+          const idx = (by + y) * w + (bx + x);
+          const res = blockBuf[y * 8 + x];
+          const base = inBand ? pred : plane[idx];
+          plane[idx] = Math.max(0, Math.min(255, base + res));
+        }
+      }
+      blockIdx++;
+    }
+    return;
+  }
 
   while (blockIdx < totalBlocks) {
     const b1 = readU8();

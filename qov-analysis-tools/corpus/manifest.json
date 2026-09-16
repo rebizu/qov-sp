@@ -691,7 +691,7 @@
     "frames": 5,
     "frame_sha256": [
      "c372948bd7982e5f1cf65d8f63203763dc307cacf5ee42669b5eddc90277668c",
-     "1dc33fadac8b3a12447af2ec0b1ce02defcdb7d432cf83fdcae81fdee50fcc33",
+     "a9ba2e3cfcf62ec4e5e6368608a457b12bb31d13843e9fa69c8da5e7d4ef4603",
      "cd5e366ca64a5fc2b9df96d3821de57d1d5d99113fbe8f2eb49b77f5d2bdc6cc",
      "d8f0ce3cd21a1ce74c5a992dfc51528dc1cbf79493d76ba292818a2e6bce021c",
      "f274f2ff60edbf4a4826938ca10040b63814a0d62cae6d65a7fa01ae1031e70a"
@@ -705,7 +705,7 @@
     "frames": 5,
     "frame_sha256": [
      "c372948bd7982e5f1cf65d8f63203763dc307cacf5ee42669b5eddc90277668c",
-     "1dc33fadac8b3a12447af2ec0b1ce02defcdb7d432cf83fdcae81fdee50fcc33",
+     "a9ba2e3cfcf62ec4e5e6368608a457b12bb31d13843e9fa69c8da5e7d4ef4603",
      "cd5e366ca64a5fc2b9df96d3821de57d1d5d99113fbe8f2eb49b77f5d2bdc6cc",
      "d8f0ce3cd21a1ce74c5a992dfc51528dc1cbf79493d76ba292818a2e6bce021c",
      "f274f2ff60edbf4a4826938ca10040b63814a0d62cae6d65a7fa01ae1031e70a"
@@ -764,7 +764,7 @@
     "frames": 5,
     "frame_sha256": [
      "9a392abbf63b4a7502f53e82b830e76c5db4157e2a0a9fa2e75ec71da8231344",
-     "d353403bf657fcc36d0dc286a03b6a65044500afcc2cc96322a2f4fa46a1ce52",
+     "72f2dbfc91c819f237e7d0ebedfb71cb86e3f7d5fabbe43c68af9bb4049179e3",
      "125fa68b29edbebf80ac69fc9902216e4fb5fde6b50c41c00cb3ab2e0bf94a8f",
      "59402b8b5b2f12b3d524b4fee4c5c04f9b92a55fd6d7c47c7be7950578090f2b",
      "dfa26b237d93c4a9cc1db76ec7c72d0c4d9312a07f9f6f326d2ab401361448fe"
@@ -778,7 +778,7 @@
     "frames": 5,
     "frame_sha256": [
      "9a392abbf63b4a7502f53e82b830e76c5db4157e2a0a9fa2e75ec71da8231344",
-     "d353403bf657fcc36d0dc286a03b6a65044500afcc2cc96322a2f4fa46a1ce52",
+     "72f2dbfc91c819f237e7d0ebedfb71cb86e3f7d5fabbe43c68af9bb4049179e3",
      "125fa68b29edbebf80ac69fc9902216e4fb5fde6b50c41c00cb3ab2e0bf94a8f",
      "59402b8b5b2f12b3d524b4fee4c5c04f9b92a55fd6d7c47c7be7950578090f2b",
      "dfa26b237d93c4a9cc1db76ec7c72d0c4d9312a07f9f6f326d2ab401361448fe"
@@ -836,9 +836,9 @@
     "frames": 5,
     "frame_sha256": [
      "0b29aa2b19f05b6adf309c981bcf3c204a72639405addad383e6986216531f2c",
-     "a2900ea5071c37912b1def91a00fb21267a7e5235202c661eab1af32868efa76",
+     "b77fea717e181006aebe62644469496dd887629d549bed049b889b0295826ec2",
      "5d7fd4b7d125acb31adfaea23f4e8e14dfe754f489e30677e3b0d21a88915a8a",
-     "d35549c7449d0aedd9dee2a243092281abf8e6171773a5c93fa9bb83c660bd5f",
+     "02e78360d3746a73c238b6b2d004f809f6c560f27cb162ff4da8fa8ee71d6c8a",
      "83b67fb26efcf16661872d72ca0e9c24d0c420c4a663e60bbbc4052aa8e05250"
     ],
     "audio_frames": 0,
@@ -850,9 +850,9 @@
     "frames": 5,
     "frame_sha256": [
      "0b29aa2b19f05b6adf309c981bcf3c204a72639405addad383e6986216531f2c",
-     "a2900ea5071c37912b1def91a00fb21267a7e5235202c661eab1af32868efa76",
+     "b77fea717e181006aebe62644469496dd887629d549bed049b889b0295826ec2",
      "5d7fd4b7d125acb31adfaea23f4e8e14dfe754f489e30677e3b0d21a88915a8a",
-     "d35549c7449d0aedd9dee2a243092281abf8e6171773a5c93fa9bb83c660bd5f",
+     "02e78360d3746a73c238b6b2d004f809f6c560f27cb162ff4da8fa8ee71d6c8a",
      "83b67fb26efcf16661872d72ca0e9c24d0c420c4a663e60bbbc4052aa8e05250"
     ]
    },
@@ -1325,6 +1325,86 @@
     }
    }
   },
+  "range_motion_yuv420_lossy_dct": {
+   "file_sha256": "4c282c4c19640bb9ccdc87a639a11db18a93b41c0ec8040e564c044dbf34400f",
+   "file_size": 8658,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 230,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 3,
+    "dct_chunks": 6,
+    "compressed_chunks": 0,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
+     "9ac5d88399fd0af017f1f4a93d295650c8311177c229ec114a53b5399344f106",
+     "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
+     "bbe1ffe0f2b0a1edc52880dabd5dbc7faa605352ef1676c6d8114955866bb987",
+     "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
+     "7cbbc531e3f198d8d7da9dc90474cfa188ba9897087450c807d07902ace9f718"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
+     "9ac5d88399fd0af017f1f4a93d295650c8311177c229ec114a53b5399344f106",
+     "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
+     "bbe1ffe0f2b0a1edc52880dabd5dbc7faa605352ef1676c6d8114955866bb987",
+     "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
+     "7cbbc531e3f198d8d7da9dc90474cfa188ba9897087450c807d07902ace9f718"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "range_motion_yuv420_lossy_dct",
+     "width": 128,
+     "height": 96,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "index",
+      "motion",
+      "ikf"
+     ],
+     "quality": 50,
+     "range": true,
+     "pattern": "scroll16"
+    }
+   }
+  },
   "motion_static_420": {
    "file_sha256": "e38f30530f206d6cd999ac342921e8b9619f3cc622cec6ec2f58dec53ec1eb36",
    "file_size": 18725,
@@ -1625,6 +1705,246 @@
     }
    }
   },
+  "audio_speech_yuv420_lossy": {
+   "file_sha256": "d55442a16994e56db5dbca1cf696d72f544c77b73fc1f37f7a4aa9dfef1155dd",
+   "file_size": 14114,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 230,
+    "width": 96,
+    "height": 96,
+    "totalFrames": 4,
+    "audioChannels": 1
+   },
+   "structure": {
+    "chunk_count": 12,
+    "type_counts": {
+     "SYNC": 2,
+     "KEYFRAME": 2,
+     "AUDIO": 4,
+     "PFRAME": 2,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 4,
+    "keyframes": 2,
+    "pframes": 2,
+    "motion_chunks": 2,
+    "dct_chunks": 4,
+    "compressed_chunks": 4,
+    "audio_chunks": 4,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 4,
+    "frame_sha256": [
+     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
+     "749b969cc212e6a090fa4ed3a7330e62b1cd5a177d498261a62cfcd19115f892",
+     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
+     "341586c4b5e0701d6dd18caeb015f4ce9e2dd8c1cde27c3b3ee79af7009f376d"
+    ],
+    "audio_frames": 4,
+    "audio_pcm_sha256": "c61bddb9f8eab9821e2672b13831788dd8d9128a58479b94c59d9c0016661280",
+    "audio_samples": 1024
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 4,
+    "frame_sha256": [
+     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
+     "749b969cc212e6a090fa4ed3a7330e62b1cd5a177d498261a62cfcd19115f892",
+     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
+     "341586c4b5e0701d6dd18caeb015f4ce9e2dd8c1cde27c3b3ee79af7009f376d"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "audio_speech_yuv420_lossy",
+     "width": 96,
+     "height": 96,
+     "frames": 4,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "quality": 50,
+     "pattern": "noise",
+     "flags": [
+      "index",
+      "motion",
+      "ikf"
+     ],
+     "audio": {
+      "channels": 1,
+      "rate": 16000
+     }
+    }
+   }
+  },
+  "audio_stereo_yuv420_lossy": {
+   "file_sha256": "742d0b6d6cbeaad03f95b88bdc8bd001341f58a4d2683f72a375c2071d7cb94c",
+   "file_size": 14594,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 230,
+    "width": 96,
+    "height": 96,
+    "totalFrames": 4,
+    "audioChannels": 2
+   },
+   "structure": {
+    "chunk_count": 12,
+    "type_counts": {
+     "SYNC": 2,
+     "KEYFRAME": 2,
+     "AUDIO": 4,
+     "PFRAME": 2,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 4,
+    "keyframes": 2,
+    "pframes": 2,
+    "motion_chunks": 2,
+    "dct_chunks": 4,
+    "compressed_chunks": 4,
+    "audio_chunks": 4,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 4,
+    "frame_sha256": [
+     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
+     "749b969cc212e6a090fa4ed3a7330e62b1cd5a177d498261a62cfcd19115f892",
+     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
+     "341586c4b5e0701d6dd18caeb015f4ce9e2dd8c1cde27c3b3ee79af7009f376d"
+    ],
+    "audio_frames": 4,
+    "audio_pcm_sha256": "b7f3519da6b0e25da6effcfc517388c8f36813f48a9f528b20c7d4575dbcb0af",
+    "audio_samples": 2048
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 4,
+    "frame_sha256": [
+     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
+     "749b969cc212e6a090fa4ed3a7330e62b1cd5a177d498261a62cfcd19115f892",
+     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
+     "341586c4b5e0701d6dd18caeb015f4ce9e2dd8c1cde27c3b3ee79af7009f376d"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "audio_stereo_yuv420_lossy",
+     "width": 96,
+     "height": 96,
+     "frames": 4,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "quality": 50,
+     "pattern": "noise",
+     "flags": [
+      "index",
+      "motion",
+      "ikf"
+     ],
+     "audio": {
+      "channels": 2,
+      "rate": 48000
+     }
+    }
+   }
+  },
+  "opus_audio_yuv420_lossy": {
+   "file_sha256": "59e34b36d8045a319ec1744ce8e50631481371199afefed18a5927cb4d2ae995",
+   "file_size": 14597,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 228,
+    "width": 96,
+    "height": 96,
+    "totalFrames": 4,
+    "audioChannels": 1
+   },
+   "structure": {
+    "chunk_count": 12,
+    "type_counts": {
+     "SYNC": 2,
+     "KEYFRAME": 2,
+     "AUDIO": 4,
+     "PFRAME": 2,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 4,
+    "keyframes": 2,
+    "pframes": 2,
+    "motion_chunks": 0,
+    "dct_chunks": 4,
+    "compressed_chunks": 4,
+    "audio_chunks": 4,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 4,
+    "frame_sha256": [
+     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
+     "50f1b63374e541993287b907c8eadf0f2f71112d893abbe03fbd59c783976078",
+     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
+     "c42158860d06916e90fb277cfd2aaa8e458d9449a29ec9b3f14bbe4a942c3ac1"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 4,
+    "frame_sha256": [
+     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
+     "50f1b63374e541993287b907c8eadf0f2f71112d893abbe03fbd59c783976078",
+     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
+     "c42158860d06916e90fb277cfd2aaa8e458d9449a29ec9b3f14bbe4a942c3ac1"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "opus_audio_yuv420_lossy",
+     "width": 96,
+     "height": 96,
+     "frames": 4,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "quality": 50,
+     "pattern": "noise",
+     "flags": [
+      "index",
+      "ikf"
+     ],
+     "audio": {
+      "channels": 1,
+      "rate": 48000
+     },
+     "opusAudio": true
+    }
+   }
+  },
   "intra_kf_yuv420_lossy": {
    "file_sha256": "3c273d90430c632312ec00f7e278218a72e37b8d60e184987c843be9e254ffd8",
    "file_size": 9130,
@@ -1661,12 +1981,12 @@
    "decode_full": {
     "frames": 6,
     "frame_sha256": [
-     "5a651b362caa1ea5c2c6e87bd82fd08ef2721fa1d5af5a5c31470b0c3ae1a943",
-     "98e36dff39a18f1fa9f8f6a771211c284f1101f3a15ac1bb3e6b4364851e8621",
-     "5a651b362caa1ea5c2c6e87bd82fd08ef2721fa1d5af5a5c31470b0c3ae1a943",
-     "98e36dff39a18f1fa9f8f6a771211c284f1101f3a15ac1bb3e6b4364851e8621",
-     "5a651b362caa1ea5c2c6e87bd82fd08ef2721fa1d5af5a5c31470b0c3ae1a943",
-     "98e36dff39a18f1fa9f8f6a771211c284f1101f3a15ac1bb3e6b4364851e8621"
+     "305a822c37232924e02f594993cc4b217f50874ed49442ed4900aac7aec02390",
+     "7628ba1ffce018b75cebfc845726ee867d85f3c330eb346ecba0052817aa2daf",
+     "305a822c37232924e02f594993cc4b217f50874ed49442ed4900aac7aec02390",
+     "7628ba1ffce018b75cebfc845726ee867d85f3c330eb346ecba0052817aa2daf",
+     "305a822c37232924e02f594993cc4b217f50874ed49442ed4900aac7aec02390",
+     "7628ba1ffce018b75cebfc845726ee867d85f3c330eb346ecba0052817aa2daf"
     ],
     "audio_frames": 0,
     "audio_pcm_sha256": null,
@@ -1676,12 +1996,12 @@
     "supported": true,
     "frames": 6,
     "frame_sha256": [
-     "5a651b362caa1ea5c2c6e87bd82fd08ef2721fa1d5af5a5c31470b0c3ae1a943",
-     "98e36dff39a18f1fa9f8f6a771211c284f1101f3a15ac1bb3e6b4364851e8621",
-     "5a651b362caa1ea5c2c6e87bd82fd08ef2721fa1d5af5a5c31470b0c3ae1a943",
-     "98e36dff39a18f1fa9f8f6a771211c284f1101f3a15ac1bb3e6b4364851e8621",
-     "5a651b362caa1ea5c2c6e87bd82fd08ef2721fa1d5af5a5c31470b0c3ae1a943",
-     "98e36dff39a18f1fa9f8f6a771211c284f1101f3a15ac1bb3e6b4364851e8621"
+     "305a822c37232924e02f594993cc4b217f50874ed49442ed4900aac7aec02390",
+     "7628ba1ffce018b75cebfc845726ee867d85f3c330eb346ecba0052817aa2daf",
+     "305a822c37232924e02f594993cc4b217f50874ed49442ed4900aac7aec02390",
+     "7628ba1ffce018b75cebfc845726ee867d85f3c330eb346ecba0052817aa2daf",
+     "305a822c37232924e02f594993cc4b217f50874ed49442ed4900aac7aec02390",
+     "7628ba1ffce018b75cebfc845726ee867d85f3c330eb346ecba0052817aa2daf"
     ]
    },
    "expect": {},
@@ -1821,11 +2141,11 @@
     "frames": 6,
     "frame_sha256": [
      "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
-     "26e79d6c87150d6677874970caaffdbaa37090da865fe220f928b42cc1fefec3",
+     "f73e1eadbe141ed0803ee50a6375e68a5619534d92e14ee3a943138d2e19b1b3",
      "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
-     "dd5845808a4e787c727182b96073b788e28981a3d8bcec367ae02ca2ccf068ab",
+     "c0b9f97203fad561e83325b486b1b15ebc0985e5e8e6796461a8e70a0850501b",
      "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
-     "c30ebf46abd5429175ba2ddb978f0f7b990124f864a719b1cbf8dcef5056a221"
+     "a3f6ac2c4b1464ce85c9e88fb25236bfda0bae683c2319609425d923575a922b"
     ],
     "audio_frames": 0,
     "audio_pcm_sha256": null,
@@ -1836,11 +2156,11 @@
     "frames": 6,
     "frame_sha256": [
      "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
-     "26e79d6c87150d6677874970caaffdbaa37090da865fe220f928b42cc1fefec3",
+     "f73e1eadbe141ed0803ee50a6375e68a5619534d92e14ee3a943138d2e19b1b3",
      "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
-     "dd5845808a4e787c727182b96073b788e28981a3d8bcec367ae02ca2ccf068ab",
+     "c0b9f97203fad561e83325b486b1b15ebc0985e5e8e6796461a8e70a0850501b",
      "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
-     "c30ebf46abd5429175ba2ddb978f0f7b990124f864a719b1cbf8dcef5056a221"
+     "a3f6ac2c4b1464ce85c9e88fb25236bfda0bae683c2319609425d923575a922b"
     ]
    },
    "expect": {},
@@ -2688,8 +3008,8 @@
      "cb57987f29dca441fe30ad75514ee3c46a4978a6676a83f1b8d63a29df7e4e33",
      "5bb18c68c32b6e239ada68d4a63ba212a46d537ba9a6f8dc2596c0ef91ddac2b",
      "783f478b95df865412216211253f74776d65c195712ed69fd60023fbd740cdf2",
-     "186ba720cb9b524e66688d13e574b096f27b3e968fe8e51b6ecc68cf66b8f832",
-     "a478d98bc462299451bc4191d41f64c3571aaebe5c99b6ba11612fec2c86e0ce"
+     "bb0fa77311431d1940dd443da50b600c5cd5b5f43b621610e4eebb87d2ef531e",
+     "eb783cd39fcaa70a083a232c2282767c074b3c0dc667c4e87e1dfeb143e3e7af"
     ],
     "audio_frames": 0,
     "audio_pcm_sha256": null,
@@ -2703,8 +3023,8 @@
      "cb57987f29dca441fe30ad75514ee3c46a4978a6676a83f1b8d63a29df7e4e33",
      "5bb18c68c32b6e239ada68d4a63ba212a46d537ba9a6f8dc2596c0ef91ddac2b",
      "783f478b95df865412216211253f74776d65c195712ed69fd60023fbd740cdf2",
-     "186ba720cb9b524e66688d13e574b096f27b3e968fe8e51b6ecc68cf66b8f832",
-     "a478d98bc462299451bc4191d41f64c3571aaebe5c99b6ba11612fec2c86e0ce"
+     "bb0fa77311431d1940dd443da50b600c5cd5b5f43b621610e4eebb87d2ef531e",
+     "eb783cd39fcaa70a083a232c2282767c074b3c0dc667c4e87e1dfeb143e3e7af"
     ]
    },
    "expect": {},
@@ -2738,253 +3058,13 @@
     }
    }
   },
-  "audio_speech_yuv420_lossy": {
-   "file_sha256": "d55442a16994e56db5dbca1cf696d72f544c77b73fc1f37f7a4aa9dfef1155dd",
-   "file_size": 14114,
+  "structured_motion_yuv420_lossy": {
+   "file_sha256": "47b8441499763d5f8ab491230b6ad19e7c8cc1e6709cb3e32b5dc2871300bafd",
+   "file_size": 7842,
    "header": {
     "version": 3,
     "colorspace": 16,
-    "flags": 230,
-    "width": 96,
-    "height": 96,
-    "totalFrames": 4,
-    "audioChannels": 1
-   },
-   "structure": {
-    "chunk_count": 12,
-    "type_counts": {
-     "SYNC": 2,
-     "KEYFRAME": 2,
-     "AUDIO": 4,
-     "PFRAME": 2,
-     "INDEX": 1,
-     "END": 1
-    },
-    "frames": 4,
-    "keyframes": 2,
-    "pframes": 2,
-    "motion_chunks": 2,
-    "dct_chunks": 4,
-    "compressed_chunks": 4,
-    "audio_chunks": 4,
-    "has_end": true,
-    "timestamp_regressions": 0,
-    "valid": true
-   },
-   "structure_issues": [],
-   "decode_full": {
-    "frames": 4,
-    "frame_sha256": [
-     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
-     "749b969cc212e6a090fa4ed3a7330e62b1cd5a177d498261a62cfcd19115f892",
-     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
-     "341586c4b5e0701d6dd18caeb015f4ce9e2dd8c1cde27c3b3ee79af7009f376d"
-    ],
-    "audio_frames": 4,
-    "audio_pcm_sha256": "c61bddb9f8eab9821e2672b13831788dd8d9128a58479b94c59d9c0016661280",
-    "audio_samples": 1024
-   },
-   "decode_streaming": {
-    "supported": true,
-    "frames": 4,
-    "frame_sha256": [
-     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
-     "749b969cc212e6a090fa4ed3a7330e62b1cd5a177d498261a62cfcd19115f892",
-     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
-     "341586c4b5e0701d6dd18caeb015f4ce9e2dd8c1cde27c3b3ee79af7009f376d"
-    ]
-   },
-   "expect": {},
-   "generator": {
-    "implementation": "ts",
-    "case": {
-     "id": "audio_speech_yuv420_lossy",
-     "width": 96,
-     "height": 96,
-     "frames": 4,
-     "fps": 30,
-     "colorspace": "yuv420",
-     "quality": 50,
-     "pattern": "noise",
-     "flags": [
-      "index",
-      "motion",
-      "ikf"
-     ],
-     "audio": {
-      "channels": 1,
-      "rate": 16000
-     }
-    }
-   }
-  },
-  "opus_audio_yuv420_lossy": {
-   "file_sha256": "59e34b36d8045a319ec1744ce8e50631481371199afefed18a5927cb4d2ae995",
-   "file_size": 14597,
-   "header": {
-    "version": 3,
-    "colorspace": 16,
-    "flags": 228,
-    "width": 96,
-    "height": 96,
-    "totalFrames": 4,
-    "audioChannels": 1
-   },
-   "structure": {
-    "chunk_count": 12,
-    "type_counts": {
-     "SYNC": 2,
-     "KEYFRAME": 2,
-     "AUDIO": 4,
-     "PFRAME": 2,
-     "INDEX": 1,
-     "END": 1
-    },
-    "frames": 4,
-    "keyframes": 2,
-    "pframes": 2,
-    "motion_chunks": 0,
-    "dct_chunks": 4,
-    "compressed_chunks": 4,
-    "audio_chunks": 4,
-    "has_end": true,
-    "timestamp_regressions": 0,
-    "valid": true
-   },
-   "structure_issues": [],
-   "decode_full": {
-    "frames": 4,
-    "frame_sha256": [
-     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
-     "50f1b63374e541993287b907c8eadf0f2f71112d893abbe03fbd59c783976078",
-     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
-     "c42158860d06916e90fb277cfd2aaa8e458d9449a29ec9b3f14bbe4a942c3ac1"
-    ],
-    "audio_frames": 0,
-    "audio_pcm_sha256": null,
-    "audio_samples": 0
-   },
-   "decode_streaming": {
-    "supported": true,
-    "frames": 4,
-    "frame_sha256": [
-     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
-     "50f1b63374e541993287b907c8eadf0f2f71112d893abbe03fbd59c783976078",
-     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
-     "c42158860d06916e90fb277cfd2aaa8e458d9449a29ec9b3f14bbe4a942c3ac1"
-    ]
-   },
-   "expect": {},
-   "generator": {
-    "implementation": "ts",
-    "case": {
-     "id": "opus_audio_yuv420_lossy",
-     "width": 96,
-     "height": 96,
-     "frames": 4,
-     "fps": 30,
-     "colorspace": "yuv420",
-     "quality": 50,
-     "pattern": "noise",
-     "flags": [
-      "index",
-      "ikf"
-     ],
-     "audio": {
-      "channels": 1,
-      "rate": 48000
-     },
-     "opusAudio": true
-    }
-   }
-  },
-  "audio_stereo_yuv420_lossy": {
-   "file_sha256": "742d0b6d6cbeaad03f95b88bdc8bd001341f58a4d2683f72a375c2071d7cb94c",
-   "file_size": 14594,
-   "header": {
-    "version": 3,
-    "colorspace": 16,
-    "flags": 230,
-    "width": 96,
-    "height": 96,
-    "totalFrames": 4,
-    "audioChannels": 2
-   },
-   "structure": {
-    "chunk_count": 12,
-    "type_counts": {
-     "SYNC": 2,
-     "KEYFRAME": 2,
-     "AUDIO": 4,
-     "PFRAME": 2,
-     "INDEX": 1,
-     "END": 1
-    },
-    "frames": 4,
-    "keyframes": 2,
-    "pframes": 2,
-    "motion_chunks": 2,
-    "dct_chunks": 4,
-    "compressed_chunks": 4,
-    "audio_chunks": 4,
-    "has_end": true,
-    "timestamp_regressions": 0,
-    "valid": true
-   },
-   "structure_issues": [],
-   "decode_full": {
-    "frames": 4,
-    "frame_sha256": [
-     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
-     "749b969cc212e6a090fa4ed3a7330e62b1cd5a177d498261a62cfcd19115f892",
-     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
-     "341586c4b5e0701d6dd18caeb015f4ce9e2dd8c1cde27c3b3ee79af7009f376d"
-    ],
-    "audio_frames": 4,
-    "audio_pcm_sha256": "b7f3519da6b0e25da6effcfc517388c8f36813f48a9f528b20c7d4575dbcb0af",
-    "audio_samples": 2048
-   },
-   "decode_streaming": {
-    "supported": true,
-    "frames": 4,
-    "frame_sha256": [
-     "95a2ecad983fd325a16141921bfc0c94375c1de0c0d03acb53fbea6d95c93d55",
-     "749b969cc212e6a090fa4ed3a7330e62b1cd5a177d498261a62cfcd19115f892",
-     "fd879dd62a9caf44614a43f12155e85cfd6e85bad041d4f36b90be3585eabd1c",
-     "341586c4b5e0701d6dd18caeb015f4ce9e2dd8c1cde27c3b3ee79af7009f376d"
-    ]
-   },
-   "expect": {},
-   "generator": {
-    "implementation": "ts",
-    "case": {
-     "id": "audio_stereo_yuv420_lossy",
-     "width": 96,
-     "height": 96,
-     "frames": 4,
-     "fps": 30,
-     "colorspace": "yuv420",
-     "quality": 50,
-     "pattern": "noise",
-     "flags": [
-      "index",
-      "motion",
-      "ikf"
-     ],
-     "audio": {
-      "channels": 2,
-      "rate": 48000
-     }
-    }
-   }
-  },
-  "range_motion_yuv420_lossy_dct": {
-   "file_sha256": "4c282c4c19640bb9ccdc87a639a11db18a93b41c0ec8040e564c044dbf34400f",
-   "file_size": 8658,
-   "header": {
-    "version": 3,
-    "colorspace": 16,
-    "flags": 230,
+    "flags": 246,
     "width": 128,
     "height": 96,
     "totalFrames": 6,
@@ -3015,11 +3095,11 @@
     "frames": 6,
     "frame_sha256": [
      "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
-     "9ac5d88399fd0af017f1f4a93d295650c8311177c229ec114a53b5399344f106",
+     "83c2fd4291835d64ca13aeeb9db1ae025559778ab37cf0459364f1dc8286c4e4",
      "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
-     "bbe1ffe0f2b0a1edc52880dabd5dbc7faa605352ef1676c6d8114955866bb987",
+     "4ae5bf58b901ec0fc1c507a7c14a8f60edb03417a74bcae630aeee25a56e1509",
      "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
-     "7cbbc531e3f198d8d7da9dc90474cfa188ba9897087450c807d07902ace9f718"
+     "d5da96b1d04f1ef596bbff12a032f6b30ad02ca7bd3901b2093ee689a07cf190"
     ],
     "audio_frames": 0,
     "audio_pcm_sha256": null,
@@ -3030,18 +3110,262 @@
     "frames": 6,
     "frame_sha256": [
      "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
-     "9ac5d88399fd0af017f1f4a93d295650c8311177c229ec114a53b5399344f106",
+     "83c2fd4291835d64ca13aeeb9db1ae025559778ab37cf0459364f1dc8286c4e4",
      "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
-     "bbe1ffe0f2b0a1edc52880dabd5dbc7faa605352ef1676c6d8114955866bb987",
+     "4ae5bf58b901ec0fc1c507a7c14a8f60edb03417a74bcae630aeee25a56e1509",
      "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
-     "7cbbc531e3f198d8d7da9dc90474cfa188ba9897087450c807d07902ace9f718"
+     "d5da96b1d04f1ef596bbff12a032f6b30ad02ca7bd3901b2093ee689a07cf190"
     ]
    },
    "expect": {},
    "generator": {
     "implementation": "ts",
     "case": {
-     "id": "range_motion_yuv420_lossy_dct",
+     "id": "structured_motion_yuv420_lossy",
+     "width": 128,
+     "height": 96,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "index",
+      "motion",
+      "ikf",
+      "refresh"
+     ],
+     "quality": 50,
+     "range": true,
+     "pattern": "scroll16",
+     "structured": true,
+     "note": "v3.9 structured P-frame grammar: call-like config (motion + ikf + refresh + range)"
+    }
+   }
+  },
+  "structured_static_yuv420_lossy": {
+   "file_sha256": "23a921d34e7d49598af7f114322a6d3e98858edf75bcaa6e2fc23843d07dbed0",
+   "file_size": 653,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 116,
+    "width": 64,
+    "height": 64,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 0,
+    "dct_chunks": 3,
+    "compressed_chunks": 6,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "f73e1eadbe141ed0803ee50a6375e68a5619534d92e14ee3a943138d2e19b1b3",
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "c0b9f97203fad561e83325b486b1b15ebc0985e5e8e6796461a8e70a0850501b",
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "a3f6ac2c4b1464ce85c9e88fb25236bfda0bae683c2319609425d923575a922b"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "f73e1eadbe141ed0803ee50a6375e68a5619534d92e14ee3a943138d2e19b1b3",
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "c0b9f97203fad561e83325b486b1b15ebc0985e5e8e6796461a8e70a0850501b",
+     "bd28bf5b994006b958852190f05881f0fd6f50c945c2a5d83ac750001c4f27dc",
+     "a3f6ac2c4b1464ce85c9e88fb25236bfda0bae683c2319609425d923575a922b"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "structured_static_yuv420_lossy",
+     "width": 64,
+     "height": 64,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "index",
+      "refresh"
+     ],
+     "quality": 50,
+     "pattern": "checker",
+     "structured": true,
+     "note": "v3.9 structured P-frame grammar: static content, band-skip path, no motion"
+    }
+   }
+  },
+  "structured_yuva420_lossy": {
+   "file_sha256": "a71cc7176082adf4c1931f03aaa597cbb03dac124b0bfc7b8d6968543878b507",
+   "file_size": 29232,
+   "header": {
+    "version": 3,
+    "colorspace": 19,
+    "flags": 229,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 0,
+    "dct_chunks": 6,
+    "compressed_chunks": 6,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "8463a4baaa80b81ef0440534ca7fed273fe55da454cb244e1db7600563476e6d",
+     "21835478ffc66cd5ebc48334a813230db01c88e61265262f35f6980b0a70e7b3",
+     "aae299c067f3fb0a9c8aa78c1b5b3d0673c38bee7d10107cb989a2c0b74cfd59",
+     "42ec8a98c8f5c8a2c1d395a3e2d4e2dd4ee077d140d098065b609a2b6f7ce909",
+     "186da029730a440d40c85e1577507c278a48f2fd2f9fb27d2a65d80bc7203451",
+     "5ac492dbc240e40b826a383705088888334ebc3c5dccd20bcd23039fdfa46ba0"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "8463a4baaa80b81ef0440534ca7fed273fe55da454cb244e1db7600563476e6d",
+     "21835478ffc66cd5ebc48334a813230db01c88e61265262f35f6980b0a70e7b3",
+     "aae299c067f3fb0a9c8aa78c1b5b3d0673c38bee7d10107cb989a2c0b74cfd59",
+     "42ec8a98c8f5c8a2c1d395a3e2d4e2dd4ee077d140d098065b609a2b6f7ce909",
+     "186da029730a440d40c85e1577507c278a48f2fd2f9fb27d2a65d80bc7203451",
+     "5ac492dbc240e40b826a383705088888334ebc3c5dccd20bcd23039fdfa46ba0"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "structured_yuva420_lossy",
+     "width": 128,
+     "height": 96,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuva420",
+     "flags": [
+      "index",
+      "alpha",
+      "ikf"
+     ],
+     "quality": 50,
+     "pattern": "noise",
+     "structured": true,
+     "note": "v3.9 structured P-frame grammar: alpha plane section"
+    }
+   }
+  },
+  "structured_adaptive_quality": {
+   "file_sha256": "54fa5e1029c0efce36eb499a5c5fa84d8d6ec390b58fee0e05d22ac4cc290ea7",
+   "file_size": 36877,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 230,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 3,
+    "dct_chunks": 6,
+    "compressed_chunks": 6,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "d0c6b3777f22765119962060f5649d48e294be05f2831259f736bb9a877d3090",
+     "cb57987f29dca441fe30ad75514ee3c46a4978a6676a83f1b8d63a29df7e4e33",
+     "5bb18c68c32b6e239ada68d4a63ba212a46d537ba9a6f8dc2596c0ef91ddac2b",
+     "783f478b95df865412216211253f74776d65c195712ed69fd60023fbd740cdf2",
+     "bb0fa77311431d1940dd443da50b600c5cd5b5f43b621610e4eebb87d2ef531e",
+     "eb783cd39fcaa70a083a232c2282767c074b3c0dc667c4e87e1dfeb143e3e7af"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "d0c6b3777f22765119962060f5649d48e294be05f2831259f736bb9a877d3090",
+     "cb57987f29dca441fe30ad75514ee3c46a4978a6676a83f1b8d63a29df7e4e33",
+     "5bb18c68c32b6e239ada68d4a63ba212a46d537ba9a6f8dc2596c0ef91ddac2b",
+     "783f478b95df865412216211253f74776d65c195712ed69fd60023fbd740cdf2",
+     "bb0fa77311431d1940dd443da50b600c5cd5b5f43b621610e4eebb87d2ef531e",
+     "eb783cd39fcaa70a083a232c2282767c074b3c0dc667c4e87e1dfeb143e3e7af"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "structured_adaptive_quality",
      "width": 128,
      "height": 96,
      "frames": 6,
@@ -3053,8 +3377,178 @@
       "ikf"
      ],
      "quality": 50,
-     "range": true,
-     "pattern": "scroll16"
+     "pattern": "noise",
+     "structured": true,
+     "adaptive": [
+      {
+       "frame": 2,
+       "quality": 30
+      },
+      {
+       "frame": 4,
+       "quality": 85
+      }
+     ],
+     "note": "v3.9 structured P-frame grammar: mid-stream quality via the per-plane qp byte"
+    }
+   }
+  },
+  "structured_yuv420_lossy_eg": {
+   "file_sha256": "6459a6062ecacfad3f68b44b37f19daf5f3db90ee7893275d6956df406cc578b",
+   "file_size": 18917,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 236,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 0,
+    "dct_chunks": 6,
+    "compressed_chunks": 0,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "d0c6b3777f22765119962060f5649d48e294be05f2831259f736bb9a877d3090",
+     "b4e4dc2fbb811bf84103e1b14b886e66e87ecbe7713a6379f78105b120d166e3",
+     "eabdda2e7c3471fe073e8aca53d0353d7a04eb0704d8e22ff9b261ac4394700a",
+     "adb54b5dfd91f3e8af39f7bf3b00d096bc34b34b6c87a219cd2d56c1b91efdff",
+     "289b6c99226a645533038eb7477865d9c5651074ea4f89113dc501bd14e3ab52",
+     "9bf175d1797a9896c1f66cca74a6084c58a30b1029cd877ba83591b9f8f55753"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "d0c6b3777f22765119962060f5649d48e294be05f2831259f736bb9a877d3090",
+     "b4e4dc2fbb811bf84103e1b14b886e66e87ecbe7713a6379f78105b120d166e3",
+     "eabdda2e7c3471fe073e8aca53d0353d7a04eb0704d8e22ff9b261ac4394700a",
+     "adb54b5dfd91f3e8af39f7bf3b00d096bc34b34b6c87a219cd2d56c1b91efdff",
+     "289b6c99226a645533038eb7477865d9c5651074ea4f89113dc501bd14e3ab52",
+     "9bf175d1797a9896c1f66cca74a6084c58a30b1029cd877ba83591b9f8f55753"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "structured_yuv420_lossy_eg",
+     "width": 128,
+     "height": 96,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "eg",
+      "ikf",
+      "index"
+     ],
+     "quality": 50,
+     "pattern": "noise",
+     "structured": true,
+     "note": "v3.9 structured P-frame grammar: Exp-Golomb coefficient sections inside bare blocks"
+    }
+   }
+  },
+  "structured_static_256_chain": {
+   "file_sha256": "6c9042774e39a43e971e6e94d65a13c8e1ff3d01aef7b3cd4b90f759c444155d",
+   "file_size": 7337,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 228,
+    "width": 256,
+    "height": 256,
+    "totalFrames": 5,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 10,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 2,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 5,
+    "keyframes": 3,
+    "pframes": 2,
+    "motion_chunks": 0,
+    "dct_chunks": 5,
+    "compressed_chunks": 5,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 5,
+    "frame_sha256": [
+     "8fec28f4775d2798366993074c57118b970f2f3307f2d9affc45a7a353adf46b",
+     "b539e1f51922b6ac813f3ead4addc25862aa16f816e4d81cc55913dc1864dd6a",
+     "2e8d779e43ee45d2cc8c9e68224e3b3b325db7a963e478b150c61bbde9b203b9",
+     "683f7ba5678990c5674c6d5966aea1f9eeff0c235148eafa8d84566d62d6e45a",
+     "a0cf1b66a3540ff267b0c4aa9c71d98ca4279c6f4de469485a007435fc2155c4"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 5,
+    "frame_sha256": [
+     "8fec28f4775d2798366993074c57118b970f2f3307f2d9affc45a7a353adf46b",
+     "b539e1f51922b6ac813f3ead4addc25862aa16f816e4d81cc55913dc1864dd6a",
+     "2e8d779e43ee45d2cc8c9e68224e3b3b325db7a963e478b150c61bbde9b203b9",
+     "683f7ba5678990c5674c6d5966aea1f9eeff0c235148eafa8d84566d62d6e45a",
+     "a0cf1b66a3540ff267b0c4aa9c71d98ca4279c6f4de469485a007435fc2155c4"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "structured_static_256_chain",
+     "width": 256,
+     "height": 256,
+     "frames": 5,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "index",
+      "ikf"
+     ],
+     "quality": 50,
+     "pattern": "gradient",
+     "structured": true,
+     "note": "v3.9 structured grammar: 1024-block all-skip planes exercise the 255-continue chain"
     }
    }
   }

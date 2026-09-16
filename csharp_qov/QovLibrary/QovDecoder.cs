@@ -588,14 +588,15 @@ public class QovDecoder
                 int cr0 = band < 0 ? -1 : rowsC * band / QovTypes.IntraRefreshBands;
                 int cr1 = band < 0 ? -1 : rowsC * (band + 1) / QovTypes.IntraRefreshBands;
                 bool eg = (chunkFlags & QovTypes.ChunkFlagExpGolob) != 0;
+                bool structured = (chunkFlags & QovTypes.ChunkFlagStructured) != 0;
 
-                pos = DecodePlaneDct(frameData, pos, _currYPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, yr0, yr1, eg);
-                pos = DecodePlaneDct(frameData, pos, _currUPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, cr0, cr1, eg);
-                pos = DecodePlaneDct(frameData, pos, _currVPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, cr0, cr1, eg);
+                pos = DecodePlaneDct(frameData, pos, _currYPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, yr0, yr1, eg, structured);
+                pos = DecodePlaneDct(frameData, pos, _currUPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, cr0, cr1, eg, structured);
+                pos = DecodePlaneDct(frameData, pos, _currVPlane, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, cr0, cr1, eg, structured);
                 if (_hasYuvAlpha && _currAPlane != null && refA != null)
                 {
                     // Alpha is coded with luma dimensions and the luma quant table
-                    pos = DecodePlaneDct(frameData, pos, _currAPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, yr0, yr1, eg);
+                    pos = DecodePlaneDct(frameData, pos, _currAPlane, _header.Width, _header.Height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, yr0, yr1, eg, structured);
                 }
             }
             else
@@ -1017,11 +1018,19 @@ public class QovDecoder
         return result;
     }
 
-    private int DecodeDctBlock(ReadOnlySpan<byte> data, ref int pos, int[] quantTable, byte qpBase, float[] output, bool eg = false)
+    private int DecodeDctBlock(ReadOnlySpan<byte> data, ref int pos, int[] quantTable, byte qpBase, float[] output, bool eg = false, bool bare = false)
     {
-        byte qpByte = data[pos++];
-        int qpDelta = (qpByte & 0x7F) - 64;
-        int finalQp = Math.Clamp(qpBase + qpDelta, 0, 100);
+        int finalQp;
+        if (bare)
+        {
+            finalQp = qpBase; // structured: plane-level qp, no per-block delta
+        }
+        else
+        {
+            byte qpByte = data[pos++];
+            int qpDelta = (qpByte & 0x7F) - 64;
+            finalQp = Math.Clamp(qpBase + qpDelta, 0, 100);
+        }
         // TS uses double math (0.1 + finalQp * 0.1); float breaks bit-exactness
         double scale = 0.1 + finalQp * 0.1;
 
@@ -1059,7 +1068,10 @@ public class QovDecoder
         coeffs[0] = (float)(dc * (double)quantTable[0] * scale);
 
         int k = 1;
-        while (k < 64)
+        // The EOB is written unconditionally, also when the last AC lands on
+        // zigzag 63 — so the loop keeps consuming until the EOB is seen
+        // (v3.9 fix: a plain k<64 guard swallowed it and desynced the plane).
+        for (; ; )
         {
             byte b1 = data[pos++];
             if (b1 == 0x00) break; // EOB
@@ -1091,7 +1103,7 @@ public class QovDecoder
         return k; // Return value not strictly needed but matches structure
     }
 
-    private int DecodePlaneDct(ReadOnlySpan<byte> data, int startPos, byte[] plane, int w, int h, int[] quantTable, byte opType, float[] blockBuf, int bandR0 = -1, int bandR1 = -1, bool eg = false)
+    private int DecodePlaneDct(ReadOnlySpan<byte> data, int startPos, byte[] plane, int w, int h, int[] quantTable, byte opType, float[] blockBuf, int bandR0 = -1, int bandR1 = -1, bool eg = false, bool structured = false)
     {
         byte qpBase = _header.DctQpBase != 0 ? _header.DctQpBase : (byte)20;
         int blocksX = (int)Math.Ceiling(w / 8.0);
@@ -1099,6 +1111,51 @@ public class QovDecoder
         int totalBlocks = blocksX * blocksY;
         int blockIdx = 0;
         int pos = startPos;
+
+        if (structured)
+        {
+            // Structured grammar (spec 3.4.6): one qp byte per plane, then an
+            // alternating chain of skip counts (255 = continue) and bare coded
+            // sections; the final chain byte (<255) terminates the plane.
+            int qpAbs = Math.Clamp(qpBase + (data[pos++] - 64), 0, 100);
+            for (; ; )
+            {
+                int run;
+                int runTotal = 0;
+                do { run = data[pos++]; runTotal += run; } while (run == 255); // 255 = chain continues
+                for (int n = 0; n < runTotal && blockIdx < totalBlocks; n++, blockIdx++)
+                {
+                    int brow = blockIdx / blocksX;
+                    if (brow < bandR0 || brow >= bandR1) continue;
+                    int bx = (blockIdx % blocksX) * 8;
+                    int by = brow * 8;
+                    int pred = IntraPred(plane, w, h, bx, by);
+                    for (int y = 0; y < 8 && by + y < h; y++)
+                        for (int x = 0; x < 8 && bx + x < w; x++)
+                            plane[(by + y) * w + bx + x] = (byte)pred;
+                }
+                if (blockIdx >= totalBlocks) break;
+                int sbx = (blockIdx % blocksX) * 8;
+                int sby = (blockIdx / blocksX) * 8;
+                bool inBand = blockIdx / blocksX >= bandR0 && blockIdx / blocksX < bandR1;
+                int spred = inBand ? IntraPred(plane, w, h, sbx, sby) : 0;
+                DecodeDctBlock(data, ref pos, quantTable, (byte)qpAbs, blockBuf, eg, bare: true);
+                for (int y = 0; y < 8; y++)
+                {
+                    if (sby + y >= h) break;
+                    for (int x = 0; x < 8; x++)
+                    {
+                        if (sbx + x >= w) break;
+                        int idx = (sby + y) * w + (sbx + x);
+                        int baseVal = inBand ? spred : plane[idx];
+                        int val = (int)(baseVal + blockBuf[y * 8 + x]);
+                        plane[idx] = (byte)Math.Clamp(val, 0, 255);
+                    }
+                }
+                blockIdx++;
+            }
+            return pos;
+        }
 
         while (blockIdx < totalBlocks)
         {
