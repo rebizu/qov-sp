@@ -150,10 +150,51 @@ Bit  Name        Description
                  ADAPTIVE_Q)
 7    REFRESH_BAND P-frame payload starts with a refresh band byte (0x80)
                  - NEW in v3.4, see 3.4.4
+8    RANGE       Chunk data is adaptive range-coder compressed (0x08)
+                 - NEW in v3.8, see 2.1.1
 ```
 
 **LZ4 Compression (Bit 4):**
 If set, the payload strictly follows `[uncompressed_size (4 bytes)] + [LZ4 block]`.
+
+**Range Coding (Bit 3, NEW in v3.8):**
+Mutually exclusive with bit 4. If set, the payload strictly follows
+`[uncompressed_size (4 bytes)] + [range-coded stream]`, where the stream is
+produced by the order-0 adaptive range coder of §2.1.1. Encoders set RANGE
+instead of COMPRESSED on DCT chunks when `RANGE_CODING` is enabled; decoders
+that predate v3.8 treat bit 3 as an unknown flag and fail — implementers
+MUST bump decoder capability checks accordingly.
+
+### 2.1.1 Order-0 Adaptive Range Coder (NEW in v3.8)
+
+A byte-oriented adaptive range coder (LZMA family: 32-bit range, 64-bit low
+with a carry cache). It replaces LZ4 on DCT chunks because DCT coefficient
+bytes are strongly skewed — exactly what an adaptive model exploits and LZ4
+cannot.
+
+**Model.** 256 symbols, each with frequency 1 (total 256). Before coding a
+byte the encoder builds `cum[257]` from the frequencies. After coding,
+`freq[symbol] += 32; total += 32`. When `total > 65536`, all frequencies are
+halved (`freq[i] = (freq[i] + 1) >> 1`, floor at 1) and the totals rebuilt.
+Encoder and decoder run identical model updates.
+
+**Coding a byte.** Encoder: standard range-subtraction —
+`range /= total; range *= (cumHi - cumLo)` … etc., renormalizing while
+`range < TOP` (`TOP = 1<<24`) by `range <<= 8` and shifting `low` out
+through the carry cache. Decoder: mirrors with `code` maintained from the
+stream, locating the symbol by cumulative-frequency scan (256-entry linear
+scan per byte; fine at QOV data rates).
+
+**Carry handling.** `low` is 64-bit; when shifting out a byte the encoder
+propagates carries into the previously emitted bytes (cacheSize mechanism):
+a 0xFF run followed by a carry becomes 0x00s and increments the cached byte.
+
+**Flush.** 5 bytes of `low` are emitted (`low` shifted left by 8, four times,
+each through shiftLow), guaranteeing the decoder's `code` register is fully
+populated for every symbol coded.
+
+Decoders MUST tolerate a stream that decodes `uncompressed_size` bytes and
+then stops reading; trailing flush bytes are not consumed beyond that.
 
 ---
 
@@ -590,7 +631,12 @@ while (p < file_size) {
     
     // Header parsing...
     
-    if (chunk_flags & COMPRESSED) {
+    if (chunk_flags & RANGE) {         // NEW in v3.8, see 2.1.1
+        // Payload: [uncompressed_size (4 bytes, big-endian)] + [rc stream].
+        // The uncompressed_size field is INCLUDED in chunk_size.
+        uncompressed_size = read_u32(data + p + 10);
+        payload = rc_decode(data + p + 14, uncompressed_size);
+    } else if (chunk_flags & COMPRESSED) {
         // Payload: [uncompressed_size (4 bytes, big-endian)] + [LZ4 block].
         // The uncompressed_size field is INCLUDED in chunk_size.
         uncompressed_size = read_u32(data + p + 10);
@@ -645,6 +691,15 @@ This specification is placed in the public domain.
 ---
 
 ## Changelog
+
+### 3.8 (September 2026)
+- §2.1.1: order-0 adaptive range coder as an alternative chunk compressor,
+  selected per chunk by the RANGE flag (bit 3, payload
+  `[uncompressed_size (4 bytes)][rc stream]`). Encoders enable it with the
+  `RANGE_CODING` parameter; when on, DCT chunks use RANGE instead of
+  COMPRESSED (LZ4). Measured on 30 s of real webcam footage at call
+  settings: video bytes −18.6%, wire bandwidth 647.5 → 541.9 kbps (FEC
+  off), encode 180 → 164 fps, decode 309 → 265 fps (single thread).
 
 ### 3.7 (September 2026)
 - §5.3: audio chunk codec flags. The AUDIO chunk flags byte (previously

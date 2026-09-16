@@ -83,12 +83,11 @@ Rejected as philosophy-breaking: CABAC-class adaptive coding, B-frames,
 R-D search loops, lookahead rate control.
 
 Ordered PRs (each = conformance-gated, bit-exact x3):
-1. **Order-0 adaptive range coder** — new chunk flag 0x08 (free): DCT chunk
-   payload is rc-coded instead of LZ4 (mutually exclusive with 0x10; u32
-   raw-size prefix like the LZ4 path). ~120 LOC per impl (LZMA-style
-   carry handling, 256-symbol adaptive freq table, halve at 64k total).
-   Measured expectation: 15-25% smaller total call stream; decode stays
-   well above realtime. Spec v3.8 §2.2 + corpus case (tscli `range` flag).
+1. ✅ **Order-0 adaptive range coder** — SHIPPED (spec v3.8 §2.1.1, chunk
+   flag 0x08, `RANGE_CODING` param). Measured (30s cam720, call settings):
+   video bytes −18.6% (557 → 454 kbps), call wire 647.5 → 541.9 kbps FEC
+   off / 544.2 at FEC 1:4; encode 180 → 164 fps, decode 309 → 265 fps.
+   Corpus case `range_motion_yuv420_lossy_dct`; conformance GREEN x3.
 2. **Quality-knob floor fix** (encoder-only, no format change): q60 and q80
    produce identical size/quality at 320x240 — quant derivation floors out.
    Make quality bite at low resolutions so lighter is reachable by knob.

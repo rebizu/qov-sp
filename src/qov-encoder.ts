@@ -32,6 +32,7 @@ import {
 } from './qov-types';
 
 import { lz4Compress } from './lz4';
+import { rangeEncode } from './range-coder';
 
 import {
   rgbaToYuv420Planes,
@@ -60,6 +61,7 @@ import {
   QOV_FLAG_DCT_ENABLED,
   QOV_FLAG_HAS_MOTION,
   QOV_CHUNK_FLAG_DCT_BLOCKS,
+  QOV_CHUNK_FLAG_RANGE,
   QOV_CHUNK_FLAG_MOTION,
   chromaPlaneDims,
 } from './qov-types';
@@ -217,8 +219,10 @@ export class QovEncoder {
     quality?: number,  // Optional quality parameter (0-100, undefined = lossless)
     customParams?: LossyParams,  // Optional custom lossy params (overrides quality-derived)
     audioChannels = 0,
-    audioRate = 0
+    audioRate = 0,
+    rangeCoding = false
   ) {
+    this.rangeCoding = rangeCoding;
     // Determine if lossy mode is enabled
     this.lossyMode = (quality !== undefined && quality < 100) || customParams !== undefined;
     this.quality = quality ?? 0;
@@ -332,6 +336,22 @@ export class QovEncoder {
     const frameData = this.frameBuffer.toUint8Array();
     const uncompressedSize = frameData.length;
     this.activeBuffer = null;
+
+    // v3.8: lossy DCT chunks may use the adaptive range coder instead of LZ4
+    if (this.rangeCoding && (baseFlags & QOV_CHUNK_FLAG_DCT_BLOCKS) !== 0) {
+      const rc = rangeEncode(frameData);
+      const chunkFlags = (baseFlags | QOV_CHUNK_FLAG_RANGE) & ~QOV_CHUNK_FLAG_COMPRESSED;
+      const chunkSize = rc.length + 4;
+
+      this.buffer.writeByte(chunkType);
+      this.buffer.writeByte(chunkFlags);
+      this.buffer.writeU32(chunkSize);
+      this.buffer.writeU32(timestamp);
+      this.buffer.writeU32(uncompressedSize);
+      for (let i = 0; i < rc.length; i++) this.buffer.writeByte(rc[i]);
+      this.emitChunk(chunkStart);
+      return;
+    }
 
     // Try to compress
     const compressed = lz4Compress(frameData);
@@ -510,6 +530,9 @@ export class QovEncoder {
   // main buffer (sync markers and frame-buffer-path chunks — i.e. all video
   // chunks when compression is enabled). Observers must not modify the array.
   public onChunk?: (chunk: Uint8Array, chunkType: number) => void;
+
+  // v3.8: lossy DCT chunk payloads use the adaptive range coder (flag 0x08)
+  private rangeCoding: boolean;
 
   // The QOV file header bytes (24/32) — call right after writeHeader(),
   // before any frame is encoded (QOV-S CONFIG payload, spec section 2.1).

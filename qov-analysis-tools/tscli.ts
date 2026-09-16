@@ -39,6 +39,7 @@ interface Case {
   keyframeInterval?: number;   // default 2
   audio?: { channels: number; rate: number } | null;
   opusAudio?: boolean;          // audio chunks carry Opus-flagged payloads
+  range?: boolean;              // v3.8: DCT chunks use the adaptive range coder
   adaptive?: { frame: number; quality: number }[];  // qov_set_quality schedule
 }
 
@@ -117,7 +118,7 @@ async function main(): Promise<void> {
     if (!(c.flags ?? []).includes('index')) flags |= 0x04; // index on unless explicitly off
     const compression = c.compression ?? true;
     const audio = c.audio ?? null;
-    const enc = new QovEncoder(c.width, c.height, c.fps, 1, flags, colorspaceIds[c.colorspace], compression, c.quality, undefined, audio ? audio.channels : 0, audio ? audio.rate : 0);
+    const enc = new QovEncoder(c.width, c.height, c.fps, 1, flags, colorspaceIds[c.colorspace], compression, c.quality, undefined, audio ? audio.channels : 0, audio ? audio.rate : 0, c.range ?? false);
     enc.writeHeader();
     const kf = c.keyframeInterval ?? 2;
     const adaptive = c.adaptive ?? [];

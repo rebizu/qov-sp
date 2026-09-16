@@ -204,6 +204,22 @@
    "pattern": "scroll16"
   },
   {
+   "id": "range_motion_yuv420_lossy_dct",
+   "width": 128,
+   "height": 96,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index",
+    "motion",
+    "ikf"
+   ],
+   "quality": 50,
+   "range": true,
+   "pattern": "scroll16"
+  },
+  {
    "id": "motion_static_420",
    "width": 128,
    "height": 96,

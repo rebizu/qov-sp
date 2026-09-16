@@ -21,6 +21,7 @@ public class QovEncoder
     private readonly bool _isYuvMode;
     private readonly bool _hasAlpha;
     private readonly bool _useCompression;
+    private readonly bool _rangeCoding;
     private readonly bool _lossyMode;
     private readonly bool _intraDctKeyframes;
     private readonly bool _intraRefresh;
@@ -39,7 +40,8 @@ public class QovEncoder
         bool useCompression = true,
         int quality = 0,
         int audioChannels = 0,
-        int audioRate = 0)
+        int audioRate = 0,
+        bool rangeCoding = false)
     {
         // Lossy logic
         if (quality > 0 && quality < 100)
@@ -80,6 +82,7 @@ public class QovEncoder
         _prevPixel = new QovPixel(0, 0, 0, 255);
         _keyframes = new List<QovIndexEntry>();
         _useCompression = useCompression;
+        _rangeCoding = rangeCoding;
         _isFinished = false;
         _hasPrevFrame = false;
  
@@ -1556,7 +1559,21 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
 
         long dataStartPos = _writer.BaseStream.Position;
 
-        if (_useCompression)
+        if (_rangeCoding && (chunkFlags & QovTypes.ChunkFlagDctBlocks) != 0)
+        {
+            // v3.8: payload = [u32 BE raw size][range-coded bytes]
+            byte[] rc = QovRangeCoder.Encode(data);
+            WriteBigEndian((uint)data.Length);
+            _writer.Write(rc);
+
+            long currentPos = _writer.BaseStream.Position;
+            _writer.Flush();
+            _writer.BaseStream.Seek(startPos + 1, SeekOrigin.Begin);
+            _writer.Write((byte)((chunkFlags & ~QovTypes.ChunkFlagCompressed) | QovTypes.ChunkFlagRange));
+            _writer.Flush();
+            _writer.BaseStream.Seek(currentPos, SeekOrigin.Begin);
+        }
+        else if (_useCompression)
         {
             byte[]? compressed = Lz4Compression.Compress(data);
             if (compressed != null && compressed.Length < data.Length)

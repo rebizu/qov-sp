@@ -67,6 +67,7 @@ export const QOV_CHUNK_FLAG_COMPRESSED = 0x10;  // bit 4: LZ4 compressed
 export const QOV_CHUNK_FLAG_DCT_BLOCKS = 0x20;  // bit 5: DCT blocks
 export const QOV_CHUNK_FLAG_EXP_GOLOB = 0x40;   // bit 6: Exp-Golomb coefficient section
 export const QOV_CHUNK_FLAG_REFRESH_BAND = 0x80; // bit 7: P-frame payload starts with a refresh band byte
+export const QOV_CHUNK_FLAG_RANGE = 0x08;        // v3.8: DCT payload is range-coder compressed (replaces 0x10)
 
 // AUDIO chunk flags (spec §5.3): flags != 0 selects an alternate codec;
 // decoders skip chunks whose codec they do not implement.

@@ -2977,6 +2977,86 @@
      }
     }
    }
+  },
+  "range_motion_yuv420_lossy_dct": {
+   "file_sha256": "4c282c4c19640bb9ccdc87a639a11db18a93b41c0ec8040e564c044dbf34400f",
+   "file_size": 8658,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 230,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 3,
+    "dct_chunks": 6,
+    "compressed_chunks": 0,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
+     "9ac5d88399fd0af017f1f4a93d295650c8311177c229ec114a53b5399344f106",
+     "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
+     "bbe1ffe0f2b0a1edc52880dabd5dbc7faa605352ef1676c6d8114955866bb987",
+     "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
+     "7cbbc531e3f198d8d7da9dc90474cfa188ba9897087450c807d07902ace9f718"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
+     "9ac5d88399fd0af017f1f4a93d295650c8311177c229ec114a53b5399344f106",
+     "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
+     "bbe1ffe0f2b0a1edc52880dabd5dbc7faa605352ef1676c6d8114955866bb987",
+     "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
+     "7cbbc531e3f198d8d7da9dc90474cfa188ba9897087450c807d07902ace9f718"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "range_motion_yuv420_lossy_dct",
+     "width": 128,
+     "height": 96,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "index",
+      "motion",
+      "ikf"
+     ],
+     "quality": 50,
+     "range": true,
+     "pattern": "scroll16"
+    }
+   }
   }
  }
 }

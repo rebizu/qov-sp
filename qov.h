@@ -75,6 +75,10 @@ enum { QOV_F_HAS_ALPHA = 0x01, QOV_F_HAS_MOTION = 0x02, QOV_F_HAS_INDEX = 0x04,
 
 /* chunk flag: P-frame payload starts with a refresh band index (spec 3.4.4) */
 #define QOV_CF_REFRESH_BAND 0x80
+/* chunk flag: payload uses DCT block coding (spec 3.4) */
+#define QOV_CF_DCT_BLOCKS 0x20
+/* v3.8: chunk payload is range-coder compressed (DCT chunks; replaces 0x10) */
+#define QOV_CF_RANGE 0x08
 /* chunk flag: DCT block coefficient section is Exp-Golomb coded (spec 3.4.5);
    reclaims the never-implemented ADAPTIVE_Q name for bit 6 */
 #define QOV_CF_EXP_GOLOB 0x40
@@ -164,6 +168,8 @@ typedef struct {
     int has_alpha;          /* extra alpha plane in YUV modes */
     int motion;             /* motion estimation (HAS_MOTION) */
     int lz4;                /* per-chunk LZ4 compression */
+    int range_coding;       /* v3.8: DCT chunks use the adaptive range coder
+                               (chunk flag 0x08) instead of LZ4 (0x10) */
     int quality;            /* <=0 or >=100: lossless; 1-99: lossy DCT */
     int intra_dct_keyframes; /* nonzero: lossy YUV keyframes use intra DCT
                                 blocks (spec 3.4.3); wins on camera content,
@@ -534,6 +540,168 @@ static qov_result qov__lz4_compress(const uint8_t *in, size_t in_size,
     *out_len = out_pos;
     return QOV_OK;
 }
+
+/* ------------------------------------------------------------------ */
+/* order-0 adaptive range coder (v3.8, chunk flag 0x08)                */
+/*                                                                      */
+/* Byte-oriented adaptive model: 256 frequencies starting at 1, +32 per */
+/* symbol, halved when the total passes 65536. LZMA-style 32-bit range  */
+/* with 64-bit low + carry cache. Pure integer math, one forward pass,  */
+/* bit-exact across implementations (spec section 2.2).                 */
+/* ------------------------------------------------------------------ */
+
+#define QOV_RC_TOP   (1u << 24)
+#define QOV_RC_STEP  32u
+#define QOV_RC_LIMIT (1u << 16)
+
+typedef struct {
+    uint32_t freq[256];
+    uint32_t cum[257]; /* cum[i] = sum freq[0..i-1]; cum[256] = total */
+    uint32_t total;
+} qov_rc_model;
+
+static void qov_rc_model_init(qov_rc_model *m)
+{
+    for (int i = 0; i < 256; i++) m->freq[i] = 1;
+    for (int i = 0; i <= 256; i++) m->cum[i] = (uint32_t)i;
+    m->total = 256;
+}
+
+static void qov_rc_model_update(qov_rc_model *m, int s)
+{
+    m->freq[s] += QOV_RC_STEP;
+    m->total += QOV_RC_STEP;
+    if (m->total > QOV_RC_LIMIT) {
+        m->total = 0;
+        for (int i = 0; i < 256; i++) {
+            m->freq[i] = (m->freq[i] + 1) >> 1;
+            m->total += m->freq[i];
+        }
+    }
+    m->cum[0] = 0;
+    for (int i = 0; i < 256; i++) m->cum[i + 1] = m->cum[i] + m->freq[i];
+}
+
+typedef struct {
+    uint64_t low;
+    uint32_t range;
+    uint8_t cache;
+    int64_t cache_size;
+    uint8_t *buf;
+    size_t pos, cap;
+} qov_rc_enc;
+
+static void qov_rc_put(qov_rc_enc *rc, uint8_t b)
+{
+    if (rc->pos >= rc->cap) {
+        size_t ncap = rc->cap ? rc->cap * 2 : 1024;
+        uint8_t *np = (uint8_t *)qov__realloc(rc->buf, ncap);
+        if (!np) return; /* OOM: buffer stays; caller bounds output by raw+16 */
+        rc->buf = np; rc->cap = ncap;
+    }
+    rc->buf[rc->pos++] = b;
+}
+
+static void qov_rc_shift_low(qov_rc_enc *rc)
+{
+    if ((uint32_t)rc->low < 0xFF000000u || (rc->low >> 32) != 0) {
+        uint8_t carry = (uint8_t)(rc->low >> 32);
+        uint8_t temp = rc->cache;
+        do {
+            qov_rc_put(rc, (uint8_t)(temp + carry));
+            temp = 0xFF;
+        } while (--rc->cache_size != 0);
+        rc->cache = (uint8_t)(rc->low >> 24);
+    }
+    rc->cache_size++;
+    rc->low = (uint32_t)rc->low << 8;
+}
+
+static void qov_rc_enc_init(qov_rc_enc *rc)
+{
+    rc->low = 0; rc->range = 0xFFFFFFFFu;
+    rc->cache = 0; rc->cache_size = 1;
+    rc->buf = NULL; rc->pos = 0; rc->cap = 0;
+}
+
+static void qov_rc_enc_byte(qov_rc_enc *rc, qov_rc_model *m, uint8_t s)
+{
+    rc->range /= m->total;
+    rc->low += (uint64_t)m->cum[s] * rc->range;
+    rc->range *= m->freq[s];
+    while (rc->range < QOV_RC_TOP) { qov_rc_shift_low(rc); rc->range <<= 8; }
+    qov_rc_model_update(m, s);
+}
+
+static size_t qov_rc_enc_flush(qov_rc_enc *rc)
+{
+    for (int i = 0; i < 5; i++) qov_rc_shift_low(rc);
+    return rc->pos;
+}
+
+typedef struct {
+    uint32_t code, range;
+    const uint8_t *buf;
+    size_t pos, size;
+} qov_rc_dec;
+
+static uint8_t qov_rc_dec_byte(qov_rc_dec *d)
+{
+    return d->pos < d->size ? d->buf[d->pos++] : 0;
+}
+
+static void qov_rc_dec_init(qov_rc_dec *d, const uint8_t *buf, size_t size)
+{
+    d->buf = buf; d->size = size; d->pos = 0;
+    d->range = 0xFFFFFFFFu;
+    d->code = 0;
+    qov_rc_dec_byte(d); /* first encoder byte is the initial cache */
+    for (int i = 0; i < 4; i++) d->code = (d->code << 8) | qov_rc_dec_byte(d);
+}
+
+static void qov_rc_dec_byte_in(qov_rc_dec *d, qov_rc_model *m, uint8_t *out)
+{
+    d->range /= m->total;
+    uint32_t v = d->code / d->range;
+    if (v >= m->total) v = m->total - 1;
+    int s = 0;
+    while (m->cum[s + 1] <= v) s++;
+    d->code -= m->cum[s] * d->range;
+    d->range *= m->freq[s];
+    while (d->range < QOV_RC_TOP) { d->code = (d->code << 8) | qov_rc_dec_byte(d); d->range <<= 8; }
+    qov_rc_model_update(m, s);
+    *out = (uint8_t)s;
+}
+
+/* range-codes `len` bytes; returns malloc'd [rc stream] (no size prefix
+   here; callers store the raw length separately). *out_len is the coded
+   size, always >= len (flush included). */
+static qov_result qov__rc_encode(const uint8_t *in, size_t len,
+                                 uint8_t **out, size_t *out_len)
+{
+    qov_rc_enc rc;
+    qov_rc_enc_init(&rc);
+    qov_rc_model m;
+    qov_rc_model_init(&m);
+    for (size_t i = 0; i < len; i++) qov_rc_enc_byte(&rc, &m, in[i]);
+    *out_len = qov_rc_enc_flush(&rc);
+    *out = rc.buf;
+    if (!*out) { *out_len = 0; return QOV_ERR_OOM; }
+    return QOV_OK;
+}
+
+static qov_result qov__rc_decode(const uint8_t *in, size_t in_len, size_t raw_len,
+                                 uint8_t *out)
+{
+    qov_rc_dec d;
+    qov_rc_dec_init(&d, in, in_len);
+    qov_rc_model m;
+    qov_rc_model_init(&m);
+    for (size_t i = 0; i < raw_len; i++)
+        qov_rc_dec_byte_in(&d, &m, out + i);
+    return QOV_OK;
+}
+
 
 /* ------------------------------------------------------------------ */
 /* QOA (Quite OK Audio) - bit-exact with src/qoa.ts                    */
@@ -2016,7 +2184,18 @@ static qov_result qov__dec_feed(qov_decoder *dec, uint8_t ctype, uint8_t cflags,
     uint8_t *decomp = NULL;
     qov_result r = QOV_OK;
 
-    if ((cflags & 0x10) && (ctype == 0x01 || ctype == 0x02 || ctype == 0x03)) {
+    if ((cflags & QOV_CF_RANGE) && (ctype == 0x01 || ctype == 0x02 || ctype == 0x03)) {
+        /* v3.8: payload = [u32 BE raw size][range-coded bytes] */
+        if (payload_len < 4) return QOV_ERR_TRUNCATED;
+        uint32_t usz = qov_be32(p);
+        decomp = (uint8_t *)qov__malloc(usz ? usz : 1);
+        if (!decomp) return QOV_ERR_OOM;
+        r = qov__rc_decode(p + 4, payload_len - 4, usz, decomp);
+        if (r != QOV_OK) { qov__free(decomp); return r; }
+        payload_len = usz;
+        p = decomp;
+    }
+    else if ((cflags & 0x10) && (ctype == 0x01 || ctype == 0x02 || ctype == 0x03)) {
         if (csize < 4) return QOV_ERR_TRUNCATED;
         uint32_t usz = qov_be32(p);
         decomp = qov__u8malloc(usz);
@@ -2337,6 +2516,23 @@ static void qov__enc_write_sync(qov_encoder *e, uint32_t frame, uint32_t ts)
 static void qov__enc_write_chunk(qov_encoder *e, uint8_t type, uint8_t base_flags,
                                  uint32_t ts, const uint8_t *data, size_t len)
 {
+    if (e->p.range_coding && (base_flags & QOV_CF_DCT_BLOCKS)) {
+        /* v3.8: payload = [u32 BE raw size][range-coded bytes] */
+        uint8_t *rc = NULL;
+        size_t rc_len = 0;
+        qov_result r = qov__rc_encode(data, len, &rc, &rc_len);
+        if (r == QOV_OK && rc) {
+            qov__buf_u8(&e->out, type);
+            qov__buf_u8(&e->out, (uint8_t)((base_flags & ~0x10u) | QOV_CF_RANGE));
+            qov__buf_be32(&e->out, (uint32_t)(rc_len + 4));
+            qov__buf_be32(&e->out, ts);
+            qov__buf_be32(&e->out, (uint32_t)len);
+            qov__buf_bytes(&e->out, rc, rc_len);
+            qov__free(rc);
+            return;
+        }
+        if (rc) qov__free(rc); /* OOM: fall through to LZ4/plain */
+    }
     if (e->p.lz4) {
         uint8_t *comp = NULL;
         size_t comp_len = 0;

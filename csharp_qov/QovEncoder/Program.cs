@@ -78,8 +78,9 @@ class Program
         int flags = FlagHasIndex | (hasAlpha ? FlagHasAlpha : 0) | (hasMotion ? FlagHasMotion : 0) | (hasIkf ? QovTypes.FlagIntraDctKf : 0) | (hasRefresh ? QovTypes.FlagIntraRefresh : 0) | (hasEg ? QovTypes.FlagExpGolob : 0);
 
         using var stream = File.Create(args[1]);
+        bool range = json.TryGetProperty("range", out var rg) && rg.GetBoolean();
         var encoder = new QovEncoder(stream, (ushort)width, (ushort)height,
-            (ushort)fps, 1, (byte)flags, (byte)cs, compression, quality);
+            (ushort)fps, 1, (byte)flags, (byte)cs, compression, quality, 0, 0, range);
 
         var adaptive = new List<(int Frame, int Quality)>();
         if (json.TryGetProperty("adaptive", out var adEl) && adEl.ValueKind == JsonValueKind.Array)

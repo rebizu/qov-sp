@@ -444,12 +444,19 @@ public class QovDecoder
     {
         bool isYuvChunk = (chunkFlags & QovTypes.ChunkFlagYuv) != 0;
         bool isCompressed = (chunkFlags & QovTypes.ChunkFlagCompressed) != 0;
+        bool isRange = (chunkFlags & QovTypes.ChunkFlagRange) != 0;
         bool isDctKeyframe = (chunkFlags & QovTypes.ChunkFlagDctBlocks) != 0;
 
         byte[] chunkData = ReadBytes((int)chunkSize);
         byte[] frameData = chunkData;
 
-        if (isCompressed)
+        if (isRange)
+        {
+            int pos = 0;
+            uint uncompressedSize = ReadBigEndianU32(chunkData, ref pos);
+            frameData = QovRangeCoder.Decode(chunkData.AsSpan(pos), (int)uncompressedSize);
+        }
+        else if (isCompressed)
         {
             int pos = 0;
             uint uncompressedSize = ReadBigEndianU32(chunkData, ref pos);
@@ -510,11 +517,18 @@ public class QovDecoder
         bool hasMotion = (chunkFlags & QovTypes.ChunkFlagMotion) != 0;
         bool isYuvChunk = (chunkFlags & QovTypes.ChunkFlagYuv) != 0;
         bool isCompressed = (chunkFlags & QovTypes.ChunkFlagCompressed) != 0;
+        bool isRange = (chunkFlags & QovTypes.ChunkFlagRange) != 0;
 
         byte[] chunkData = ReadBytes((int)chunkSize);
         byte[] frameData = chunkData;
 
-        if (isCompressed)
+        if (isRange)
+        {
+            int pos = 0;
+            uint uncompressedSize = ReadBigEndianU32(chunkData, ref pos);
+            frameData = QovRangeCoder.Decode(chunkData.AsSpan(pos), (int)uncompressedSize);
+        }
+        else if (isCompressed)
         {
             int pos = 0;
             uint uncompressedSize = ReadBigEndianU32(chunkData, ref pos);

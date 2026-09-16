@@ -32,6 +32,8 @@ import {
 } from './qov-types';
 
 import { lz4Decompress } from './lz4';
+import { rangeDecode } from './range-coder';
+import { QOV_CHUNK_FLAG_RANGE } from './qov-types';
 
 import {
   yuv420PlanesToRgba,
@@ -624,10 +626,15 @@ export class QovStreamingDecoder {
     const hasMotion = (chunk.flags & QOV_CHUNK_FLAG_MOTION) !== 0;
 
     const isCompressed = (chunk.flags & QOV_CHUNK_FLAG_COMPRESSED) !== 0;
+    const isRange = (chunk.flags & QOV_CHUNK_FLAG_RANGE) !== 0;
     const isYuvChunk = (chunk.flags & 0x01) !== 0;
 
     // Handle decompression
-    if (isCompressed) {
+    if (isRange) {
+      const uncompressedSize = (((chunkData[0] << 24) | (chunkData[1] << 16) |
+        (chunkData[2] << 8) | chunkData[3]) >>> 0);
+      chunkData = rangeDecode(chunkData.subarray(4), uncompressedSize);
+    } else if (isCompressed) {
       const uncompressedSize = (((chunkData[0] << 24) | (chunkData[1] << 16) |
         (chunkData[2] << 8) | chunkData[3]) >>> 0);
       const compressedData = chunkData.subarray(4);

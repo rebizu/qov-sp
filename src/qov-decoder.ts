@@ -46,6 +46,8 @@ import {
 import { decodePlaneDctInto, decodeIntraPlaneDctInto } from './dct-decode';
 
 import { lz4Decompress } from './lz4';
+import { rangeDecode } from './range-coder';
+import { QOV_CHUNK_FLAG_RANGE } from './qov-types';
 
 import {
   MotionVectors,
@@ -261,7 +263,7 @@ export class QovDecoder {
 
     // If compressed, read the uncompressed size (it's stored at start of chunk data)
     let uncompressedSize: number | undefined;
-    if (chunkFlags & QOV_CHUNK_FLAG_COMPRESSED) {
+    if (chunkFlags & (QOV_CHUNK_FLAG_COMPRESSED | QOV_CHUNK_FLAG_RANGE)) {
       uncompressedSize = this.readU32();
     }
 
@@ -1205,12 +1207,13 @@ export class QovDecoder {
         case QOV_CHUNK_KEYFRAME: {
           const isYuvChunk = (chunkHeader.chunkFlags & 0x01) !== 0;
           const isCompressed = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_COMPRESSED) !== 0;
+          const isRange = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_RANGE) !== 0;
           const isDctKeyframe = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_DCT_BLOCKS) !== 0;
           // console.log(`[Decoder] Decoding keyframe ${frameNumber}, YUV: ${isYuvChunk}, Compressed: ${isCompressed}...`);
 
           // Determine the effective chunk size (excluding uncompressed_size if compressed)
           let effectiveChunkSize = chunkHeader.chunkSize;
-          if (isCompressed) {
+          if (isCompressed || isRange) {
             // uncompressed_size was already read as part of header, adjust chunk size
             effectiveChunkSize -= 4;
 
@@ -1218,7 +1221,9 @@ export class QovDecoder {
             const compressedData = this.data.subarray(this.pos, this.pos + effectiveChunkSize);
             this.pos += effectiveChunkSize;
 
-            const decompressedData = lz4Decompress(compressedData, chunkHeader.uncompressedSize!);
+            const decompressedData = isRange
+              ? rangeDecode(compressedData, chunkHeader.uncompressedSize!)
+              : lz4Decompress(compressedData, chunkHeader.uncompressedSize!);
             this.setActiveData(decompressedData);
 
             if (isYuvChunk || this.isYuvMode) {
@@ -1260,6 +1265,7 @@ export class QovDecoder {
         case QOV_CHUNK_PFRAME: {
           const isYuvChunk = (chunkHeader.chunkFlags & 0x01) !== 0;
           const isCompressed = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_COMPRESSED) !== 0;
+          const isRange = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_RANGE) !== 0;
           const isDctBlocks = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_DCT_BLOCKS) !== 0;
           const hasMotion = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_MOTION) !== 0;
 
@@ -1267,7 +1273,7 @@ export class QovDecoder {
 
           // Determine the effective chunk size (excluding uncompressed_size if compressed)
           let effectiveChunkSize = chunkHeader.chunkSize;
-          if (isCompressed) {
+          if (isCompressed || isRange) {
             // uncompressed_size was already read as part of header, adjust chunk size
             effectiveChunkSize -= 4;
 
@@ -1275,7 +1281,9 @@ export class QovDecoder {
             const compressedData = this.data.subarray(this.pos, this.pos + effectiveChunkSize);
             this.pos += effectiveChunkSize;
 
-            const decompressedData = lz4Decompress(compressedData, chunkHeader.uncompressedSize!);
+            const decompressedData = isRange
+              ? rangeDecode(compressedData, chunkHeader.uncompressedSize!)
+              : lz4Decompress(compressedData, chunkHeader.uncompressedSize!);
             this.setActiveData(decompressedData);
 
             if (isYuvChunk || this.isYuvMode) {

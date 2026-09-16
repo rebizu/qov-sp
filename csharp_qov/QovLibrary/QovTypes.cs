@@ -37,6 +37,7 @@ public static partial class QovTypes
     public const byte ChunkFlagDctBlocks = 0x20;
     public const byte ChunkFlagExpGolob = 0x40; // DCT coefficient section is Exp-Golomb coded (reclaims the never-implemented ADAPTIVE_Q)
     public const byte ChunkFlagRefreshBand = 0x80; // P-frame payload starts with a refresh band byte
+    public const byte ChunkFlagRange = 0x08;       // v3.8: DCT payload is range-coder compressed (replaces 0x10)
 
     // AUDIO chunk flags (spec §5.3): flags != 0 selects an alternate codec;
     // decoders skip chunks whose codec they do not implement.

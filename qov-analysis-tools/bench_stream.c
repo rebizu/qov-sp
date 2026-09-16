@@ -33,6 +33,7 @@ int main(int argc, char **argv)
     int audio_rate = argc > 5 ? atoi(argv[5]) : 0;
     int audio_ch = argc > 6 ? atoi(argv[6]) : 0;
     int quality = argc > 7 ? atoi(argv[7]) : 60;
+    int range = argc > 8 ? atoi(argv[8]) : 0;
 
     qov_encode_params p;
     memset(&p, 0, sizeof p);
@@ -46,6 +47,7 @@ int main(int argc, char **argv)
     p.quality = quality;
     p.audio_channels = (uint8_t)audio_ch;
     p.audio_rate = (uint32_t)audio_rate;
+    p.range_coding = range;
 
     qov_encoder *e = qov_encode_start(&p);
     if (!e) { fprintf(stderr, "encode_start failed\n"); return 1; }
@@ -112,6 +114,10 @@ int main(int argc, char **argv)
     if (qov_encode_finish(e, &head, &hlen) != QOV_OK) { fprintf(stderr, "finish failed\n"); return 1; }
     fwrite(head, 1, hlen, stdout);
     free(head);
+    qov_encode_stats st;
+    qov_encode_get_stats(e, &st);
     fprintf(stderr, "DONE frames=%ld video=%ld audio=%ld sync=%ld\n", n, tot_v, tot_a, tot_s);
+    fprintf(stderr, "STATS blocks_skip=%llu blocks_coded=%llu\n",
+            (unsigned long long)st.blocks_skip, (unsigned long long)st.blocks_coded);
     return 0;
 }

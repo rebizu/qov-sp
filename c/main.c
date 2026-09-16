@@ -344,6 +344,7 @@ static int cmd_encode(const char *case_path, const char *out_path)
     p.exp_golomb = json_bool(js, "expGolomb", 0) ||
                    json_has_string(js, "flags", "eg");
     p.lz4 = lz4;
+    p.range_coding = json_bool(js, "range", 0);
     p.quality = quality;
     if (json_present(js, "audio")) {
         p.audio_channels = (uint8_t)json_int(js, "channels", 0);
