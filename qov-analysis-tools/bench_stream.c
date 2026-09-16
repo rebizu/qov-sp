@@ -34,15 +34,17 @@ int main(int argc, char **argv)
     int audio_ch = argc > 6 ? atoi(argv[6]) : 0;
     int quality = argc > 7 ? atoi(argv[7]) : 60;
     int range = argc > 8 ? atoi(argv[8]) : 0;
+    int motion = argc > 9 ? atoi(argv[9]) : 1;
+    int refresh = argc > 10 ? atoi(argv[10]) : 1;
 
     qov_encode_params p;
     memset(&p, 0, sizeof p);
     p.width = (uint32_t)W; p.height = (uint32_t)H;
     p.fps_num = (uint32_t)fps; p.fps_den = 1;
     p.colorspace = QOV_CS_YUV420;
-    p.motion = 1;
+    p.motion = motion;
     p.intra_dct_keyframes = 1;
-    p.intra_refresh = 1;
+    p.intra_refresh = refresh;
     p.lz4 = 1;
     p.quality = quality;
     p.audio_channels = (uint8_t)audio_ch;

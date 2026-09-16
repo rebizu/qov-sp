@@ -101,10 +101,23 @@ Ordered PRs (each = conformance-gated, bit-exact x3):
    ~24 kbps) + spec 5.3 flag 0x01 passthrough; graceful QOA fallback and a
    platform AudioDecoder on the guest. Browser-verified: ~50 opus
    chunks/s each way, 0 skips, QOA path unchanged (~61/s).
-4. **(Tier 2) Skip-run opcodes + MV median-delta prediction** — measure the
-   skip-map/MV byte share first; expect single digits at 320x240.
-5. **(Tier 2) Order-1 / per-plane contexts in the range coder** — closes
-   toward zstd-class (~40-50% total); still table-lookup decode.
+4. ❌ **Skip-run opcodes + MV median-delta prediction** — CLOSED by
+   measurement (2026-09-16), negative result. The premise was pre-PR1:
+   MV+refresh sections are ~25-30% of video bytes raw (not single
+   digits; MV map is up to 602 B/P-frame at 320x240), so the idea looked
+   big. But median-delta Exp-Golomb MVs measure −10% RAW and +0.3% after
+   the order-0 range coder: adaptive byte modeling already codes the
+   zero-heavy MV bytes at ~2-4 bits, below the entropy of eg-coded
+   deltas. Restructuring skip-runs falls to the same argument. The
+   experiment was reverted; bench_stream.c keeps motion/refresh argv for
+   re-measurement.
+5. ❌ **Order-1 / per-plane contexts in the range coder** — CLOSED by
+   measurement (2026-09-16), negative result. gzip -9 applied on top of
+   the order-0 range-coded DCT payloads recovers 0.0%: the adaptive
+   model has already extracted the byte-level entropy, so order-1
+   contexts have nothing left to capture. The "zstd-class 40-50%"
+   estimate was made before PR1 existed. Phase 3.5 is complete: the
+   range coder took the headroom the Tier-2 items were targeting.
 
 ## Phase 4 — v4 subtraction release + spec freeze (Weeks 8–10)
 
