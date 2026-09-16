@@ -96,9 +96,11 @@ Ordered PRs (each = conformance-gated, bit-exact x3):
    619 kbps / 0.845, q95 1141 kbps / 0.880. The §6.2 derivation bites
    correctly; no encoder change made. scoreboard-format-comparison.json
    corrected.
-3. **Opus speech path in the call demo** — container flag exists (Phase 3);
-   wire a platform Opus encoder (speech 16k ~24 kbps vs QOA's 69) with
-   graceful fallback to QOA.
+3. ✅ **Opus speech path in the call demo** — SHIPPED (d409f13). Codec
+   selector: QOA default / Opus via WebCodecs AudioEncoder (20 ms frames,
+   ~24 kbps) + spec 5.3 flag 0x01 passthrough; graceful QOA fallback and a
+   platform AudioDecoder on the guest. Browser-verified: ~50 opus
+   chunks/s each way, 0 skips, QOA path unchanged (~61/s).
 4. **(Tier 2) Skip-run opcodes + MV median-delta prediction** — measure the
    skip-map/MV byte share first; expect single digits at 320x240.
 5. **(Tier 2) Order-1 / per-plane contexts in the range coder** — closes
