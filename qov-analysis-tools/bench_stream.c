@@ -11,6 +11,7 @@
  *
  * Usage:
  *   gcc -O2 -std=c99 -w -ffp-contract=off -I.. -o .build/bench_stream bench_stream.c -lm
+ *   (argv[11] = structured P-frames, v3.9 flag 0x04)
  *   ffmpeg -t 30 -i corpus-real/cam720.mkv -vf scale=320:240 -r 24 \
  *          -f rawvideo -pix_fmt rgba - | .build/bench_stream 320 240 24 720 16000 1 \
  *          > parts.bin 2> stats.txt
@@ -36,6 +37,7 @@ int main(int argc, char **argv)
     int range = argc > 8 ? atoi(argv[8]) : 0;
     int motion = argc > 9 ? atoi(argv[9]) : 1;
     int refresh = argc > 10 ? atoi(argv[10]) : 1;
+    int structured = argc > 11 ? atoi(argv[11]) : 0;   /* v3.9 flag 0x04 */
 
     qov_encode_params p;
     memset(&p, 0, sizeof p);
@@ -50,6 +52,7 @@ int main(int argc, char **argv)
     p.audio_channels = (uint8_t)audio_ch;
     p.audio_rate = (uint32_t)audio_rate;
     p.range_coding = range;
+    p.pframe_structured = structured;
 
     qov_encoder *e = qov_encode_start(&p);
     if (!e) { fprintf(stderr, "encode_start failed\n"); return 1; }

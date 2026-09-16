@@ -1,0 +1,67 @@
+{
+ "comment": "Phase 3.9 structured P-frame stacked-call benchmark: v1 vs structured grammar (chunk flag 0x04) at call settings (320x240@24 q60 yuv420 motion+ikf+refresh, range coder, keyframe every 120, mono 16 kHz speech), full frame and letterbox 256x192 step-down rung input. Wire math per bench_bandwidth.py; batched audio groups QOA chunks into type-0x03 datagrams of <=1180 B payload (8 chunks each for speech cadence), no FEC on audio. Reproduce with bench_stream.c (argv[11]) + bench_structured_stack.py.",
+ "settings": {
+  "fps": 24.0,
+  "seconds": 30.0,
+  "audio_rate": 16000,
+  "audio_ch": 1
+ },
+ "rows": {
+  "full 320x240 v1": {
+   "video kbps": 453.5,
+   "media kbps": 522.5,
+   "wire plain FEC off kbps": 541.9,
+   "wire batched FEC off kbps": 534.8,
+   "wire batched FEC 1:4 kbps": 537.1,
+   "packets per second plain": 121.8,
+   "packets per second batched": 67.1,
+   "audio chunks": 1875,
+   "decode": {
+    "frames": 720,
+    "audio_chunks": 1875
+   }
+  },
+  "full 320x240 structured": {
+   "video kbps": 260.1,
+   "media kbps": 329.1,
+   "wire plain FEC off kbps": 345.8,
+   "wire batched FEC off kbps": 338.6,
+   "wire batched FEC 1:4 kbps": 340.6,
+   "packets per second plain": 103.9,
+   "packets per second batched": 49.2,
+   "audio chunks": 1875,
+   "decode": {
+    "frames": 720,
+    "audio_chunks": 1875
+   }
+  },
+  "letterbox 256x192 v1": {
+   "video kbps": 339.1,
+   "media kbps": 408.1,
+   "wire plain FEC off kbps": 425.9,
+   "wire batched FEC off kbps": 418.8,
+   "wire batched FEC 1:4 kbps": 420.7,
+   "packets per second plain": 111.0,
+   "packets per second batched": 56.3,
+   "audio chunks": 1875,
+   "decode": {
+    "frames": 720,
+    "audio_chunks": 1875
+   }
+  },
+  "letterbox 256x192 structured": {
+   "video kbps": 197.2,
+   "media kbps": 266.2,
+   "wire plain FEC off kbps": 281.1,
+   "wire batched FEC off kbps": 274.0,
+   "wire batched FEC 1:4 kbps": 276.0,
+   "packets per second plain": 93.3,
+   "packets per second batched": 38.7,
+   "audio chunks": 1875,
+   "decode": {
+    "frames": 720,
+    "audio_chunks": 1875
+   }
+  }
+ }
+}

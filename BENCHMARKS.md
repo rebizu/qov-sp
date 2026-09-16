@@ -129,6 +129,35 @@ the framing changes.
   byte framing moved). Measured 720-frame roundtrips at q30–q85,
   bit-exact in all cases.
 
+### Stacked call configuration (all knobs on, measured 2026-09-16)
+
+v1 vs structured grammar at identical settings, full frame and the
+letterbox step-down rung input (256x192 padded to 320x240); "batched" is
+the type-0x03 audio datagram model of section 1b (8 QOA chunks per
+datagram). v1 rows reproduce the section 1b scoreboard within 0.1 kbps,
+so the columns are directly comparable.
+
+| call configuration | video | wire plain | wire batched | batched FEC 1:4 | packets/s plain -> batched |
+|---|---:|---:|---:|---:|---:|
+| full 320x240, v1 grammar | 453.5 | 541.9 | 534.8 | 537.1 | 121.8 -> 67.1 |
+| full 320x240, structured | 260.1 | 345.8 | 338.6 | 340.6 | 103.9 -> 49.2 |
+| letterbox rung, v1 grammar | 339.1 | 425.9 | 418.8 | 420.7 | 111.0 -> 56.3 |
+| letterbox rung, structured | **197.2** | 281.1 | **274.0** | **276.0** | 93.3 -> **38.7** |
+
+- The full stack (structured + rung + batching) lands at **274.0 kbps**
+  wire, FEC off; 276.0 kbps with FEC 1:4 — **−49.4%** vs the Phase 3
+  range-coder baseline (541.9) and **−57.7%** vs the LZ4 era (647.5),
+  at identical content quality (SSIM 0.809; structured pixels are
+  bit-identical).
+- With the Opus+DTX quiet-room audio path (4.3 kbps measured in the
+  demo) instead of continuous QOA speech, the stacked call is
+  ~206 kbps wire.
+- Packet rate also halves (93 -> 39/s at the rung): fewer datagrams is
+  fewer IP/UDP headers on a real network and cheaper loss recovery.
+
+Raw rows in `scoreboard-phase3.9-call.json`; reproduce with
+`bench_stream.c` (argv[11]) + `bench_structured_stack.py`.
+
 Format exploration history, the dead ends (DC delta prediction, Exp-Golomb
 under the range coder) and the two decoder defects the work exposed (EOB
 swallowed at zigzag 63; 255-chain accumulation) are documented in
