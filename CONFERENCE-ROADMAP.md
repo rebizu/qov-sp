@@ -119,6 +119,67 @@ Ordered PRs (each = conformance-gated, bit-exact x3):
    estimate was made before PR1 existed. Phase 3.5 is complete: the
    range coder took the headroom the Tier-2 items were targeting.
 
+## Phase 3.6 — Bandwidth packaging (before the v4 freeze)
+
+Post-PR1 there is no entropy headroom left (see 3.5 closures), so the
+remaining wire savings come from what we send and how we package it, not
+from coding harder. Baseline at call settings: 541.9 kbps wire FEC off
+(453.5 video + 69.0 QOA speech + ~19 packet headers), 122 pkt/s. Target:
+~350-400 kbps with all four items. Ordered by bandwidth-per-effort:
+
+1. **Opus DTX / silence gating in the call demo** (product, no format
+   change; ~45-55 kbps on real speech). Preferred: `opus.usedtx` in the
+   WebCodecs OpusEncoderConfig where the platform honors it. Fallback that
+   works everywhere: encoder-state-preserving gating — keep feeding the
+   AudioEncoder, compute RMS per 20 ms input window, and drop the AUDIO
+   chunk at output when RMS sits under a threshold (keep-alive chunk every
+   ~400 ms so liveness stats stay honest). Gate at output, never by
+   starving the encoder, so Opus analysis state stays continuous and
+   post-silence packets are glitch-free. Verify in the two-tab demo:
+   audioPlayed cadence during silence, recovery glitch listen, guest stats
+   counter for suppressed chunks. Report the call-wire delta in
+   BENCHMARKS.md.
+2. **QOV-S audio batching — packet type 0x03** (spec v2.1; ~15-20 kbps
+   true wire + ~40 fewer packets/s, which also shrinks NACK/FEC state).
+   New packet type whose payload is `[u16 len][complete AUDIO chunk]...`
+   — chunks ride with their own 10-byte headers and timestamps. Sender
+   batches consecutive audio chunks while they fit one datagram (≤1180 B,
+   i.e. ~4-8 QOA frames or ~15 Opus frames); flush on any video chunk.
+   The batch is ONE packet: one seq, fragmentCount=1, one frameId shared
+   by all its chunks — receiver stores a list per frameId and delivers
+   chunks in order (completedMedia becomes frameId -> list in TS + C#).
+   NACK retransmits the batch whole; FEC may group batch packets like any
+   media packets (parity already XORs full datagrams). Old receivers
+   already skip unknown packet types; HELLO `v=2` is unchanged — batching
+   is sender-side optional. Selftest + xUnit loopback/burst tests get
+   batch cases; bench_bandwidth.py learns the batch layout for wire math.
+3. **Resolution step-down rung in the adaptation ladder** (demo + ladder,
+   no format change; −25-30% video bytes when active). Mid-stream
+   resolution changes would need a new header (anti-goal before the v4
+   freeze), so the rung letterboxes instead: the host canvas fills black
+   and `drawImage` scales the camera into 256x192 centered — border
+   blocks are pure skips, content codes at the same quality, guests see a
+   pillarboxed picture with zero format awareness. Ladder order: quality
+   60→40 → **downscale on** → dropReference → frame-skip, with the usual
+   cooldowns/hysteresis (reuse the injected-interval pattern from the
+   flaky-test fixes). Mirror in QovAdaptation (C#) + qov-adaptation (TS)
+   + call.ts captureLoop; xUnit + selftest ladder cases.
+4. **Multi-mode intra prediction — PROTOTYPE GATE, adopt only on a real
+   margin** (spec v3.9 candidate). Today's intra is DC-only
+   (`qov__intra_pred`); it prices keyframes (6 per 30 s) and every refresh
+   band block. Prototype in C only, behind a param, measuring on the cam720
+   fixture: modes DC/H/V (+planar if cheap), encoder picks min-SAD, mode
+   bitmap (2 bits/block, raster order) in the intra section. ADOPT GATE:
+   ≥5% video bytes on the fixture — below that, document closed like the
+   3.5 Tier-2 items and keep the flag budget clean (bit 0x04 is the only
+   P-frame bit left). If adopted: spec v3.9, three bit-exact ports,
+   corpus case, conformance, bench rows.
+
+Rejected for this phase: true mid-stream resolution switching (needs a
+header change; conflicts with the freeze goal), audio-FEC co-grouping with
+video (batch packets already amortize the header; measure later if the
+loss profile wants it), QOA silence chunks (Opus path supersedes it).
+
 ## Phase 4 — v4 subtraction release + spec freeze (Weeks 8–10)
 
 - Remove `QOV_FLAG_HAS_BFRAMES`/`ENHANCED_COMP` from spec + `qov-types.ts:27-28` (ENHANCED_COMP was never even in `qov.h`).
