@@ -72,6 +72,34 @@ Ordered PRs:
 - New audio chunk flag for alternate codec (Opus). Audio chunk flags are always 0 today (`qov-encoder.ts:1400`); define bit, all demuxers skip unknown codecs gracefully.
 - `webrtc-audio-processing` in app (product scope, not format). Document capture-clock semantics (one paragraph).
 
+## Phase 3.5 — Lighter format (entropy coding, QOI-philosophy compatible)
+
+Inserted before the v4 freeze: every item keeps the philosophy (single-header
+integer math, one-pass decode, deterministic, bit-exact across TS/C/C#).
+Measured on 30s of cam720 at demo settings: P-frames = 90% of video bytes;
+LZ4 gets 2.2x on raw block data, but the order-0 entropy floor is 2.67x and
+gzip-class reaches 5.4x — so there is real headroom inside the philosophy.
+Rejected as philosophy-breaking: CABAC-class adaptive coding, B-frames,
+R-D search loops, lookahead rate control.
+
+Ordered PRs (each = conformance-gated, bit-exact x3):
+1. **Order-0 adaptive range coder** — new chunk flag 0x08 (free): DCT chunk
+   payload is rc-coded instead of LZ4 (mutually exclusive with 0x10; u32
+   raw-size prefix like the LZ4 path). ~120 LOC per impl (LZMA-style
+   carry handling, 256-symbol adaptive freq table, halve at 64k total).
+   Measured expectation: 15-25% smaller total call stream; decode stays
+   well above realtime. Spec v3.8 §2.2 + corpus case (tscli `range` flag).
+2. **Quality-knob floor fix** (encoder-only, no format change): q60 and q80
+   produce identical size/quality at 320x240 — quant derivation floors out.
+   Make quality bite at low resolutions so lighter is reachable by knob.
+3. **Opus speech path in the call demo** — container flag exists (Phase 3);
+   wire a platform Opus encoder (speech 16k ~24 kbps vs QOA's 69) with
+   graceful fallback to QOA.
+4. **(Tier 2) Skip-run opcodes + MV median-delta prediction** — measure the
+   skip-map/MV byte share first; expect single digits at 320x240.
+5. **(Tier 2) Order-1 / per-plane contexts in the range coder** — closes
+   toward zstd-class (~40-50% total); still table-lookup decode.
+
 ## Phase 4 — v4 subtraction release + spec freeze (Weeks 8–10)
 
 - Remove `QOV_FLAG_HAS_BFRAMES`/`ENHANCED_COMP` from spec + `qov-types.ts:27-28` (ENHANCED_COMP was never even in `qov.h`).
