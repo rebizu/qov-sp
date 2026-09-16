@@ -32,6 +32,7 @@ int main(int argc, char **argv)
     long total = atol(argv[4]);
     int audio_rate = argc > 5 ? atoi(argv[5]) : 0;
     int audio_ch = argc > 6 ? atoi(argv[6]) : 0;
+    int quality = argc > 7 ? atoi(argv[7]) : 60;
 
     qov_encode_params p;
     memset(&p, 0, sizeof p);
@@ -42,13 +43,13 @@ int main(int argc, char **argv)
     p.intra_dct_keyframes = 1;
     p.intra_refresh = 1;
     p.lz4 = 1;
-    p.quality = 60;
+    p.quality = quality;
     p.audio_channels = (uint8_t)audio_ch;
     p.audio_rate = (uint32_t)audio_rate;
 
     qov_encoder *e = qov_encode_start(&p);
     if (!e) { fprintf(stderr, "encode_start failed\n"); return 1; }
-    if (qov_set_quality(e, 60) != QOV_OK) { fprintf(stderr, "set_quality failed\n"); return 1; }
+    if (qov_set_quality(e, quality) != QOV_OK) { fprintf(stderr, "set_quality failed\n"); return 1; }
 
     uint8_t *frame = malloc((size_t)W * H * 4);
     long n = 0;
