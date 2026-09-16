@@ -1,38 +1,41 @@
 {
- "comment": "Format comparison, 30s of real webcam footage (corpus-real/cam720.mkv) at 320x240@24, all quality metrics are SSIM (All) computed in RGBA domain against the identical source frames. x264=libx264 preset veryfast, AV1=libsvtav1 preset 10, both fed yuv420p. QOV rows measured with bench_stream.c (demo settings: yuv420 q60 motion+ikf+refresh+lz4 kf120). Decode: QOV single-threaded CLI incl. per-frame SHA-256; ffmpeg decode is multithreaded with hand-tuned asm.",
+ "comment": "Format comparison, 30s of real webcam footage (corpus-real/cam720.mkv) at 320x240@24. All rows re-measured 2026-09-16 on spec v3.8; every SSIM is 'All' computed in the RGBA domain against the identical decoded source frames, so rows are directly comparable. x264=libx264 preset veryfast, AV1=libsvtav1 preset 10, both fed yuv420p. QOV measured with bench_stream.c (range coder on) + the RGBA-domain ssim filter. QOV decode is single-threaded C incl. per-frame SHA-256; ffmpeg decode is multithreaded with asm. See BENCHMARKS.md for the readable summary and repro recipe.",
  "video": {
   "qov_q60_demo_settings": {
-   "kbps": 557.0,
-   "ssim": 0.808,
-   "decode_fps": 315,
-   "note": "re-measured with range coder 2026-09-16: 453.4 kbps video (SSIM 0.809), wire 541.9 kbps FEC off"
+   "kbps": 453.5,
+   "ssim": 0.809,
+   "decode_fps": 263,
+   "note": "range-coded (spec v3.8). LZ4-era: 557.0 kbps, ssim 0.808, decode 315 fps"
   },
   "qov_q80": {
    "kbps": 619.0,
    "ssim": 0.845,
-   "decode_fps": 230,
-   "note": "re-measured 2026-09-16 with the fixed harness (quality argv). The original row (555.2 kbps, ssim 0.809, 'saturates') was a harness artifact: it ran before bench_stream.c accepted a quality argument, so it silently re-encoded at q60. Also range-coded (spec v3.8): -18.6% video bytes vs LZ4."
+   "decode_fps": 230
   },
-  "x264_crf26": {
-   "kbps": 35.4,
-   "ssim": 0.954
-  },
-  "x264_crf32": {
-   "kbps": 17.8,
-   "ssim": 0.949,
-   "note": "yuv-domain ssim"
+  "qov_q95": {
+   "kbps": 1141.4,
+   "ssim": 0.88
   },
   "x264_crf44": {
-   "kbps": 7.6,
-   "ssim": 0.778
+   "kbps": 6.4,
+   "ssim": 0.774
   },
-  "x264_crf47": {
-   "kbps": 7.0,
-   "ssim": 0.727
+  "x264_crf40": {
+   "kbps": 8.1,
+   "ssim": 0.833,
+   "note": "nearest x264 point to QOV q60 - the matched-quality comparison row"
+  },
+  "x264_crf32": {
+   "kbps": 16.7,
+   "ssim": 0.917
+  },
+  "x264_crf26": {
+   "kbps": 34.3,
+   "ssim": 0.952
   },
   "svtav1_crf50": {
    "kbps": 28.1,
-   "ssim": 0.959
+   "ssim": 0.958
   }
  },
  "audio": {
@@ -51,5 +54,5 @@
    "note": "libopus voip typical; analytic, not measured (no speech fixture)"
   }
  },
- "verdict": "At matched SSIM ~0.81, x264 needs ~8 kbps where QOV q60 needs 557 kbps (~70x). At SSIM ~0.95, x264 is 35 kbps. AV1 is more efficient still. QOV buys simplicity (single-header, 3 bit-exact implementations), determinism and license freedom at a large compression cost; decode is ~10x realtime single-threaded at 320x240."
+ "verdict": "At nearly matched SSIM (x264 crf40 0.833 vs QOV q60 0.809), x264 needs 8.1 kbps where QOV needs 453.5 (~55x). At SSIM ~0.95, x264 is 34.3 kbps and AV1 28.1. QOV buys simplicity (single-header, 3 bit-exact implementations), determinism and license freedom at a large compression cost; decode is ~10x realtime single-threaded at 320x240 including hashing."
 }

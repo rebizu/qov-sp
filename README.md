@@ -150,6 +150,11 @@ produces ±1 rounding differences on knife-edge pixels.
 
 See the full format specification: [qov-specification.md](qov-specification.md)
 
+## Benchmarks
+
+Bandwidth, speed, quality ladder and a measured comparison against x264/AV1:
+[BENCHMARKS.md](BENCHMARKS.md)
+
 ## Repository Structure
 
 ```

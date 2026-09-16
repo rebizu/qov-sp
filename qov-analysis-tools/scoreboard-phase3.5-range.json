@@ -1,5 +1,5 @@
 {
- "comment": "Phase 3.5 PR1: order-0 adaptive range coder (spec v3.8 flag 0x08) replacing LZ4 on DCT chunks. 30s real webcam footage (corpus-real/cam720.mkv), call settings 320x240@24 q60 yuv420 motion+ikf+refresh, keyframe every 120, mono 16 kHz speech. Wire math identical to scoreboard-phase3-audio.json. Reproduce with bench_stream.c argv[8]=1 + bench_bandwidth.py functions.",
+ "comment": "Phase 3.5 PR1: order-0 adaptive range coder (spec v3.8 flag 0x08) replacing LZ4 on DCT chunks. 30s real webcam footage (corpus-real/cam720.mkv), call settings 320x240@24 q60 yuv420 motion+ikf+refresh, keyframe every 120, mono 16 kHz speech. Wire math identical to scoreboard-phase3-audio.json. Reproduce with bench_stream.c + bench_range_compare.py.",
  "settings": {
   "fps": 24.0,
   "seconds": 30.0,
