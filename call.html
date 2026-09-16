@@ -58,6 +58,10 @@
     <input type="text" id="relayUrl" />
     <label style="font-size:0.85rem; color:#b7c0d4; display:flex; gap:6px; align-items:center;">
       <input type="checkbox" id="micCheck" /> microphone (16 kHz speech)
+      <select id="audioCodecSelect" title="speech codec (Opus needs WebCodecs; falls back to QOA)">
+        <option value="qoa">QOA 69 kbps</option>
+        <option value="opus">Opus ~24 kbps</option>
+      </select>
     </label>
     <span id="relayState" class="badge off">relay: not connected</span>
   </div>

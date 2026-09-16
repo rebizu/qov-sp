@@ -7,7 +7,7 @@
 // (freeze last good frame, heal over refresh bands) -> REPORTs back.
 import { QovEncoder } from './qov-encoder';
 import { QoaDecoder } from './qoa';
-import { QOV_AUDIO_RATE_SPEECH } from './qov-types';
+import { QOV_AUDIO_RATE_SPEECH, QOV_CHUNK_AUDIO_FLAG_OPUS } from './qov-types';
 import { QovStreamSender, QovStreamReceiver } from './qov-streaming';
 import { QovPlaybackGate, QovAdaptationController, PlaybackDecision, inspectChunk } from './qov-adaptation';
 import { QovStreamingDecoder, StreamDataSource } from './qov-streaming-decoder';
@@ -120,10 +120,14 @@ class Host {
 
   private audioFrames = 0;
 
-  // Speech capture (spec section 5.3): 16 kHz mono QOA frames cut from the
+  // Speech capture (spec section 5.3): 16 kHz mono frames cut from the
   // browser's audio processing chain (echo cancellation / noise suppression
   // / AGC via getUserMedia constraints — product scope, not format).
+  // Codec is QOA by default; Opus uses the platform WebCodecs encoder and
+  // the alternate-codec passthrough (spec 5.3 flag 0x01), falling back to
+  // QOA where WebCodecs is unavailable.
   private async startMic(): Promise<void> {
+    const codec = ($('audioCodecSelect') as HTMLSelectElement).value;
     const astream = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
@@ -133,20 +137,53 @@ class Host {
     const proc = actx.createScriptProcessor(1024, 1, 1);
     const sink = actx.createGain();
     sink.gain.value = 0; // ScriptProcessor only fires when routed to a destination
-    const pending: number[] = [];
-    proc.onaudioprocess = (e) => {
-      if (!this.running || !this.enc) return;
-      for (const v of e.inputBuffer.getChannelData(0)) pending.push(v);
-      while (pending.length >= 256) {
-        const frame = new Float32Array(pending.splice(0, 256));
-        this.enc.encodeAudio(frame, Math.round(performance.now() * 1000));
-        this.audioFrames++;
-      }
-    };
+    if (codec === 'opus' && typeof AudioEncoder !== 'undefined') {
+      const enc = new AudioEncoder({
+        output: (chunk) => {
+          if (!this.running || !this.enc) return;
+          const packet = new Uint8Array(chunk.byteLength);
+          chunk.copyTo(packet);
+          this.enc.encodeAudioOpus(packet, chunk.timestamp);
+          this.audioFrames++;
+        },
+        error: (e) => log(this.logEl, `opus encoder error: ${e.message} — audio stopped`),
+      });
+      enc.configure({
+        codec: 'opus', sampleRate: QOV_AUDIO_RATE_SPEECH, numberOfChannels: 1, bitrate: 24000,
+      });
+      const opusPending: number[] = [];
+      proc.onaudioprocess = (e) => {
+        if (!this.running) return;
+        for (const v of e.inputBuffer.getChannelData(0)) opusPending.push(v);
+        while (opusPending.length >= 320) { // one 20 ms Opus frame at 16 kHz
+          const data = new Float32Array(opusPending.splice(0, 320));
+          const ad = new AudioData({
+            format: 'f32-planar', sampleRate: QOV_AUDIO_RATE_SPEECH,
+            numberOfFrames: 320, numberOfChannels: 1, timestamp: Math.round(performance.now() * 1000),
+            data,
+          });
+          enc.encode(ad);
+          ad.close();
+        }
+      };
+      log(this.logEl, `microphone open (${actx.sampleRate} Hz mono, browser AEC/NS/AGC, Opus ~24 kbps)`);
+    } else {
+      if (codec === 'opus') log(this.logEl, 'WebCodecs AudioEncoder unavailable — using QOA');
+      const pending: number[] = [];
+      proc.onaudioprocess = (e) => {
+        if (!this.running || !this.enc) return;
+        for (const v of e.inputBuffer.getChannelData(0)) pending.push(v);
+        while (pending.length >= 256) {
+          const frame = new Float32Array(pending.splice(0, 256));
+          this.enc.encodeAudio(frame, Math.round(performance.now() * 1000));
+          this.audioFrames++;
+        }
+      };
+      log(this.logEl, `microphone open (${actx.sampleRate} Hz mono, browser AEC/NS/AGC, QOA 69 kbps)`);
+    }
     src.connect(proc);
     proc.connect(sink);
     sink.connect(actx.destination);
-    log(this.logEl, `microphone open (${actx.sampleRate} Hz mono, browser AEC/NS/AGC)`);
   }
 
   get fps(): number { return parseInt(($('fpsSlider') as HTMLInputElement).value, 10); }
@@ -383,17 +420,21 @@ class Guest {
     this.buffer = bigger;
   }
 
-  // QOA playout: schedule each decoded frame on the 16 kHz device clock,
+  // Audio playout: schedule each decoded frame on the 16 kHz device clock,
   // chaining from the previous frame so network jitter becomes buffer, not
   // gap (timestamps only aligned the streams at session start — spec 5.3).
   private playAudio(chunk: Uint8Array): void {
-    // chunk is a complete AUDIO chunk: strip the 10-byte QOV chunk header
-    // (audio is never compressed, spec section 5.3) to get the QOA frame
+    // chunk is a complete AUDIO chunk: [type(1) flags(1) size(4) ts(4)][payload]
+    // (audio is never compressed, spec section 5.3)
+    if (chunk[1] === QOV_CHUNK_AUDIO_FLAG_OPUS) { this.playOpus(chunk.subarray(10)); return; }
     const frame = this.qoa.decodeFrame(chunk.subarray(10));
     if (!frame) return;
+    this.scheduleMono(frame.samples);
+    this.audioPlayed++;
+  }
+
+  private scheduleMono(mono: Float32Array): void {
     void this.actx.resume();
-    const mono = frame.samples.length === frame.header.channels
-      ? frame.samples : frame.samples;
     const buffer = this.actx.createBuffer(1, mono.length, this.actx.sampleRate);
     buffer.getChannelData(0).set(mono);
     const node = this.actx.createBufferSource();
@@ -401,7 +442,31 @@ class Guest {
     this.nextAudioAt = Math.max(this.actx.currentTime + 0.03, this.nextAudioAt);
     node.start(this.nextAudioAt);
     this.nextAudioAt += mono.length / this.actx.sampleRate;
-    this.audioPlayed++;
+  }
+
+  private audioDecoder: AudioDecoder | null = null;
+  private audioSkipped = 0;
+
+  // Opus playout (spec 5.3 flag 0x01): the platform WebCodecs decoder.
+  // Reference decoders skip alternate codecs; the demo product plays them.
+  private playOpus(packet: Uint8Array): void {
+    if (typeof AudioDecoder === 'undefined') { this.audioSkipped++; return; }
+    if (!this.audioDecoder) {
+      const dec = new AudioDecoder({
+        output: (ad) => {
+          const mono = new Float32Array(ad.numberOfFrames);
+          ad.copyTo(mono, { planeIndex: 0, format: 'f32-planar' });
+          ad.close();
+          this.scheduleMono(mono);
+          this.audioPlayed++;
+        },
+        error: (e) => log(this.logEl, `opus decoder error: ${e.message} — audio stopped`),
+      });
+      dec.configure({ codec: 'opus', sampleRate: QOV_AUDIO_RATE_SPEECH, numberOfChannels: 1 });
+      this.audioDecoder = dec;
+    }
+    if (this.audioDecoder.decodeQueueSize > 20) { this.audioSkipped++; return; }
+    this.audioDecoder.decode(new EncodedAudioChunk({ type: 'key', timestamp: 0, data: packet }));
   }
 
   private async pump(): Promise<void> {
@@ -456,6 +521,7 @@ class Guest {
       ['healed frames', this.healingCount],
       ['frozen total', `${(this.totalFreezeMs / 1000).toFixed(1)} s`],
       ['audio played', this.audioPlayed],
+      ['audio skipped (no codec)', this.audioSkipped],
     ]);
   }
 }
