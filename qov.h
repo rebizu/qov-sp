@@ -3264,7 +3264,7 @@ qov_result qov_encoder_take_chunks(qov_encoder *e, uint8_t **data_out, size_t *s
     uint8_t *chunks = qov__u8malloc(chunk_len);
     if (!chunks) return QOV_ERR_OOM;
     memcpy(chunks, e->out.data + hdr_size, chunk_len);
-    memmove(e->out.data, e->out.data + hdr_size, hdr_size);
+    /* the header stays at the front of out; only the size shrinks */
     e->out.size = hdr_size;
     *data_out = chunks;
     *size_out = chunk_len;

@@ -1,0 +1,22 @@
+{
+ "comment": "Phase 3 audio bandwidth benchmark. 30s of real webcam footage (corpus-real/cam720.mkv) at call settings (320x240@24 q60 yuv420 motion+ikf+refresh+lz4, keyframe every 120) + mono 16 kHz speech. Wire = QOV-S datagram mode (1180 B fragments, 20 B headers, XOR FEC per qov-streaming-spec section 5.2), computed exactly from the measured chunk size distribution. QOA bitrates are content-independent (fixed-size frames). Reproduce with bench_stream.c + bench_bandwidth.py.",
+ "settings": {
+  "fps": 24.0,
+  "seconds": 30.0,
+  "audio_rate": 16000,
+  "audio_ch": 1,
+  "video_bytes": 2088703,
+  "media_chunks": 2601
+ },
+ "rows": {
+  "video 320x240@24 q60 (measured)": "557.0 kbps",
+  "audio speech mono 16 kHz": "69.0 kbps",
+  "audio music mono 48 kHz": "207.0 kbps",
+  "audio music stereo 48 kHz": "387.0 kbps",
+  "audio speech mono 16 kHz (measured)": "69.0 kbps",
+  "call media (video + speech 16k)": "626.0 kbps",
+  "wire FEC off (NACK only)": "647.5 kbps",
+  "wire FEC 1:4": "662.5 kbps",
+  "wire FEC 1:3": "860.6 kbps"
+ }
+}
