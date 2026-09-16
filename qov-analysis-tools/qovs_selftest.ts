@@ -193,6 +193,76 @@ async function main(): Promise<number> {
     check(drops === 1, 'ladder: sustained loss > 8% drops the reference once');
   }
 
+  // 6. Audio batching (v2.1): chunks share packets, order is preserved.
+  {
+    const audioChunk = new Uint8Array(138); // QOA mono frame sized
+    const videoChunk = new Uint8Array(3000); // forces 3 fragments
+    const sendOrder: string[] = [];
+    const delivered: string[] = [];
+    let deliveredAudio = 0;
+
+    const receiver = new QovStreamReceiver(
+      (chunk, isAudio) => {
+        delivered.push((isAudio ? 'a' : 'v') + chunk.length);
+        if (isAudio) deliveredAudio++;
+      },
+      (line) => sender.handleNack(line),
+      { frameIntervalMs: 100 },
+    );
+    receiver.start();
+    const sender = new QovStreamSender((packet) => receiver.handlePacket(packet), { fecGroupSize: 0 });
+
+    // 61 audio chunks (one second of speech) interleaved with 4 video chunks
+    for (let v = 0; v < 4; v++) {
+      for (let a = 0; a < 15; a++) {
+        sender.sendChunk(audioChunk, true);
+        sendOrder.push('a138');
+      }
+      sender.sendChunk(videoChunk, false);
+      sendOrder.push('v3000');
+    }
+    sender.sendChunk(audioChunk, true);
+    sendOrder.push('a138');
+    sender.flushAudioBatch();
+    const ok = await waitUntil(() => delivered.length === sendOrder.length);
+    check(ok && delivered.length === sendOrder.length,
+      `batch delivery: ${delivered.length}/${sendOrder.length} chunks, audio=${deliveredAudio}`);
+    check(delivered.every((d, i) => d === sendOrder[i]), 'batch delivery preserves send order exactly');
+    check(sender.audioBatchPackets < 61 && sender.audioBatchedChunks === 61,
+      `batching: ${sender.audioBatchedChunks} chunks in ${sender.audioBatchPackets} packets`);
+    receiver.stop();
+  }
+
+  // 7. Lost batch packet: NACK retransmit delivers every chunk in the batch.
+  {
+    let deliveredAudio = 0;
+    let nacks = 0;
+    const receiver = new QovStreamReceiver(
+      (_chunk, isAudio) => { if (isAudio) deliveredAudio++; },
+      (line) => { if (line.startsWith('NACK')) nacks++; sender.handleNack(line); },
+      { frameIntervalMs: 100 },
+    );
+    receiver.start();
+    const droppedOnce = new Set<number>();
+    const sender = new QovStreamSender(
+      (packet) => {
+        const h = parsePacketHeader(packet)!;
+        if (h.packetType === QovPacketType.AudioBatch && h.seq % 2 === 0 && !droppedOnce.has(h.seq)) {
+          droppedOnce.add(h.seq);
+          return; // lose the batch once; NACK retransmit gets through
+        }
+        receiver.handlePacket(packet);
+      },
+      { fecGroupSize: 0 },
+    );
+    const audioChunk = new Uint8Array(138);
+    for (let i = 0; i < 20; i++) sender.sendChunk(audioChunk, true);
+    sender.flushAudioBatch();
+    const ok = await waitUntil(() => deliveredAudio === 20);
+    check(ok && nacks > 0, `batch NACK recovery: audio=${deliveredAudio}/20 nacks=${nacks}`);
+    receiver.stop();
+  }
+
   console.log(failures === 0 ? 'SELF-TEST GREEN' : `SELF-TEST FAILED (${failures})`);
   return failures === 0 ? 0 : 1;
 }

@@ -134,20 +134,16 @@ from coding harder. Baseline at call settings: 541.9 kbps wire FEC off
    chunks suppressed in a quiet room, audio wire ~36 → ~4 kbps, guest
    plays exactly what is sent with 0 decoder errors. Platform `usedtx`
    not needed — output gating supersedes it (drops whole packets).
-2. **QOV-S audio batching — packet type 0x03** (spec v2.1; ~15-20 kbps
-   true wire + ~40 fewer packets/s, which also shrinks NACK/FEC state).
-   New packet type whose payload is `[u16 len][complete AUDIO chunk]...`
-   — chunks ride with their own 10-byte headers and timestamps. Sender
-   batches consecutive audio chunks while they fit one datagram (≤1180 B,
-   i.e. ~4-8 QOA frames or ~15 Opus frames); flush on any video chunk.
-   The batch is ONE packet: one seq, fragmentCount=1, one frameId shared
-   by all its chunks — receiver stores a list per frameId and delivers
-   chunks in order (completedMedia becomes frameId -> list in TS + C#).
-   NACK retransmits the batch whole; FEC may group batch packets like any
-   media packets (parity already XORs full datagrams). Old receivers
-   already skip unknown packet types; HELLO `v=2` is unchanged — batching
-   is sender-side optional. Selftest + xUnit loopback/burst tests get
-   batch cases; bench_bandwidth.py learns the batch layout for wire math.
+2. ✅ **QOV-S audio batching — packet type 0x03** — SHIPPED (spec v2.1
+   §3.1). Sender-side default-on (opt-out via `audioBatching: false`);
+   batch = one seq/one frame_id, flushed when full, before any video
+   chunk, or explicitly. Receiver splits entries per frame_id and
+   delivers in order; v2.0 receivers ignore the type. 61 chunks → 9
+   packets in the selftest; loopback batch-loss NACK recovery green in
+   TS + C# (42/42 xUnit). The batch-loss test exposed and fixed a latent
+   phantom-hole bug: an upgraded hole kept its placeholder media types
+   instead of adopting the retransmitted packet's — wrong delivery on
+   any async network, TS included (its synchronous NACK loop masked it).
 3. **Resolution step-down rung in the adaptation ladder** (demo + ladder,
    no format change; −25-30% video bytes when active). Mid-stream
    resolution changes would need a new header (anti-goal before the v4

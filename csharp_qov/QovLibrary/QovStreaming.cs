@@ -16,6 +16,7 @@ public enum QovPacketType : byte
     Video = 0x00,
     Audio = 0x01,
     Fec = 0x02,
+    AudioBatch = 0x03, // v2.1: payload is [u16 len][complete AUDIO chunk]...
     KeepAlive = 0xF0
 }
 
@@ -120,6 +121,17 @@ public class QovStreamServer : IDisposable
 
     private uint _seq = 0;
     private uint _currentFrameId = 0;
+    // v2.1 audio batch accumulation: complete AUDIO chunks waiting to share
+    // a datagram ([u16 len][chunk] entries). Flushed full, before any video
+    // chunk (batch frame_ids stay below the video's), or by FlushAudioBatch.
+    private bool _audioBatching = true;
+    private readonly List<byte[]> _batchBody = new();
+    private int _batchBytes;
+    private int _batchChunks;
+    private long _audioBatchPackets;
+    private long _audioBatchedChunks;
+    public long AudioBatchPackets => Interlocked.Read(ref _audioBatchPackets);
+    public long AudioBatchedChunks => Interlocked.Read(ref _audioBatchedChunks);
     // -interval, not long.MinValue (now - MinValue overflows and would
     // rate-limit the first KEYFRAME away)
     private long _lastKeyframeRequestMs = -KeyframeMinIntervalMs;
@@ -350,6 +362,18 @@ public class QovStreamServer : IDisposable
             return;
         }
 
+        if (isAudio && _audioBatching)
+        {
+            if (_batchBytes > 0 && _batchBytes + 2 + frameData.Length > MaxFragmentPayload)
+                await FlushAudioBatchAsync();
+            _batchBody.Add(new byte[] { (byte)(frameData.Length >> 8), (byte)(frameData.Length & 0xff) });
+            _batchBody.Add(frameData);
+            _batchBytes += 2 + frameData.Length;
+            _batchChunks++;
+            return;
+        }
+        if (!isAudio) await FlushAudioBatchAsync();
+
         uint frameId = (uint)Interlocked.Increment(ref _currentFrameId);
         int fragCount = Math.Max(1, (frameData.Length + MaxFragmentPayload - 1) / MaxFragmentPayload);
         var type = isAudio ? QovPacketType.Audio : QovPacketType.Video;
@@ -414,6 +438,43 @@ public class QovStreamServer : IDisposable
                 await SendDatagramAsync(udp, remote, parity, seqs[g], frameId, QovPacketType.Fec);
             }
         }
+    }
+
+    // v2.1 (spec section 3.1): emit accumulated audio chunks as ONE packet —
+    // one seq, one frame_id, fragmentCount=1. No FEC parity on batches:
+    // audio tolerates loss as gaps, and NACK retransmits the batch whole.
+    public async Task FlushAudioBatchAsync()
+    {
+        if (_batchBytes == 0) return;
+        var udp = _udpMedia; var remote = _mediaRemote;
+        var body = new byte[_batchBytes];
+        int off = 0;
+        foreach (var piece in _batchBody) { Array.Copy(piece, 0, body, off, piece.Length); off += piece.Length; }
+        int chunkCount = _batchChunks;
+        _batchBody.Clear();
+        _batchBytes = 0;
+        _batchChunks = 0;
+        if (udp == null || remote == null) return;
+
+        uint frameId = (uint)Interlocked.Increment(ref _currentFrameId);
+        uint seq = NextSeq();
+        var packet = new byte[QovPacketHeader.Size + body.Length];
+        new QovPacketHeader
+        {
+            Magic = QovPacketHeader.MagicValue,
+            Version = QovPacketHeader.VersionValue,
+            Seq = seq,
+            FrameId = frameId,
+            FragmentId = 0,
+            FragmentCount = 1,
+            PayloadSize = (ushort)body.Length,
+            PacketType = QovPacketType.AudioBatch
+        }.WriteTo(packet);
+        Array.Copy(body, 0, packet, QovPacketHeader.Size, body.Length);
+        RememberReplay(seq, packet);
+        await SendDatagramAsync(udp, remote, packet, seq, frameId, QovPacketType.AudioBatch);
+        Interlocked.Increment(ref _audioBatchPackets);
+        Interlocked.Add(ref _audioBatchedChunks, chunkCount);
     }
 
     public async Task SendKeepAliveAsync()
@@ -492,7 +553,7 @@ public class QovStreamClient : IDisposable
     // order (spec section 4: audio is independent, but both halves of one
     // sender interleave ids, so ordering them together is well-defined).
     private readonly Dictionary<uint, FrameReassembly> _pending = new();
-    private readonly Dictionary<uint, (byte[] Chunk, QovPacketType Type)> _completedMedia = new();
+    private readonly Dictionary<uint, (List<byte[]> Chunks, QovPacketType Type)> _completedMedia = new();
     private uint _nextMediaFrameId;
     private bool _mediaInit;
     private uint _resolvedUpTo;
@@ -688,6 +749,7 @@ public class QovStreamClient : IDisposable
                 {
                     case QovPacketType.Video:
                     case QovPacketType.Audio:
+                    case QovPacketType.AudioBatch:
                         HandleFragment(header, packet);
                         break;
                     case QovPacketType.Fec:
@@ -762,8 +824,10 @@ public class QovStreamClient : IDisposable
             }
             else if (frame.FragmentCount == 0)
             {
-                // phantom upgraded by a real fragment (deadline clock preserved)
+                // phantom upgraded by a real fragment (deadline clock preserved);
+                // the phantom carries placeholder types — adopt the real packet's
                 frame.Allocate(header.FragmentCount);
+                frame.Type = header.PacketType;
             }
             if (header.FragmentId >= frame.FragmentCount) return;
 
@@ -777,7 +841,7 @@ public class QovStreamClient : IDisposable
             if (frame.ReceivedCount == frame.FragmentCount)
             {
                 _pending.Remove(header.FrameId);
-                _completedMedia[header.FrameId] = (AssembleChunk(frame), frame.Type);
+                _completedMedia[header.FrameId] = (SplitOrSingle(frame, AssembleChunk(frame)), frame.Type);
                 toDeliver = DeliverInOrderMedia(out deliverType);
             }
         }
@@ -844,7 +908,7 @@ public class QovStreamClient : IDisposable
                 _pending.Remove(frameId);
                 if (frame.ReceivedCount == frame.FragmentCount)
                 {
-                    _completedMedia[frameId] = (AssembleChunk(frame), frame.Type);
+                    _completedMedia[frameId] = (SplitOrSingle(frame, AssembleChunk(frame)), frame.Type);
                 }
                 else
                 {
@@ -878,10 +942,10 @@ public class QovStreamClient : IDisposable
         List<byte[]>? ready = null;
         while (_completedMedia.ContainsKey(_nextMediaFrameId))
         {
-            var (chunk, entryType) = _completedMedia[_nextMediaFrameId];
+            var (chunks, entryType) = _completedMedia[_nextMediaFrameId];
             _completedMedia.Remove(_nextMediaFrameId);
             ready ??= new List<byte[]>();
-            ready.Add(chunk);
+            ready.AddRange(chunks);
             type = entryType;
             Interlocked.Increment(ref _framesDelivered);
             _resolvedUpTo = _nextMediaFrameId;
@@ -947,6 +1011,26 @@ public class QovStreamClient : IDisposable
             Interlocked.Increment(ref _fecRecoveries);
             break; // hole filled; other parities see no hole
         }
+    }
+
+    // v2.1: walk [u16 len][chunk bytes] entries of an AudioBatch payload.
+    // Truncated trailing bytes (corrupt packet) are dropped silently: the
+    // entry length always bounds the read.
+    private static List<byte[]> SplitOrSingle(FrameReassembly frame, byte[] body)
+    {
+        if (frame.Type != QovPacketType.AudioBatch) return new List<byte[]> { body };
+        var chunks = new List<byte[]>();
+        int off = 0;
+        while (off + 2 <= body.Length)
+        {
+            int len = (body[off] << 8) | body[off + 1];
+            if (off + 2 + len > body.Length) break;
+            var chunk = new byte[len];
+            Array.Copy(body, off + 2, chunk, 0, len);
+            chunks.Add(chunk);
+            off += 2 + len;
+        }
+        return chunks;
     }
 
     private static byte[] AssembleChunk(FrameReassembly frame)

@@ -13,6 +13,7 @@ export enum QovPacketType {
   Video = 0x00,
   Audio = 0x01,
   Fec = 0x02,
+  AudioBatch = 0x03, // v2.1: payload is [u16 len][complete AUDIO chunk]...
   KeepAlive = 0xf0,
 }
 
@@ -58,6 +59,7 @@ export interface QovStreamSenderOptions {
   fecGroupSize?: number; // 4 = light (default), 3 = aggressive, 0 = off
   replayCapacity?: number; // NACK window, default 1024
   outgoingFilter?: (seq: number, frameId: number, packetType: QovPacketType) => boolean;
+  audioBatching?: boolean; // v2.1: consecutive audio chunks share one packet (default true)
 }
 
 export class QovStreamSender {
@@ -65,18 +67,28 @@ export class QovStreamSender {
   private fecGroupSize: number;
   private readonly replayCapacity: number;
   private readonly outgoingFilter?: (seq: number, frameId: number, packetType: QovPacketType) => boolean;
+  private readonly audioBatching: boolean;
+  // v2.1 audio batch accumulation: complete AUDIO chunks waiting to share
+  // a datagram ([u16 len][chunk] entries). Flushed full, on any video
+  // chunk, or by flushAudioBatch().
+  private batchBody: Uint8Array[] = [];
+  private batchBytes = 0;
+  private batchChunks = 0;
   private readonly replay = new Map<number, Uint8Array>();
   private readonly replayOrder: number[] = [];
   private seq = 0;
   private frameId = 0;
   sentPackets = 0;
   retransmits = 0;
+  audioBatchPackets = 0;
+  audioBatchedChunks = 0;
 
   constructor(onPacket: (packet: Uint8Array) => void, opts: QovStreamSenderOptions = {}) {
     this.onPacket = onPacket;
     this.fecGroupSize = opts.fecGroupSize ?? 4;
     this.replayCapacity = opts.replayCapacity ?? 1024;
     this.outgoingFilter = opts.outgoingFilter;
+    this.audioBatching = opts.audioBatching ?? true;
   }
 
   setFecGroupSize(k: number): void { this.fecGroupSize = k; }
@@ -85,7 +97,23 @@ export class QovStreamSender {
   // Spec section 3 sender: one QOV chunk -> fragments with a shared
   // frame_id, seq incrementing across all packets; XOR parity per full
   // same-frame group (spec section 5.2).
+  // v2.1: audio chunks accumulate into one AudioBatch packet instead —
+  // flushed when full, before any video chunk (so batch frame_ids stay
+  // below the video's, preserving in-order delivery), or via
+  // flushAudioBatch().
   sendChunk(chunk: Uint8Array, isAudio: boolean): void {
+    if (isAudio && this.audioBatching) {
+      const entry = 2 + chunk.length;
+      if (this.batchBytes > 0 && this.batchBytes + entry > QOV_S_MAX_FRAGMENT) this.flushAudioBatch();
+      this.batchBody.push(new Uint8Array([chunk.length >> 8, chunk.length & 0xff]));
+      this.batchBody.push(chunk);
+      this.batchBytes += entry;
+      this.batchChunks++;
+      if (this.batchBytes >= QOV_S_MAX_FRAGMENT) this.flushAudioBatch();
+      return;
+    }
+    if (!isAudio) this.flushAudioBatch();
+
     this.frameId++;
     const fragCount = Math.max(1, Math.ceil(chunk.length / QOV_S_MAX_FRAGMENT));
     const type = isAudio ? QovPacketType.Audio : QovPacketType.Video;
@@ -128,6 +156,33 @@ export class QovStreamSender {
         this.transmit(parity, seqs[g], this.frameId, QovPacketType.Fec);
       }
     }
+  }
+
+  // v2.1 (spec section 3.1): emit accumulated audio chunks as ONE packet —
+  // one seq, one frame_id, fragmentCount=1. No FEC parity on batches:
+  // audio tolerates loss as gaps, and NACK retransmits the batch whole.
+  flushAudioBatch(): void {
+    if (this.batchBytes === 0) return;
+    const body = new Uint8Array(this.batchBytes);
+    let off = 0;
+    for (const piece of this.batchBody) { body.set(piece, off); off += piece.length; }
+    this.batchBody = [];
+    this.batchBytes = 0;
+    const chunkCount = this.batchChunks;
+    this.batchChunks = 0;
+
+    this.frameId++;
+    const packet = new Uint8Array(QOVP_HEADER_SIZE + body.length);
+    const seq = ++this.seq;
+    writePacketHeader(packet, {
+      packetType: QovPacketType.AudioBatch, seq, frameId: this.frameId,
+      fragmentId: 0, fragmentCount: 1, payloadSize: body.length,
+    });
+    packet.set(body, QOVP_HEADER_SIZE);
+    this.remember(seq, packet);
+    this.transmit(packet, seq, this.frameId, QovPacketType.AudioBatch);
+    this.audioBatchPackets++;
+    this.audioBatchedChunks += chunkCount;
   }
 
   // Spec section 5.1: retransmit datagrams still inside the replay window.
@@ -178,6 +233,7 @@ interface FrameReassembly {
   fragmentCount: number; // 0 = phantom (expected-missing)
   createdAt: number;
   isAudio: boolean;
+  isBatch: boolean; // v2.1 AudioBatch: payload holds [u16 len][chunk] entries
   parities: { payload: Uint8Array; firstSeq: number; groupSize: number }[];
 }
 
@@ -202,7 +258,7 @@ export class QovStreamReceiver {
   // video + audio share the sender's frame_id space; all media delivers in
   // frame_id order (spec section 4: audio is independent, but both halves of
   // one sender interleave ids, so ordering them together is well-defined)
-  private readonly completedMedia = new Map<number, { chunk: Uint8Array; isAudio: boolean }>();
+  private readonly completedMedia = new Map<number, { chunks: Uint8Array[]; isAudio: boolean }>();
   private readonly receivedSeq = new Set<number>();
   private readonly seqOrder: number[] = [];
   private readonly seqWindow = 4096;
@@ -266,6 +322,8 @@ export class QovStreamReceiver {
       this.handleParity(header, bytes);
     } else if (header.packetType === QovPacketType.Video || header.packetType === QovPacketType.Audio) {
       this.handleFragment(header, bytes);
+    } else if (header.packetType === QovPacketType.AudioBatch) {
+      this.handleFragment(header, bytes);
     }
   }
 
@@ -315,15 +373,19 @@ export class QovStreamReceiver {
         receivedCount: 0,
         fragmentCount: header.fragmentCount,
         createdAt: nowMs(),
-        isAudio: header.packetType === QovPacketType.Audio,
+        isAudio: header.packetType !== QovPacketType.Video,
+        isBatch: header.packetType === QovPacketType.AudioBatch,
         parities: [],
       };
       this.pending.set(header.frameId, frame);
     } else if (frame.fragmentCount === 0) {
-      // phantom upgraded by a real fragment (deadline clock preserved)
+      // phantom upgraded by a real fragment (deadline clock preserved);
+      // the phantom carries placeholder types — adopt the real packet's
       frame.fragmentCount = header.fragmentCount;
       frame.packets = new Array(header.fragmentCount).fill(null);
       frame.packetSeq = new Array(header.fragmentCount).fill(0);
+      frame.isAudio = header.packetType !== QovPacketType.Video;
+      frame.isBatch = header.packetType === QovPacketType.AudioBatch;
     }
     if (header.fragmentId >= frame.fragmentCount) return;
 
@@ -335,8 +397,9 @@ export class QovStreamReceiver {
 
     if (frame.receivedCount === frame.fragmentCount) {
       this.pending.delete(header.frameId);
-      const chunk = assembleChunk(frame);
-      this.completedMedia.set(header.frameId, { chunk, isAudio: frame.isAudio });
+      const body = assembleChunk(frame);
+      const chunks = frame.isBatch ? splitBatch(body) : [body];
+      this.completedMedia.set(header.frameId, { chunks, isAudio: frame.isAudio });
       this.deliverInOrderMedia();
     }
   }
@@ -399,8 +462,9 @@ export class QovStreamReceiver {
       this.tryRepair(frame);
       this.pending.delete(frameId);
       if (frame.receivedCount === frame.fragmentCount) {
-        const chunk = assembleChunk(frame);
-        this.completedMedia.set(frameId, { chunk, isAudio: frame.isAudio });
+        const body = assembleChunk(frame);
+        const chunks = frame.isBatch ? splitBatch(body) : [body];
+        this.completedMedia.set(frameId, { chunks, isAudio: frame.isAudio });
       } else {
         this.framesDropped++;
         dropped.push(frameId);
@@ -435,7 +499,7 @@ export class QovStreamReceiver {
       const entry = this.completedMedia.get(this.nextMediaFrameId)!;
       this.completedMedia.delete(this.nextMediaFrameId);
       this.framesDelivered++;
-      this.onChunk(entry.chunk, entry.isAudio);
+      for (const chunk of entry.chunks) this.onChunk(chunk, entry.isAudio);
       this.resolvedUpTo = this.nextMediaFrameId;
       this.nextMediaFrameId++;
     }
@@ -497,8 +561,23 @@ export class QovStreamReceiver {
 function phantom(): FrameReassembly {
   return {
     packets: [], packetSeq: [], receivedCount: 0, fragmentCount: 0,
-    createdAt: nowMs(), isAudio: false, parities: [],
+    createdAt: nowMs(), isAudio: false, isBatch: false, parities: [],
   };
+}
+
+// v2.1: walk [u16 len][chunk bytes] entries of an AudioBatch payload.
+// Truncated trailing bytes (corrupt packet) are dropped silently: the
+// entry length always bounds the read.
+function splitBatch(body: Uint8Array): Uint8Array[] {
+  const chunks: Uint8Array[] = [];
+  let off = 0;
+  while (off + 2 <= body.length) {
+    const len = (body[off] << 8) | body[off + 1];
+    if (off + 2 + len > body.length) break;
+    chunks.push(body.subarray(off + 2, off + 2 + len));
+    off += 2 + len;
+  }
+  return chunks;
 }
 
 function assembleChunk(frame: FrameReassembly): Uint8Array {

@@ -61,6 +61,17 @@ from ~36 kbps to ~4 kbps (6 packets/s × ~90 B) while the guest plays
 exactly what is sent with zero decoder errors. QOA has no silence
 mechanism by design (fixed-rate format; the Opus path supersedes it).
 
+**Audio batching** (Phase 3.6, QOV-S spec v2.1 packet type 0x03):
+consecutive audio chunks share one datagram (`[u16 len][chunk]` entries,
+one seq/frame_id per batch), cutting speech from ~62 to ~8 audio
+packets/s. Wire effect on the measured stream: QOA speech 84 → 71.3
+kbps (−12.7), and on a real network another ~12 kbps from 54 fewer
+IP/UDP headers per second. Verified in the selftest (61 chunks → 9
+packets, order preserved, NACK recovers a lost batch whole) and live in
+the demo; the fix it forced — phantom `frame_id` holes now adopt the
+retransmitted packet's media type — closed a latent out-of-order
+delivery bug on any async network.
+
 ## 2. Speed (C reference, single thread)
 
 | stage | LZ4 | range coder |

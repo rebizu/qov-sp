@@ -88,7 +88,7 @@ Offset  Size  Name            Description
 0       4     magic           "QOVP" (0x514F5650)
 4       1     version         0x02
 5       1     packet_type     0x00 video, 0x01 audio, 0x02 FEC (§5.2),
-                              0xF0 keep-alive
+                              0x03 audio batch (§3.1, v2.1), 0xF0 keep-alive
 6       4     seq             Monotonic datagram counter (loss detection)
 10      4     frame_id        Monotonic QOV chunk counter (video+audio)
 14      2     fragment_id     0-based fragment index within the frame
@@ -107,6 +107,36 @@ cannot carry `seq`, which §5 requires.)
 
 **Sender:** split each QOV chunk (video keyframe/P-frame, or audio QOA frame)
 into `ceil(len / frag_size)` fragments; emit one packet per fragment with a
+shared `frame_id` and a per-file monotonic `seq` — or, for small audio
+chunks, batch them per §3.1.
+
+### 3.1 Audio Batching (NEW in v2.1, packet_type 0x03)
+
+Small audio chunks are the dominant packet-count cost of a call (one
+datagram per QOA frame ≈ 62 packets/s at 16 kHz). A sender MAY accumulate
+consecutive complete AUDIO chunks into one **AudioBatch** packet:
+`packet_type = 0x03`, `fragment_count = 1`, `payload` = a concatenation of
+`[u16 length][AUDIO chunk bytes]` entries — the chunk header (type, codec
+flags, size, timestamp) rides inside each entry unchanged.
+
+Rules:
+
+- Entries are complete AUDIO chunks only; the batch payload MUST stay ≤
+  1180 bytes (datagram-mode fragment cap). Encoders flush the batch when
+  full, when a video chunk is emitted (video `frame_id`s then stay above
+  the batch's, so in-order delivery is preserved), or explicitly.
+- The batch is ONE datagram for the whole machinery: one `seq`, one
+  `frame_id` shared by all its chunks, never fragmented. NACK retransmits
+  and replay cover it whole. XOR FEC (§5.2) MAY treat batch packets like
+  any media packets; the reference senders do not group them (audio
+  tolerates loss as gaps).
+- Receivers split the entries on completion and deliver each chunk in
+  order through the normal media path. A truncated trailing entry
+  (corrupt datagram) is dropped. A `frame_id` whose only packet was lost
+  is still a phantom hole (§6): the receiver learns the chunk count only
+  on retransmit/receipt.
+- v2.0 receivers ignore `packet_type` 0x03 (unknown), so senders can
+  enable batching unilaterally on any carrier.
 shared `frame_id`, incrementing `seq` across all packets. Fragments are sent
 in order; the last one may be short. Audio frames typically fit one packet.
 
@@ -195,6 +225,12 @@ address-bound (datagram mode), and how `HELLO` authenticates.
 
 ## 8. Changes from v1.0
 
+* **v2.1 — audio batching (§3.1)**: new `packet_type` 0x03 carries
+  multiple complete AUDIO chunks per datagram (`[u16 len][chunk]`
+  entries, one `seq`/`frame_id` per batch). Cuts a speech call from ~62
+  to ~8 audio packets/s and amortizes the 20-byte header (plus the
+  carrier's own per-datagram overhead) across chunks. v2.0 receivers
+  ignore the type, so adoption is sender-side and unilateral.
 * **Carrier-agnostic core**: the session and packetization are defined
   against two abstract channels (§1.1); TCP+UDP, WebSocket, and
   WebTransport are bindings, and others can be added without touching the

@@ -96,6 +96,71 @@ public class StreamingLoopbackTests
     }
 
     [Fact]
+    public async Task Loopback_AudioBatching_SharesPackets_PreservesOrder()
+    {
+        var sample = BuildSampleStream(frames: 4);
+        var (server, client) = await ConnectPairAsync(sample.Header);
+        using var _s = server;
+        using var _c = client;
+
+        var delivered = new ConcurrentQueue<(byte[] Chunk, QovPacketType Type)>();
+        client.OnFrameReceived += (chunk, type) => delivered.Enqueue((chunk, type));
+
+        var audioChunk = new byte[138]; // QOA mono frame sized
+        for (int i = 0; i < audioChunk.Length; i++) audioChunk[i] = (byte)(i * 7);
+        var sendOrder = new List<(int Len, bool Audio)>();
+        for (int v = 0; v < 4; v++)
+        {
+            for (int a = 0; a < 15; a++)
+            {
+                await server.SendFrameAsync(audioChunk, isAudio: true);
+                sendOrder.Add((138, true));
+            }
+            await server.SendFrameAsync(sample.Chunks[v], isAudio: false);
+            sendOrder.Add((sample.Chunks[v].Length, false));
+        }
+        await server.SendFrameAsync(audioChunk, isAudio: true);
+        sendOrder.Add((138, true));
+        await server.FlushAudioBatchAsync();
+
+        await WaitUntilAsync(() => delivered.Count == sendOrder.Count, "all batched chunks delivered");
+        int idx = 0;
+        foreach (var (chunk, type) in delivered)
+        {
+            var (wantLen, wantAudio) = sendOrder[idx++];
+            Assert.Equal(wantLen, chunk.Length);
+            Assert.Equal(wantAudio, type != QovPacketType.Video);
+        }
+        Assert.Equal(61, server.AudioBatchedChunks);
+        Assert.True(server.AudioBatchPackets < 61,
+            $"expected batching, got {server.AudioBatchPackets} packets for 61 chunks");
+    }
+
+    [Fact]
+    public async Task Loopback_AudioBatchLoss_NackRetransmitDeliversAll()
+    {
+        var sample = BuildSampleStream(frames: 1);
+        var (server, client) = await ConnectPairAsync(sample.Header);
+        using var _s = server;
+        using var _c = client;
+
+        int deliveredAudio = 0;
+        client.OnFrameReceived += (chunk, type) => { if (type != QovPacketType.Video) Interlocked.Increment(ref deliveredAudio); };
+
+        // lose every other AudioBatch packet once; NACK retransmits recover
+        var seen = new HashSet<uint>();
+        server.OutgoingFilter = (seq, _, type) =>
+            !(type == QovPacketType.AudioBatch && seq % 2 == 0 && seen.Add(seq));
+
+        var audioChunk = new byte[138];
+        for (int i = 0; i < 20; i++) await server.SendFrameAsync(audioChunk, isAudio: true);
+        await server.FlushAudioBatchAsync();
+
+        await WaitUntilAsync(() => Volatile.Read(ref deliveredAudio) >= 20, "batch loss recovered via NACK");
+        Assert.True(server.AudioBatchPackets >= 2, "expected multiple batch packets");
+    }
+
+    [Fact]
     public async Task Loopback_DeliversAllChunksIntact()
     {
         var sample = BuildSampleStream();
