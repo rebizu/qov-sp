@@ -88,9 +88,14 @@ Ordered PRs (each = conformance-gated, bit-exact x3):
    video bytes −18.6% (557 → 454 kbps), call wire 647.5 → 541.9 kbps FEC
    off / 544.2 at FEC 1:4; encode 180 → 164 fps, decode 309 → 265 fps.
    Corpus case `range_motion_yuv420_lossy_dct`; conformance GREEN x3.
-2. **Quality-knob floor fix** (encoder-only, no format change): q60 and q80
-   produce identical size/quality at 320x240 — quant derivation floors out.
-   Make quality bite at low resolutions so lighter is reachable by knob.
+2. ✅ **Quality-knob floor fix** — CLOSED as not-a-bug (2026-09-16). The
+   "q60==q80 saturates at 320x240" premise was a harness artifact: the
+   original scoreboard row was measured before bench_stream.c accepted a
+   quality argument, so both rows silently encoded at q60. Controlled
+   re-measure (30s cam720, range coder): q60 453 kbps / SSIM 0.809, q80
+   619 kbps / 0.845, q95 1141 kbps / 0.880. The §6.2 derivation bites
+   correctly; no encoder change made. scoreboard-format-comparison.json
+   corrected.
 3. **Opus speech path in the call demo** — container flag exists (Phase 3);
    wire a platform Opus encoder (speech 16k ~24 kbps vs QOA's 69) with
    graceful fallback to QOA.

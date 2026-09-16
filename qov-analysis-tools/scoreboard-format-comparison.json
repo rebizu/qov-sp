@@ -4,12 +4,14 @@
   "qov_q60_demo_settings": {
    "kbps": 557.0,
    "ssim": 0.808,
-   "decode_fps": 315
+   "decode_fps": 315,
+   "note": "re-measured with range coder 2026-09-16: 453.4 kbps video (SSIM 0.809), wire 541.9 kbps FEC off"
   },
   "qov_q80": {
-   "kbps": 555.2,
-   "ssim": 0.809,
-   "note": "quality knob saturates at this resolution"
+   "kbps": 619.0,
+   "ssim": 0.845,
+   "decode_fps": 230,
+   "note": "re-measured 2026-09-16 with the fixed harness (quality argv). The original row (555.2 kbps, ssim 0.809, 'saturates') was a harness artifact: it ran before bench_stream.c accepted a quality argument, so it silently re-encoded at q60. Also range-coded (spec v3.8): -18.6% video bytes vs LZ4."
   },
   "x264_crf26": {
    "kbps": 35.4,
