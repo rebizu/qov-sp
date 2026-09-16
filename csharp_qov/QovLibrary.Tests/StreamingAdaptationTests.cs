@@ -161,6 +161,34 @@ public class QovAdaptationControllerTests
     }
 
     [Fact]
+    public void FloorDeficit_EngagesDownscale_RecoveryLiftsItBeforeQualityClimbs()
+    {
+        var c = new QovAdaptationController(60, qualityChangeCooldownMs: 0);
+        var events = new List<bool>();
+        c.DownscaleChanged += on => events.Add(on);
+
+        // sustained deficit walks quality 60 -> 20, then the rung engages
+        for (int i = 0; i < 4; i++)
+            c.OnReport(10, 20, 200, 33, 0.8);
+        Assert.True(c.DownscaleActive);
+        Assert.Equal(new[] { true }, events);
+        Assert.Equal(20, c.CurrentQuality);
+
+        // recovery: downscale lifts on the third clean report, quality stays
+        c.OnReport(0, 20, 200, 33, 0.99);
+        c.OnReport(0, 20, 200, 33, 0.99);
+        Assert.True(c.DownscaleActive);
+        c.OnReport(0, 20, 200, 33, 0.99);
+        Assert.False(c.DownscaleActive);
+        Assert.Equal(20, c.CurrentQuality);
+
+        // quality climbs again afterwards
+        for (int i = 0; i < 3; i++)
+            c.OnReport(0, 20, 200, 33, 0.99);
+        Assert.Equal(30, c.CurrentQuality);
+    }
+
+    [Fact]
     public void SustainedHighLoss_DropsReference()
     {
         var c = new QovAdaptationController(60);

@@ -83,6 +83,7 @@ class Host {
   private bitrateKbps = 0;
   private skipCount = 0;
   private dropRefCount = 0;
+  private downscaleCount = 0;
 
   constructor(relay: Relay, private logEl: HTMLElement) {
     this.relay = relay;
@@ -95,6 +96,12 @@ class Host {
       this.enc.dropReference();
       this.dropRefCount++;
       log(this.logEl, 'knob: dropReference() — next P-frame re-keys');
+    };
+    this.controller.onDownscaleChanged = (on) => {
+      this.downscaleCount += on ? 1 : 0;
+      log(this.logEl, on
+        ? 'knob: downscale ON — camera letterboxed to 256x192, borders are pure skips'
+        : 'knob: downscale OFF — full 320x240 restored');
     };
 
     this.video = $('cam') as HTMLVideoElement;
@@ -289,6 +296,13 @@ class Host {
       } else {
         if (this.synthetic) {
           const t = performance.now() / 1000;
+          if (this.controller.downscaleActive) {
+            // same rung for the synthetic pattern: draw scaled into the
+            // centered 256x192 region over black
+            this.captureCtx.fillStyle = '#000';
+            this.captureCtx.fillRect(0, 0, WIDTH, HEIGHT);
+            this.captureCtx.setTransform(0.8, 0, 0, 0.8, 32, 24);
+          }
           const g = this.captureCtx.createLinearGradient(0, 0, WIDTH, HEIGHT);
           g.addColorStop(0, `hsl(${(t * 40) % 360}, 70%, 55%)`);
           g.addColorStop(1, `hsl(${(t * 40 + 120) % 360}, 70%, 35%)`);
@@ -297,6 +311,13 @@ class Host {
           this.captureCtx.fillStyle = '#fff';
           this.captureCtx.font = 'bold 28px system-ui';
           this.captureCtx.fillText(`QOV-S ${Math.floor(t)}`, 40 + 20 * Math.sin(t * 2), HEIGHT / 2 + 60 * Math.sin(t));
+          if (this.controller.downscaleActive) this.captureCtx.setTransform(1, 0, 0, 1, 0, 0);
+        } else if (this.controller.downscaleActive) {
+          // ladder rung: shrink the picture, letterbox the border — border
+          // blocks are pure skips, content codes at unchanged quality
+          this.captureCtx.fillStyle = '#000';
+          this.captureCtx.fillRect(0, 0, WIDTH, HEIGHT);
+          this.captureCtx.drawImage(this.video, 32, 24, 256, 192);
         } else {
           this.captureCtx.drawImage(this.video, 0, 0, WIDTH, HEIGHT);
         }
@@ -330,6 +351,7 @@ class Host {
       ['quality knob', this.controller.currentQuality],
       ['FEC ratio', this.sender.getFecGroupSize() ? `1:${this.sender.getFecGroupSize()}` : 'off'],
       ['frame skips', this.skipCount],
+      ['downscale events', this.downscaleCount],
       ['dropReference', this.dropRefCount],
       ['retransmits', this.sender.retransmits],
       ['packets sent', this.sender.sentPackets],

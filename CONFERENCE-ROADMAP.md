@@ -144,17 +144,15 @@ from coding harder. Baseline at call settings: 541.9 kbps wire FEC off
    phantom-hole bug: an upgraded hole kept its placeholder media types
    instead of adopting the retransmitted packet's — wrong delivery on
    any async network, TS included (its synchronous NACK loop masked it).
-3. **Resolution step-down rung in the adaptation ladder** (demo + ladder,
-   no format change; −25-30% video bytes when active). Mid-stream
-   resolution changes would need a new header (anti-goal before the v4
-   freeze), so the rung letterboxes instead: the host canvas fills black
-   and `drawImage` scales the camera into 256x192 centered — border
-   blocks are pure skips, content codes at the same quality, guests see a
-   pillarboxed picture with zero format awareness. Ladder order: quality
-   60→40 → **downscale on** → dropReference → frame-skip, with the usual
-   cooldowns/hysteresis (reuse the injected-interval pattern from the
-   flaky-test fixes). Mirror in QovAdaptation (C#) + qov-adaptation (TS)
-   + call.ts captureLoop; xUnit + selftest ladder cases.
+3. ✅ **Resolution step-down rung in the adaptation ladder** — SHIPPED.
+   Ladder row: sustained deficit walks quality to the floor, two more
+   deficit reports engage `DownscaleActive` (host letterboxes the camera
+   into a centered 256x192 over black — border blocks are pure skips,
+   content quality unchanged); recovery lifts it on the third clean
+   report before quality climbs. Mirrored in qov-adaptation.ts +
+   QovAdaptation.cs, wired in call.ts (camera + synthetic paths), stat
+   row + log line in the demo. Unit-proven on both stacks (selftest +
+   43/43 xUnit); healthy channels never engage it.
 4. **Multi-mode intra prediction — PROTOTYPE GATE, adopt only on a real
    margin** (spec v3.9 candidate). Today's intra is DC-only
    (`qov__intra_pred`); it prices keyframes (6 per 30 s) and every refresh

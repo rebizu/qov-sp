@@ -191,6 +191,23 @@ async function main(): Promise<number> {
     c2.onReport(10, 20, 200, 33, 0.8);
     c2.onReport(10, 20, 200, 33, 0.8);
     check(drops === 1, 'ladder: sustained loss > 8% drops the reference once');
+
+    // downscale rung: quality floor + sustained deficit -> letterbox on;
+    // sustained clean surplus lifts it before quality climbs
+    const c3 = new QovAdaptationController(60, 0);
+    const dsEvents: boolean[] = [];
+    c3.onDownscaleChanged = (on) => dsEvents.push(on);
+    for (let i = 0; i < 4; i++) c3.onReport(10, 20, 200, 33, 0.8);
+    check(c3.downscaleActive && dsEvents[0] === true && c3.currentQuality === 20,
+      'ladder: quality at floor + sustained deficit -> downscale on');
+    c3.onReport(0, 20, 200, 33, 0.99);
+    c3.onReport(0, 20, 200, 33, 0.99);
+    check(c3.downscaleActive, 'downscale stays on during recovery buildup');
+    c3.onReport(0, 20, 200, 33, 0.99);
+    check(!c3.downscaleActive && c3.currentQuality === 20,
+      'ladder: clean surplus -> downscale lifts before quality climbs');
+    for (let i = 0; i < 3; i++) c3.onReport(0, 20, 200, 33, 0.99);
+    check(c3.currentQuality === 30, 'ladder: quality climbs again after downscale lifted');
   }
 
   // 6. Audio batching (v2.1): chunks share packets, order is preserved.

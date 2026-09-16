@@ -101,9 +101,12 @@ export class QovAdaptationController {
   private skipToggle = false;
   private rttEma = -1;
   private lastQualityChangeAt = -1e9;
+  private downscale = false;
+  private deficitStreak = 0;
 
   onQualityChanged: (q: number) => void = () => {};
   onReferenceDropped: () => void = () => {};
+  onDownscaleChanged: (on: boolean) => void = () => {};
 
   constructor(startQuality = 60, qualityChangeCooldownMs = 1000) {
     this.startQuality = Math.min(Math.max(startQuality, 20), 99);
@@ -114,6 +117,7 @@ export class QovAdaptationController {
   get currentQuality(): number { return Math.round(this.quality); }
   get fecGroupSize(): number { return this._fecGroupSize; }
   get frameSkipActive(): boolean { return this.skipActive; }
+  get downscaleActive(): boolean { return this.downscale; }
   get rttEmaMs(): number { return this.rttEma; }
 
   // Frame-skip knob while the playout buffer drains: skip every other frame.
@@ -152,16 +156,31 @@ export class QovAdaptationController {
 
     // Bandwidth mapping: deficit -> q - 10 (floor 20); sustained surplus
     // (3 s = 3 consecutive clean reports) -> q + 10 (ceiling = start).
+    // Ladder order: quality -> downscale (quality at floor + deficit
+    // persists) -> reference drop -> frame skip. Recovery reverses:
+    // downscale lifts before quality climbs.
     if (deliveredRatio < 0.9) {
       this.surplusStreak = 0;
+      this.deficitStreak++;
       this.changeQuality(-10);
+      if (this.currentQuality <= 20 && this.deficitStreak >= 2 && !this.downscale) {
+        this.downscale = true;
+        this.onDownscaleChanged(true);
+      }
     } else if (lossPercent < 0.5 && deliveredRatio > 0.98) {
+      this.deficitStreak = 0;
       if (++this.surplusStreak >= 3) {
         this.surplusStreak = 0;
-        this.changeQuality(+10);
+        if (this.downscale) {
+          this.downscale = false;
+          this.onDownscaleChanged(false);
+        } else {
+          this.changeQuality(+10);
+        }
       }
     } else {
       this.surplusStreak = 0;
+      this.deficitStreak = 0;
     }
   }
 

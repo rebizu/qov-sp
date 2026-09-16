@@ -113,16 +113,20 @@ public class QovAdaptationController
     private int _surplusStreak;
     private bool _skipActive;
     private bool _skipToggle;
+    private bool _downscale;
+    private int _deficitStreak;
     private double _rttEma = -1;
     private long _lastQualityChangeMs;
 
     public int CurrentQuality => (int)Math.Round(_quality);
     public int FecGroupSize => _fecGroupSize;
     public bool FrameSkipActive => _skipActive;
+    public bool DownscaleActive => _downscale;
     public double RttEmaMs => _rttEma;
 
     public Action<int>? QualityChanged;  // binds encoder.SetQuality (qov_set_quality)
     public Action? ReferenceDropped;     // binds encoder.DropReference (qov_drop_reference)
+    public Action<bool>? DownscaleChanged; // binds the letterbox rung (demo)
 
     public QovAdaptationController(int startQuality = 60, int qualityChangeCooldownMs = 1000)
     {
@@ -179,17 +183,35 @@ public class QovAdaptationController
 
         // Bandwidth mapping: deficit -> q - 10 (floor 20); sustained surplus
         // (3 s = 3 consecutive clean reports) -> q + 10 (ceiling = start).
+        // Ladder order: quality -> downscale (quality at floor + deficit
+        // persists) -> reference drop -> frame skip. Recovery reverses:
+        // downscale lifts before quality climbs.
         if (deliveredRatio < 0.9)
         {
             _surplusStreak = 0;
+            _deficitStreak++;
             ChangeQuality(-10);
+            if (CurrentQuality <= 20 && _deficitStreak >= 2 && !_downscale)
+            {
+                _downscale = true;
+                DownscaleChanged?.Invoke(true);
+            }
         }
         else if (lossPercent < 0.5 && deliveredRatio > 0.98)
         {
+            _deficitStreak = 0;
             if (++_surplusStreak >= 3)
             {
                 _surplusStreak = 0;
-                ChangeQuality(+10);
+                if (_downscale)
+                {
+                    _downscale = false;
+                    DownscaleChanged?.Invoke(false);
+                }
+                else
+                {
+                    ChangeQuality(+10);
+                }
             }
         }
         else
