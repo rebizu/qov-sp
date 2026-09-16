@@ -117,7 +117,10 @@ class Host {
   // mic decision is read from the checkbox at that moment.
   private initEncoder(withMic: boolean): void {
     this.enc = new QovEncoder(WIDTH, HEIGHT, 24, 1, 0x04 | 0x10, 0x10, true, 60, undefined,
-      withMic ? 1 : 0, withMic ? QOV_AUDIO_RATE_SPEECH : 0);
+      withMic ? 1 : 0, withMic ? QOV_AUDIO_RATE_SPEECH : 0,
+      // v3.8 range coding + v3.9 structured P-frames: host and guest ship
+      // together in this demo, so both always advertise support
+      true, true);
     this.enc.writeHeader();
     this.enc.onChunk = (chunk) => {
       this.bytesThisSecond += chunk.length;
