@@ -133,8 +133,11 @@ Phase 3.5's Tier-2 ideas were built or probed and closed with numbers
   payloads recovers **0.0%**. The order-0 model is at the byte-level
   entropy floor of this layout.
 
-Going further (CABAC-class coding, B-frames, rate-distortion search)
-would break the speed/simplicity contract the format exists for.
+A fourth probe, **multi-mode intra prediction** (best of DC/H/V per
+block), measured +0.4% on the real fixture — DC prediction is already
+near-optimal for webcam gradients. Going further (CABAC-class coding,
+B-frames, rate-distortion search) would break the speed/simplicity
+contract the format exists for.
 
 ## Reproduce
 

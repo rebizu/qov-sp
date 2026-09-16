@@ -153,17 +153,17 @@ from coding harder. Baseline at call settings: 541.9 kbps wire FEC off
    QovAdaptation.cs, wired in call.ts (camera + synthetic paths), stat
    row + log line in the demo. Unit-proven on both stacks (selftest +
    43/43 xUnit); healthy channels never engage it.
-4. **Multi-mode intra prediction — PROTOTYPE GATE, adopt only on a real
-   margin** (spec v3.9 candidate). Today's intra is DC-only
-   (`qov__intra_pred`); it prices keyframes (6 per 30 s) and every refresh
-   band block. Prototype in C only, behind a param, measuring on the cam720
-   fixture: modes DC/H/V (+planar if cheap), encoder picks min-SAD, mode
-   bitmap (2 bits/block, raster order) in the intra section. ADOPT GATE:
-   ≥5% video bytes on the fixture — below that, document closed like the
-   3.5 Tier-2 items and keep the flag budget clean (bit 0x04 is the only
-   P-frame bit left). If adopted: spec v3.9, three bit-exact ports,
-   corpus case, conformance, bench rows.
-
+4. ❌ **Multi-mode intra prediction** — CLOSED by prototype gate
+   (2026-09-16). Built the encoder-side prototype (best of DC/H/V by
+   residual energy, reconstruction consistent with the chosen mode) on a
+   scratch copy of qov.h and measured the real stream: 1,707,527 B vs
+   1,700,350 B shipped on the cam720 fixture — **+0.4%**, far below the
+   ≥5% adoption gate, and a real implementation would add ~0.25 B/block
+   of mode-bitmap cost on top. DC prediction (left+top average) is
+   already near-optimal for webcam gradients; directional modes pay off
+   on sharp screen content, which is not this format's benchmark
+   fixture. Prototype reverted; the shipped codec is byte-identical to
+   before.
 Rejected for this phase: true mid-stream resolution switching (needs a
 header change; conflicts with the freeze goal), audio-FEC co-grouping with
 video (batch packets already amortize the header; measure later if the
