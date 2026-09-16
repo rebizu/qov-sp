@@ -125,12 +125,11 @@ the framing changes.
 - The 2% worst-case q85 gap vs lower qualities is the skip-run chains:
   high-quality frames code more blocks, so the per-block chain bytes are
   a bigger share.
-- Measured speed (C reference, single thread, 720 frames + 1,875 audio
-  chunks at call settings, same harness for both grammars, best of 3):
-  v1 encodes at 137 fps / decodes at 277 fps; structured encodes at
-  **141 fps / decodes at 288 fps** — the smaller range-coded payload and
-  fewer grammar bytes make structured slightly *faster* in both
-  directions, with identical decoded pixels (checksum-verified).
+- Measured speed (six runs per grammar, reproducible via
+  `bench_speed.c`, see section 2): encode unchanged (~143–146 fps both
+  grammars), decode **~285 → ~301 fps (+5%)** — the smaller range-coded
+  payload and fewer grammar bytes make structured slightly faster to
+  decode, with identical decoded pixels (checksum-verified).
 
 ### Stacked call configuration (all knobs on, measured 2026-09-16)
 
@@ -168,14 +167,22 @@ swallowed at zigzag 63; 255-chain accumulation) are documented in
 
 ## 2. Speed (C reference, single thread)
 
-| stage | LZ4 | range coder |
-|---|---:|---:|
-| encode (720 frames + 1875 audio chunks) | 180 fps | 163 fps |
-| decode (same stream, incl. per-frame SHA-256) | ~309 fps | **263 fps** |
+| stage | LZ4 | range coder | range + structured (v3.9) |
+|---|---:|---:|---:|
+| encode (720 frames + 1875 audio chunks) | 180 fps | 163 fps | ~146 fps |
+| decode (same stream, incl. per-frame checksum) | ~309 fps | 263 fps | **~301 fps** |
+
+The structured column is from the reproducible `bench_speed.c` harness
+(six invocations per grammar; its v1 pair measures ~143 fps encode /
+~285 fps decode). That harness includes per-frame chunk extraction in
+the timed encode loop, so its absolute numbers sit slightly below the
+older LZ4/range rows — compare within a column pair, not across
+harnesses.
 
 Still >10x realtime in both directions at call settings. This was the
 design constraint of the entropy work: lighter format, no speed tax that
-matters.
+matters — structured is ~5% faster to decode (smaller range-coded
+payload, fewer grammar bytes) and encode-neutral.
 
 ## 3. Quality ladder (quality knob verified working)
 
