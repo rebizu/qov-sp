@@ -33,6 +33,7 @@ public static partial class QovTypes
 
     public const byte ChunkFlagYuv = 0x01;
     public const byte ChunkFlagMotion = 0x02;
+    public const byte ChunkFlagStructured = 0x04; // v3.9: structured P-frame grammar (reclaims the never-implemented ENHANCED_COMP)
     public const byte ChunkFlagCompressed = 0x10;
     public const byte ChunkFlagDctBlocks = 0x20;
     public const byte ChunkFlagExpGolob = 0x40; // DCT coefficient section is Exp-Golomb coded (reclaims the never-implemented ADAPTIVE_Q)

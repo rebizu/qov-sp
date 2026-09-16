@@ -79,8 +79,9 @@ class Program
 
         using var stream = File.Create(args[1]);
         bool range = json.TryGetProperty("range", out var rg) && rg.GetBoolean();
+        bool structured = json.TryGetProperty("structured", out var st) && st.GetBoolean();
         var encoder = new QovEncoder(stream, (ushort)width, (ushort)height,
-            (ushort)fps, 1, (byte)flags, (byte)cs, compression, quality, 0, 0, range);
+            (ushort)fps, 1, (byte)flags, (byte)cs, compression, quality, 0, 0, range, structured);
 
         var adaptive = new List<(int Frame, int Quality)>();
         if (json.TryGetProperty("adaptive", out var adEl) && adEl.ValueKind == JsonValueKind.Array)

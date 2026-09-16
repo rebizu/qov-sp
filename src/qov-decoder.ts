@@ -31,6 +31,7 @@ import {
   QOV_CHUNK_FLAG_DCT_BLOCKS,
   QOV_CHUNK_FLAG_EXP_GOLOB,
   QOV_CHUNK_FLAG_REFRESH_BAND,
+  QOV_CHUNK_FLAG_STRUCTURED,
   QOV_INTRA_REFRESH_BANDS,
   QOV_MAX_DIMENSION,
   QOV_MAX_PIXELS,
@@ -1058,11 +1059,11 @@ export class QovDecoder {
     return true;
   }
 
-  private decodeYuvPFrameDataDct(chunkSize: number, hasMotion: boolean, hasBand: boolean, eg: boolean): boolean {
+  private decodeYuvPFrameDataDct(chunkSize: number, hasMotion: boolean, hasBand: boolean, eg: boolean, structured = false): boolean {
     const dataEnd = this.pos + chunkSize;
     const band = hasBand ? this.readU8() : -1;
     const mv = hasMotion ? parseMvBlock(this.readU8.bind(this), this.header.width, this.header.height) : null;
-    this.decodeYuvPFrameDataDctCore(mv, band, eg);
+    this.decodeYuvPFrameDataDctCore(mv, band, eg, structured);
     this.pos = dataEnd;
     return true;
   }
@@ -1108,16 +1109,16 @@ export class QovDecoder {
     this.currFrame = tmp;
   }
 
-  private decodeYuvPFrameDataDctFromBuffer(_uncompressedSize: number, hasMotion: boolean, hasBand: boolean, eg: boolean): boolean {
+  private decodeYuvPFrameDataDctFromBuffer(_uncompressedSize: number, hasMotion: boolean, hasBand: boolean, eg: boolean, structured = false): boolean {
     // Data is consumed through activeData via readU8(); the caller has already
     // advanced this.pos past the chunk, so no file-position fixup may run here.
     const band = hasBand ? this.readU8() : -1;
     const mv = hasMotion ? parseMvBlock(this.readU8.bind(this), this.header.width, this.header.height) : null;
-    this.decodeYuvPFrameDataDctCore(mv, band, eg);
+    this.decodeYuvPFrameDataDctCore(mv, band, eg, structured);
     return true;
   }
 
-  private decodeYuvPFrameDataDctCore(mv: MotionVectors | null, band: number, eg: boolean): void {
+  private decodeYuvPFrameDataDctCore(mv: MotionVectors | null, band: number, eg: boolean, structured = false): void {
     const { width, height, colorspace } = this.header;
     const yW = width;
     const yH = height;
@@ -1148,15 +1149,15 @@ export class QovDecoder {
     const blockBuf = new Float32Array(64);
 
     // Decoding loop for Y
-    this.decodePlaneDct(this.currYPlane!, yW, yH, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf, yr0, yr1, eg);
+    this.decodePlaneDct(this.currYPlane!, yW, yH, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf, yr0, yr1, eg, structured);
 
     // Decoding loop for UV
-    this.decodePlaneDct(this.currUPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf, cr0, cr1, eg);
-    this.decodePlaneDct(this.currVPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf, cr0, cr1, eg);
+    this.decodePlaneDct(this.currUPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf, cr0, cr1, eg, structured);
+    this.decodePlaneDct(this.currVPlane!, uvW, uvH, DEFAULT_QUANT_CHROMA, QOV_OP_DCT_UV, blockBuf, cr0, cr1, eg, structured);
 
     // The encoder appends alpha DCT blocks (luma dimensions, luma quant table)
     if (this.hasYuvAlpha && this.currAPlane && this.prevAPlane) {
-      this.decodePlaneDct(this.currAPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf, yr0, yr1, eg);
+      this.decodePlaneDct(this.currAPlane, width, height, DEFAULT_QUANT_LUMA, QOV_OP_DCT_Y, blockBuf, yr0, yr1, eg, structured);
     }
 
     this.yuvPlanesToRgba();
@@ -1172,9 +1173,9 @@ export class QovDecoder {
     this.currFrame = tmp;
   }
 
-  private decodePlaneDct(plane: Uint8Array, w: number, h: number, quant: number[], opType: number, blockBuf: Float32Array, bandR0 = -1, bandR1 = -1, eg = false): void {
+  private decodePlaneDct(plane: Uint8Array, w: number, h: number, quant: number[], opType: number, blockBuf: Float32Array, bandR0 = -1, bandR1 = -1, eg = false, structured = false): void {
     const qpBase = this.header.dctQpBase || 20; // Default
-    decodePlaneDctInto(this.readU8.bind(this), plane, w, h, quant, opType, qpBase, blockBuf, bandR0, bandR1, eg);
+    decodePlaneDctInto(this.readU8.bind(this), plane, w, h, quant, opType, qpBase, blockBuf, bandR0, bandR1, eg, structured);
   }
 
   *decodeFrames(): Generator<QovFrame | QovAudioFrame> {
@@ -1290,7 +1291,8 @@ export class QovDecoder {
               if (isDctBlocks) {
                 this.decodeYuvPFrameDataDctFromBuffer(chunkHeader.uncompressedSize!, hasMotion,
                   (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_REFRESH_BAND) !== 0,
-                  (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_EXP_GOLOB) !== 0);
+                  (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_EXP_GOLOB) !== 0,
+                  (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_STRUCTURED) !== 0);
               } else {
                 this.decodeYuvPFrameDataFromBuffer(chunkHeader.uncompressedSize!, hasMotion);
               }
@@ -1304,7 +1306,8 @@ export class QovDecoder {
               if (isDctBlocks) {
                 this.decodeYuvPFrameDataDct(chunkHeader.chunkSize, hasMotion,
                   (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_REFRESH_BAND) !== 0,
-                  (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_EXP_GOLOB) !== 0);
+                  (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_EXP_GOLOB) !== 0,
+                  (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_STRUCTURED) !== 0);
               } else {
                 this.decodeYuvPFrameData(chunkHeader.chunkSize, hasMotion);
               }

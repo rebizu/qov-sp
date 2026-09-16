@@ -553,6 +553,118 @@
     }
    ],
    "note": "Phase 2 adaptive API: qov_set_quality mid-stream (down to 30, up to 85); decoder visibility via per-block qp_delta"
+  },
+  {
+   "id": "structured_motion_yuv420_lossy",
+   "width": 128,
+   "height": 96,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index",
+    "motion",
+    "ikf",
+    "refresh"
+   ],
+   "quality": 50,
+   "range": true,
+   "pattern": "scroll16",
+   "structured": true,
+   "note": "v3.9 structured P-frame grammar: call-like config (motion + ikf + refresh + range)"
+  },
+  {
+   "id": "structured_static_yuv420_lossy",
+   "width": 64,
+   "height": 64,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index",
+    "refresh"
+   ],
+   "quality": 50,
+   "pattern": "checker",
+   "structured": true,
+   "note": "v3.9 structured P-frame grammar: static content, band-skip path, no motion"
+  },
+  {
+   "id": "structured_yuva420_lossy",
+   "width": 128,
+   "height": 96,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuva420",
+   "flags": [
+    "index",
+    "alpha",
+    "ikf"
+   ],
+   "quality": 50,
+   "pattern": "noise",
+   "structured": true,
+   "note": "v3.9 structured P-frame grammar: alpha plane section"
+  },
+  {
+   "id": "structured_adaptive_quality",
+   "width": 128,
+   "height": 96,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index",
+    "motion",
+    "ikf"
+   ],
+   "quality": 50,
+   "pattern": "noise",
+   "structured": true,
+   "adaptive": [
+    {
+     "frame": 2,
+     "quality": 30
+    },
+    {
+     "frame": 4,
+     "quality": 85
+    }
+   ],
+   "note": "v3.9 structured P-frame grammar: mid-stream quality via the per-plane qp byte"
+  },
+  {
+   "id": "structured_yuv420_lossy_eg",
+   "width": 128,
+   "height": 96,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "eg",
+    "ikf",
+    "index"
+   ],
+   "quality": 50,
+   "pattern": "noise",
+   "structured": true,
+   "note": "v3.9 structured P-frame grammar: Exp-Golomb coefficient sections inside bare blocks"
+  },
+  {
+   "id": "structured_static_256_chain",
+   "width": 256,
+   "height": 256,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index",
+    "ikf"
+   ],
+   "quality": 50,
+   "pattern": "gradient",
+   "structured": true,
+   "note": "v3.9 structured grammar: 1024-block all-skip planes exercise the 255-continue chain"
   }
  ]
 }

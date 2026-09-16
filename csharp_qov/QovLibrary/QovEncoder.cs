@@ -22,6 +22,7 @@ public class QovEncoder
     private readonly bool _hasAlpha;
     private readonly bool _useCompression;
     private readonly bool _rangeCoding;
+    private readonly bool _structuredPFrames;
     private readonly bool _lossyMode;
     private readonly bool _intraDctKeyframes;
     private readonly bool _intraRefresh;
@@ -41,7 +42,8 @@ public class QovEncoder
         int quality = 0,
         int audioChannels = 0,
         int audioRate = 0,
-        bool rangeCoding = false)
+        bool rangeCoding = false,
+        bool structuredPFrames = false)
     {
         // Lossy logic
         if (quality > 0 && quality < 100)
@@ -83,6 +85,7 @@ public class QovEncoder
         _keyframes = new List<QovIndexEntry>();
         _useCompression = useCompression;
         _rangeCoding = rangeCoding;
+        _structuredPFrames = structuredPFrames;
         _isFinished = false;
         _hasPrevFrame = false;
  
@@ -816,16 +819,16 @@ public class QovEncoder
             int cr0 = band < 0 ? -1 : rowsC * band / QovTypes.IntraRefreshBands;
             int cr1 = band < 0 ? -1 : rowsC * (band + 1) / QovTypes.IntraRefreshBands;
 
-            EncodePlaneDct(yPlane, refY, nextY, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter, yr0, yr1, _expGolob);
+            EncodePlaneDct(yPlane, refY, nextY, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter, yr0, yr1, _expGolob, _structuredPFrames);
 
-            EncodePlaneDct(uPlane, refU, nextU, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter, cr0, cr1, _expGolob);
-            EncodePlaneDct(vPlane, refV, nextV, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter, cr0, cr1, _expGolob);
+            EncodePlaneDct(uPlane, refU, nextU, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter, cr0, cr1, _expGolob, _structuredPFrames);
+            EncodePlaneDct(vPlane, refV, nextV, uvW, uvH, Dct.DefaultQuantChroma, QovTypes.OpDctUv, blockBuf, tempWriter, cr0, cr1, _expGolob, _structuredPFrames);
 
             if (aPlane != null && refA != null)
             {
                 // Alpha is coded as a luma table plane (spec v3.2 §3.4.2)
                 byte[] nextA = new byte[aPlane.Length];
-                EncodePlaneDct(aPlane, refA, nextA, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter, yr0, yr1, _expGolob);
+                EncodePlaneDct(aPlane, refA, nextA, width, height, Dct.DefaultQuantLuma, QovTypes.OpDctY, blockBuf, tempWriter, yr0, yr1, _expGolob, _structuredPFrames);
                 nextA.AsSpan().CopyTo(_prevAPlane.AsSpan());
             }
 
@@ -843,7 +846,7 @@ public class QovEncoder
 
             tempWriter.Flush();
             byte[] frameData = tempStream.ToArray();
-            WriteChunk(QovTypes.ChunkTypePframe, (byte)(QovTypes.ChunkFlagYuv | QovTypes.ChunkFlagDctBlocks | motionFlag | refreshFlag | (_expGolob ? QovTypes.ChunkFlagExpGolob : 0)), timestamp, frameData, false);
+            WriteChunk(QovTypes.ChunkTypePframe, (byte)(QovTypes.ChunkFlagYuv | QovTypes.ChunkFlagDctBlocks | motionFlag | refreshFlag | (_expGolob ? QovTypes.ChunkFlagExpGolob : 0) | (_structuredPFrames ? QovTypes.ChunkFlagStructured : 0)), timestamp, frameData, false);
         }
         else
         {
@@ -1090,15 +1093,20 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
     // Quantize + write the op/delta/DC/AC stream (spec 3.4.2), then reconstruct
     // the dequantized block into blockBuf (IDCT result overwrites the residuals).
     // Shared by the inter, intra-keyframe and refresh-band block coders.
-    private static void WriteDctBlock(float[] blockBuf, int[] quant, byte opType, double scale, BinaryWriter writer, bool eg = false, int qpDelta = 0)
+    private static void WriteDctBlock(float[] blockBuf, int[] quant, byte opType, double scale, BinaryWriter writer, bool eg = false, int qpDelta = 0, bool bare = false)
     {
         float[] coeffs = new float[64];
         Dct.ForwardDct(blockBuf, coeffs);
 
-        writer.Write(opType);
-        // qp delta (spec 3.4.2): bias-64 delta from the header base QP; zero
-        // unless SetQuality moved the working dctQp mid-stream
-        writer.Write((byte)(0x40 + qpDelta));
+        // structured grammar (spec 3.4.6): opcode and qp live at plane level,
+        // the bare section starts directly at the coefficient data
+        if (!bare)
+        {
+            writer.Write(opType);
+            // qp delta (spec 3.4.2): bias-64 delta from the header base QP; zero
+            // unless SetQuality moved the working dctQp mid-stream
+            writer.Write((byte)(0x40 + qpDelta));
+        }
 
         if (eg)
         {
@@ -1284,7 +1292,27 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
         return 128;
     }
 
-    private void EncodePlaneDct(ReadOnlySpan<byte> curr, ReadOnlySpan<byte> prev, Span<byte> next, int width, int height, int[] quant, byte opType, float[] blockBuf, BinaryWriter writer, int bandR0 = -1, int bandR1 = -1, bool eg = false)
+    private static void FlushDctSkips(BinaryWriter writer, ref int skipCount, bool structured)
+    {
+        if (structured)
+        {
+            // spec 3.4.6: bare count chain, 255 = "chain continues"; the final
+            // byte (<255, 0 when nothing is pending) terminates the plane
+            while (skipCount >= 255) { writer.Write((byte)255); skipCount -= 255; }
+            writer.Write((byte)skipCount);
+            skipCount = 0;
+            return;
+        }
+        while (skipCount > 0)
+        {
+            writer.Write(QovTypes.OpDctSkip);
+            byte count = (byte)Math.Min(skipCount, 255);
+            writer.Write(count);
+            skipCount -= count;
+        }
+    }
+
+    private void EncodePlaneDct(ReadOnlySpan<byte> curr, ReadOnlySpan<byte> prev, Span<byte> next, int width, int height, int[] quant, byte opType, float[] blockBuf, BinaryWriter writer, int bandR0 = -1, int bandR1 = -1, bool eg = false, bool structured = false)
     {
         // TS uses double math here (1.0 / (0.1 + qp * 0.1)); float breaks bit-exactness.
         // Quantize at the CURRENT dctQp (SetQuality may have moved it mid-stream).
@@ -1292,6 +1320,12 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
         int blocksX = (width + 7) / 8;
         int blocksY = (height + 7) / 8;
         int skipCount = 0;
+
+        // structured grammar (spec 3.4.6): one qp byte leads each plane
+        if (structured)
+        {
+            writer.Write((byte)(0x40 + _lossyParams.DctQp - _dctQpBase));
+        }
 
         for (int by = 0; by < blocksY; by++)
         {
@@ -1340,15 +1374,9 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                         continue;
                     }
 
-                    while (skipCount > 0)
-                    {
-                        writer.Write(QovTypes.OpDctSkip);
-                        byte count = (byte)Math.Min(skipCount, 255);
-                        writer.Write(count);
-                        skipCount -= count;
-                    }
+                    FlushDctSkips(writer, ref skipCount, structured);
 
-                    WriteDctBlock(blockBuf, quant, opType, scale, writer, eg, _lossyParams.DctQp - _dctQpBase);
+                    WriteDctBlock(blockBuf, quant, opType, scale, writer, eg, _lossyParams.DctQp - _dctQpBase, structured);
                     for (int y = 0; y < 8; y++)
                     {
                         int py = y0 + y;
@@ -1410,16 +1438,10 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                 }
 
                 // Flush skips
-                while (skipCount > 0)
-                {
-                    writer.Write(QovTypes.OpDctSkip);
-                    byte count = (byte)Math.Min(skipCount, 255);
-                    writer.Write(count);
-                    skipCount -= count;
-                }
+                FlushDctSkips(writer, ref skipCount, structured);
 
                 // 3-5. DCT transform, quantize + write, reconstruct (spec 3.4.2)
-                WriteDctBlock(blockBuf, quant, opType, scale, writer, eg, _lossyParams.DctQp - _dctQpBase); 
+                WriteDctBlock(blockBuf, quant, opType, scale, writer, eg, _lossyParams.DctQp - _dctQpBase, structured); 
                 
                 // Add to prev and store in next
                 for (int y = 0; y < 8; y++)
@@ -1441,13 +1463,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
         }
         
         // Flush final skips
-        while (skipCount > 0)
-        {
-            writer.Write(QovTypes.OpDctSkip);
-            byte count = (byte)Math.Min(skipCount, 255);
-            writer.Write(count);
-            skipCount -= count;
-        }
+        FlushDctSkips(writer, ref skipCount, structured);
     }
 
     private void EncodeYuvPlaneTemporal(ReadOnlySpan<byte> plane, ReadOnlySpan<byte> prevPlane, BinaryWriter writer)

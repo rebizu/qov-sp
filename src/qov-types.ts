@@ -63,6 +63,7 @@ export const QOV_CHUNK_END = 0xFF;
 // Chunk flags
 export const QOV_CHUNK_FLAG_YUV = 0x01;         // bit 0: YUV mode
 export const QOV_CHUNK_FLAG_MOTION = 0x02;      // bit 1: motion vectors
+export const QOV_CHUNK_FLAG_STRUCTURED = 0x04;  // bit 2: structured P-frame grammar (v3.9)
 export const QOV_CHUNK_FLAG_COMPRESSED = 0x10;  // bit 4: LZ4 compressed
 export const QOV_CHUNK_FLAG_DCT_BLOCKS = 0x20;  // bit 5: DCT blocks
 export const QOV_CHUNK_FLAG_EXP_GOLOB = 0x40;   // bit 6: Exp-Golomb coefficient section

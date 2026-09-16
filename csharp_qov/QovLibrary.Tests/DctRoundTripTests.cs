@@ -41,6 +41,81 @@ public class DctRoundTripTests
             $"DCT P-frame reconstruction deviates by {AverageAbsDiff(pPixels, frames[1].Pixels):F1} on average");
     }
 
+    [Fact]
+    public void Structured_PF_RoundTrip_SmallerAndFaithful()
+    {
+        const int width = 64, height = 64;
+        byte[] keyPixels = CreateGradientPixels(width, height);
+        byte[] pPixels = InvertHorizontally(keyPixels, width, height);
+
+        byte[] Encode(bool structured)
+        {
+            using var stream = new MemoryStream();
+            var encoder = new QovEncoder(stream, width, height, 30, 1, QovTypes.FlagHasIndex,
+                QovTypes.ColorspaceYuv420, useCompression: true, quality: 50,
+                audioChannels: 0, audioRate: 0, rangeCoding: true, structuredPFrames: structured);
+            encoder.EncodeKeyframe(keyPixels, 0);
+            encoder.EncodePFrame(pPixels, 33333);
+            encoder.Finish();
+            return stream.ToArray();
+        }
+
+        byte[] v1 = Encode(false);
+        byte[] v2 = Encode(true);
+
+        // The structured chunk must carry the flag bit (bit 2 free of the
+        // other P-frame flags: YUV 0x01, no motion here, DCT 0x20, range 0x08)
+        bool hasFlag = false;
+        int hdrLen = v2[4] == 3 ? 32 : 24; // lossy v3 files carry the 32-byte header
+        for (int i = hdrLen; i + 10 <= v2.Length; )
+        {
+            byte type = v2[i], flags = v2[i + 1];
+            uint size = (uint)((v2[i + 2] << 24) | (v2[i + 3] << 16) | (v2[i + 4] << 8) | v2[i + 5]);
+            if (type == QovTypes.ChunkTypePframe)
+            {
+                hasFlag = (flags & QovTypes.ChunkFlagStructured) != 0;
+                break;
+            }
+            i += 10 + (int)size;
+        }
+        Assert.True(hasFlag, "structured P-frame chunk is missing flag 0x04");
+        Assert.True(v2.Length < v1.Length, "structured payload should be smaller");
+
+        // Both grammars decode to the same pixels
+        var d2 = new QovDecoder(v2);
+        d2.DecodeHeader();
+        var frames = d2.DecodeFrames().ToList();
+        Assert.Equal(2, frames.Count);
+        Assert.True(AverageAbsDiff(pPixels, frames[1].Pixels) < 20,
+            $"structured reconstruction deviates by {AverageAbsDiff(pPixels, frames[1].Pixels):F1} on average");
+    }
+
+    [Fact]
+    public void Structured_PF_SkipChain_Over255Blocks()
+    {
+        // A 256x256 static plane holds 1024 luma blocks; an all-skip P-frame
+        // must terminate via the 255-continue chain (4x255 + 4) and decode
+        // identically to the v1 grammar.
+        const int width = 256, height = 256;
+        using var stream = new MemoryStream();
+        var encoder = new QovEncoder(stream, width, height, 30, 1, QovTypes.FlagHasIndex,
+            QovTypes.ColorspaceYuv420, useCompression: true, quality: 50,
+            audioChannels: 0, audioRate: 0, rangeCoding: true, structuredPFrames: true);
+        byte[] keyPixels = CreateGradientPixels(width, height);
+        encoder.EncodeKeyframe(keyPixels, 0);
+        encoder.EncodePFrame(keyPixels, 33333); // identical frame: every block skips
+        encoder.Finish();
+
+        var decoder = new QovDecoder(stream.ToArray());
+        decoder.DecodeHeader();
+        var frames = decoder.DecodeFrames().ToList();
+        Assert.Equal(2, frames.Count);
+        // The all-skip P-frame must reconstruct exactly the keyframe's
+        // (lossy) reconstruction — zero drift beyond the keyframe itself.
+        Assert.True(AverageAbsDiff(frames[0].Pixels, frames[1].Pixels) < 0.001,
+            $"all-skip structured P-frame drifts from the keyframe by {AverageAbsDiff(frames[0].Pixels, frames[1].Pixels):F3}");
+    }
+
     private static byte[] CreateGradientPixels(int width, int height)
     {
         var pixels = new byte[width * height * 4];
