@@ -592,6 +592,8 @@ qov-analysis-tools/qovs_selftest.cjs
 
 # C conformance CLI build output
 qov-analysis-tools/.build/
+# benchmark scratch outputs
+qov-analysis-tools/.build-tmp/
 
 # Phase 0 scoreboard artifacts (large local-only)
 qov-analysis-tools/corpus-real/
