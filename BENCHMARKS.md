@@ -52,6 +52,15 @@ smaller video chunks change the packet-count economics, not just the bytes.
 QOA bitrates are content-independent (fixed-size frames). A voice+video
 call with the Opus demo path lands around **~490 kbps wire with FEC on**.
 
+**Silence suppression** (Phase 3.6, demo-level, Opus path): chunks whose
+20 ms window sits under ~-48 dBFS RMS are dropped at output, with a
+keep-alive chunk every ~400 ms; the encoder itself is never starved, so
+post-silence packets stay glitch-free. Browser-verified with a live
+mic: 88-92% of chunks suppressed in a quiet room — audio wire drops
+from ~36 kbps to ~4 kbps (6 packets/s × ~90 B) while the guest plays
+exactly what is sent with zero decoder errors. QOA has no silence
+mechanism by design (fixed-rate format; the Opus path supersedes it).
+
 ## 2. Speed (C reference, single thread)
 
 | stage | LZ4 | range coder |

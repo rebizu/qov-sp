@@ -127,18 +127,13 @@ from coding harder. Baseline at call settings: 541.9 kbps wire FEC off
 (453.5 video + 69.0 QOA speech + ~19 packet headers), 122 pkt/s. Target:
 ~350-400 kbps with all four items. Ordered by bandwidth-per-effort:
 
-1. **Opus DTX / silence gating in the call demo** (product, no format
-   change; ~45-55 kbps on real speech). Preferred: `opus.usedtx` in the
-   WebCodecs OpusEncoderConfig where the platform honors it. Fallback that
-   works everywhere: encoder-state-preserving gating — keep feeding the
-   AudioEncoder, compute RMS per 20 ms input window, and drop the AUDIO
-   chunk at output when RMS sits under a threshold (keep-alive chunk every
-   ~400 ms so liveness stats stay honest). Gate at output, never by
-   starving the encoder, so Opus analysis state stays continuous and
-   post-silence packets are glitch-free. Verify in the two-tab demo:
-   audioPlayed cadence during silence, recovery glitch listen, guest stats
-   counter for suppressed chunks. Report the call-wire delta in
-   BENCHMARKS.md.
+1. ✅ **Opus DTX / silence gating in the call demo** — SHIPPED. RMS gate
+   at the AudioEncoder output (encoder always fed, so analysis state stays
+   continuous; keep-alive every 20 windows ≈ 400 ms), checkbox toggle,
+   suppressed counter in host stats. Browser-verified live: 88-92% of
+   chunks suppressed in a quiet room, audio wire ~36 → ~4 kbps, guest
+   plays exactly what is sent with 0 decoder errors. Platform `usedtx`
+   not needed — output gating supersedes it (drops whole packets).
 2. **QOV-S audio batching — packet type 0x03** (spec v2.1; ~15-20 kbps
    true wire + ~40 fewer packets/s, which also shrinks NACK/FEC state).
    New packet type whose payload is `[u16 len][complete AUDIO chunk]...`

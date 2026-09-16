@@ -63,6 +63,10 @@
         <option value="opus">Opus ~24 kbps</option>
       </select>
     </label>
+    <label style="font-size:0.85rem; color:#b7c0d4; display:flex; gap:6px; align-items:center;">
+      <input type="checkbox" id="dtxCheck" checked />
+      <span title="drop audio chunks during silence (Opus path only; keep-alive every ~400 ms)">silence suppression</span>
+    </label>
     <span id="relayState" class="badge off">relay: not connected</span>
   </div>
 

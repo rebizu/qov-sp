@@ -119,6 +119,14 @@ class Host {
   }
 
   private audioFrames = 0;
+  private audioSuppressed = 0;
+
+  // Silence gating (DTX-style): windows quieter than this are suppressed at
+  // chunk level. ~-48 dBFS sits under browser AGC noise floors.
+  private static readonly DTX_RMS_THRESHOLD = 0.004;
+  // At least one chunk per this many 20 ms windows (~400 ms) keeps liveness
+  // stats and the guest's jitter chain honest during long silences.
+  private static readonly DTX_KEEPALIVE_WINDOWS = 20;
 
   // Speech capture (spec section 5.3): 16 kHz mono frames cut from the
   // browser's audio processing chain (echo cancellation / noise suppression
@@ -138,9 +146,21 @@ class Host {
     const sink = actx.createGain();
     sink.gain.value = 0; // ScriptProcessor only fires when routed to a destination
     if (codec === 'opus' && typeof AudioEncoder !== 'undefined') {
+      const dtx = ($('dtxCheck') as HTMLInputElement).checked;
+      // One RMS value per fed 20 ms window; the encoder outputs exactly one
+      // packet per fed frame, so shifting here aligns window -> packet.
+      const rmsQueue: number[] = [];
+      let silentRun = 0;
       const enc = new AudioEncoder({
         output: (chunk) => {
           if (!this.running || !this.enc) return;
+          const rms = rmsQueue.shift();
+          const silent = rms !== undefined && rms < Host.DTX_RMS_THRESHOLD;
+          silentRun = silent ? silentRun + 1 : 0;
+          if (dtx && silent && silentRun % Host.DTX_KEEPALIVE_WINDOWS !== 0) {
+            this.audioSuppressed++;
+            return;
+          }
           const packet = new Uint8Array(chunk.byteLength);
           chunk.copyTo(packet);
           this.enc.encodeAudioOpus(packet, chunk.timestamp);
@@ -154,9 +174,13 @@ class Host {
       const opusPending: number[] = [];
       proc.onaudioprocess = (e) => {
         if (!this.running) return;
-        for (const v of e.inputBuffer.getChannelData(0)) opusPending.push(v);
+        const input = e.inputBuffer.getChannelData(0);
+        for (const v of input) opusPending.push(v);
         while (opusPending.length >= 320) { // one 20 ms Opus frame at 16 kHz
           const data = new Float32Array(opusPending.splice(0, 320));
+          let sum = 0;
+          for (let i = 0; i < 320; i++) sum += data[i] * data[i];
+          rmsQueue.push(Math.sqrt(sum / 320));
           const ad = new AudioData({
             format: 'f32-planar', sampleRate: QOV_AUDIO_RATE_SPEECH,
             numberOfFrames: 320, numberOfChannels: 1, timestamp: Math.round(performance.now() * 1000),
@@ -166,7 +190,8 @@ class Host {
           ad.close();
         }
       };
-      log(this.logEl, `microphone open (${actx.sampleRate} Hz mono, browser AEC/NS/AGC, Opus ~24 kbps)`);
+      log(this.logEl, `microphone open (${actx.sampleRate} Hz mono, browser AEC/NS/AGC, Opus ~24 kbps` +
+        (dtx ? `; silence suppression on, keep-alive ~400 ms` : ``) + `)`);
     } else {
       if (codec === 'opus') log(this.logEl, 'WebCodecs AudioEncoder unavailable — using QOA');
       const pending: number[] = [];
@@ -309,6 +334,7 @@ class Host {
       ['retransmits', this.sender.retransmits],
       ['packets sent', this.sender.sentPackets],
       ['audio frames sent', this.audioFrames],
+      ['audio suppressed (DTX)', this.audioSuppressed],
     ]);
   }
 }
