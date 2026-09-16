@@ -125,9 +125,12 @@ the framing changes.
 - The 2% worst-case q85 gap vs lower qualities is the skip-run chains:
   high-quality frames code more blocks, so the per-block chain bytes are
   a bigger share.
-- Decode speed is unchanged within noise (same coefficient path; only
-  byte framing moved). Measured 720-frame roundtrips at q30–q85,
-  bit-exact in all cases.
+- Measured speed (C reference, single thread, 720 frames + 1,875 audio
+  chunks at call settings, same harness for both grammars, best of 3):
+  v1 encodes at 137 fps / decodes at 277 fps; structured encodes at
+  **141 fps / decodes at 288 fps** — the smaller range-coded payload and
+  fewer grammar bytes make structured slightly *faster* in both
+  directions, with identical decoded pixels (checksum-verified).
 
 ### Stacked call configuration (all knobs on, measured 2026-09-16)
 
