@@ -49,6 +49,9 @@ class Relay implements Carrier {
   onOpen: () => void = () => {};
 
   connect(url: string, room: string, stateEl: HTMLElement): void {
+    // role switches re-enter join(); a live socket is already in the room
+    // and a second JOIN from the same tab would trip the relay's room limit
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
     badge(stateEl, 'waiting', 'relay: connecting');
     const ws = new WebSocket(url);
     this.ws = ws;
@@ -383,7 +386,7 @@ class Host {
   async start(withMic: boolean): Promise<void> {
     if (this.started) return; // carrier switches re-enter start(); camera opens once
     this.started = true;
-    this.initEncoder(withMic);
+    if (!this.enc) this.initEncoder(withMic); // ensureSession() may have created it already
     if (withMic) await this.startMic().catch((e) => log(this.logEl, `mic error: ${(e as Error).message}`));
     await this.openCamera();
   }
@@ -406,15 +409,29 @@ class Host {
     }
   }
 
+  // Signaling can complete before any start button is pressed (a host may
+  // only ever touch the P2P panel); the guest's HELLO — and PLAY — must
+  // still be answerable, so create the encoder synchronously and let the
+  // camera come up in the background.
+  ensureSession(): void {
+    const withMic = ($('micCheck') as HTMLInputElement).checked;
+    if (!this.enc) this.initEncoder(withMic);
+    if (!this.started) {
+      void this.start(withMic).catch((e) => log(this.logEl, `start error: ${(e as Error).message}`));
+    }
+  }
+
   // Spec section 2.1 step 4: media flows after PLAY.
   handleGuestText(line: string): void {
     const verb = line.split(' ', 1)[0];
     if (verb === 'HELLO') {
+      this.ensureSession();
       if (!/v=2\b/.test(line)) { this.relay.sendText('BYE'); return; }
       this.relay.sendText('CONFIG');
       this.relay.sendBinary(this.enc.headerBytes().slice());
       log(this.logEl, 'session: HELLO accepted, CONFIG + header sent');
     } else if (verb === 'PLAY') {
+      this.ensureSession();
       if (!this.running) { this.running = true; this.captureLoop(); }
     } else if (verb === 'NACK') {
       this.sender.handleNack(line);
@@ -462,6 +479,10 @@ class Host {
       this.captureCtx.font = 'bold 28px system-ui';
       this.captureCtx.fillText(`QOV-S ${Math.floor(t)}`, 40 + 20 * Math.sin(t * 2), HEIGHT / 2 + 60 * Math.sin(t));
       if (this.controller.downscaleActive) this.captureCtx.setTransform(1, 0, 0, 1, 0, 0);
+    } else if (this.video.readyState < 2) {
+      // camera not producing frames yet (PLAY raced openCamera): hold black
+      this.captureCtx.fillStyle = '#000';
+      this.captureCtx.fillRect(0, 0, WIDTH, HEIGHT);
     } else if (this.controller.downscaleActive) {
       // ladder rung: shrink the picture, letterbox the border — border
       // blocks are pure skips, content codes at unchanged quality
@@ -762,17 +783,19 @@ function main(): void {
   const guest = new Guest(carrier, $('guestLog'), $('guestBadge'));
   setInterval(() => { host.render(); guest.render(); }, 500);
 
-  // The protocol handlers live on the ACTIVE carrier; switching transports
-  // moves them (no forwarder chains — those self-loop when the active
-  // carrier is also the one being reassigned).
+  let current: 'host' | 'guest' | null = null;
+
+  // Strict role split: only the guest says HELLO, and each side consumes
+  // only the lines the peer owns. Both handlers used to run on both tabs,
+  // so a guest tab executed Host.handleGuestText with no encoder (and even
+  // replied CONFIG into the channel) as soon as the peer's HELLO arrived.
   const wireActive = (c: Carrier) => {
-    c.onOpen = () => guest.hello();
+    c.onOpen = () => { if (current === 'guest') guest.hello(); };
     c.onText = (line) => {
-      // Both roles see every control line; each side consumes what it owns.
-      host.handleGuestText(line);
-      guest.handleHostText(line);
+      if (current === 'host') host.handleGuestText(line);
+      else if (current === 'guest') guest.handleHostText(line);
     };
-    c.onBinary = (bytes) => guest.handleBinary(bytes);
+    c.onBinary = (bytes) => { if (current === 'guest') guest.handleBinary(bytes); };
   };
   wireActive(carrier);
   const useCarrier = (kind: 'p2p' | 'relay') => {
@@ -782,7 +805,6 @@ function main(): void {
     guest.rebind(carrier);
   };
 
-  let current: 'host' | 'guest' | null = null;
   const join = (role: 'host' | 'guest') => {
     if (current === role) return;
     current = role;
@@ -791,6 +813,11 @@ function main(): void {
     $('hostPanel').style.display = role === 'host' ? '' : 'none';
     $('guestPanel').style.display = role === 'guest' ? '' : 'none';
     const kind = ($('carrierSelect') as HTMLSelectElement).value as 'p2p' | 'relay';
+    // join() is the single entry point for carrier wiring: handlers and
+    // rebinds must follow the selected carrier even when the dropdown never
+    // fired change (e.g. ?carrier=relay preset) — otherwise lines are sent
+    // into the idle carrier and the session silently dead-ends.
+    useCarrier(kind);
     if (kind === 'relay') {
       $('relayUrl').style.display = '';
       $('p2pPanel').style.display = 'none';
@@ -849,6 +876,8 @@ function main(): void {
   }
   const connectAnswer = (input: string) => {
     const { code } = parseSignalInput(input);
+    if (current !== 'host') join('host'); // answering an invite is hosting intent
+    start({ autoInvite: false });         // no-op once the session already runs
     p2p.acceptAnswer(code)
       .then(() => log($('hostLog'), 'p2p: answer applied — connecting'))
       .catch((e) => log($('hostLog'), `p2p answer error: ${e.message}`));
@@ -913,7 +942,7 @@ function main(): void {
   // visible build marker: makes a stale tab obvious
   {
     const bm = $('buildMarker') as HTMLElement;
-    bm.textContent = `\u00b7 demo build 2026-09-16.4 (auto invite: click Host, link appears here)`;
+    bm.textContent = `\u00b7 demo build 2026-09-17.1 (role-gated: guest no longer answers HELLO)`;
   }
 
   // debugging handle for the demo page
