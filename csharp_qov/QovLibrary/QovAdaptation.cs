@@ -105,6 +105,11 @@ public class QovPlaybackGate
 // remove work (frames, coefficients, references), never add machinery.
 public class QovAdaptationController
 {
+    // Downscale rungs of the adaptation ladder, engaged in order under
+    // sustained deficit: stage 1 letterboxes the camera into 256x192,
+    // stage 2 into 160x120 (BENCHMARKS section 1d).
+    public static readonly (int W, int H)[] DownscaleStages = { (256, 192), (160, 120) };
+
     private readonly int _startQuality;
     private readonly long _qualityChangeCooldownMs;
     private double _quality;
@@ -113,7 +118,8 @@ public class QovAdaptationController
     private int _surplusStreak;
     private bool _skipActive;
     private bool _skipToggle;
-    private bool _downscale;
+    private int _rung;
+    private int _rungAt;
     private int _deficitStreak;
     private double _rttEma = -1;
     private long _lastQualityChangeMs;
@@ -121,12 +127,13 @@ public class QovAdaptationController
     public int CurrentQuality => (int)Math.Round(_quality);
     public int FecGroupSize => _fecGroupSize;
     public bool FrameSkipActive => _skipActive;
-    public bool DownscaleActive => _downscale;
+    public int DownscaleStage => _rung;
+    public bool DownscaleActive => _rung > 0;
     public double RttEmaMs => _rttEma;
 
     public Action<int>? QualityChanged;  // binds encoder.SetQuality (qov_set_quality)
     public Action? ReferenceDropped;     // binds encoder.DropReference (qov_drop_reference)
-    public Action<bool>? DownscaleChanged; // binds the letterbox rung (demo)
+    public Action<int>? DownscaleStageChanged; // binds the letterbox rungs (demo)
 
     public QovAdaptationController(int startQuality = 60, int qualityChangeCooldownMs = 1000)
     {
@@ -183,18 +190,28 @@ public class QovAdaptationController
 
         // Bandwidth mapping: deficit -> q - 10 (floor 20); sustained surplus
         // (3 s = 3 consecutive clean reports) -> q + 10 (ceiling = start).
-        // Ladder order: quality -> downscale (quality at floor + deficit
-        // persists) -> reference drop -> frame skip. Recovery reverses:
-        // downscale lifts before quality climbs.
+        // Ladder order: quality -> downscale rungs (quality at floor + deficit
+        // persists: 256x192 first, 160x120 two deficit reports later) ->
+        // reference drop -> frame skip. Recovery reverses: rungs lift before
+        // quality climbs, bottom rung first.
         if (deliveredRatio < 0.9)
         {
             _surplusStreak = 0;
             _deficitStreak++;
             ChangeQuality(-10);
-            if (CurrentQuality <= 20 && _deficitStreak >= 2 && !_downscale)
+            if (CurrentQuality <= 20 && _deficitStreak >= 2)
             {
-                _downscale = true;
-                DownscaleChanged?.Invoke(true);
+                if (_rung == 0)
+                {
+                    _rung = 1;
+                    _rungAt = _deficitStreak;
+                    DownscaleStageChanged?.Invoke(1);
+                }
+                else if (_rung == 1 && _deficitStreak >= _rungAt + 2)
+                {
+                    _rung = 2;
+                    DownscaleStageChanged?.Invoke(2);
+                }
             }
         }
         else if (lossPercent < 0.5 && deliveredRatio > 0.98)
@@ -203,10 +220,10 @@ public class QovAdaptationController
             if (++_surplusStreak >= 3)
             {
                 _surplusStreak = 0;
-                if (_downscale)
+                if (_rung > 0)
                 {
-                    _downscale = false;
-                    DownscaleChanged?.Invoke(false);
+                    _rung--;
+                    DownscaleStageChanged?.Invoke(_rung);
                 }
                 else
                 {

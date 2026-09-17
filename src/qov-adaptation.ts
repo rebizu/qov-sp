@@ -9,6 +9,15 @@ import { QOV_CHUNK_FLAG_REFRESH_BAND, QOV_CHUNK_KEYFRAME, chunkHasSizePrefix } f
 // repaints the whole frame every 12 P-frames.
 export const QOV_REFRESH_BAND_CYCLE = 12;
 
+// Downscale rungs of the adaptation ladder, engaged in order under sustained
+// deficit: stage 1 letterboxes the camera into 256x192, stage 2 into 160x120.
+// Content quality is unchanged at both rungs — the picture gets smaller, not
+// worse — and border blocks are pure skips (BENCHMARKS section 1d).
+export const QOV_DOWNSCALE_STAGES: ReadonlyArray<{ w: number; h: number }> = [
+  { w: 256, h: 192 },
+  { w: 160, h: 120 },
+];
+
 // (isKeyframe, hasRefreshBand, bandIndex) from a complete QOV chunk.
 export function inspectChunk(chunk: Uint8Array, use32BitChunkSize = true): {
   isKeyframe: boolean; hasRefreshBand: boolean; bandIndex: number;
@@ -100,12 +109,13 @@ export class QovAdaptationController {
   private skipToggle = false;
   private rttEma = -1;
   private lastQualityChangeAt = -1e9;
-  private downscale = false;
+  private rung = 0;
+  private rungAt = 0;
   private deficitStreak = 0;
 
   onQualityChanged: (q: number) => void = () => {};
   onReferenceDropped: () => void = () => {};
-  onDownscaleChanged: (on: boolean) => void = () => {};
+  onDownscaleStageChanged: (stage: number) => void = () => {};
 
   constructor(startQuality = 60, qualityChangeCooldownMs = 1000) {
     this.startQuality = Math.min(Math.max(startQuality, 20), 99);
@@ -116,7 +126,8 @@ export class QovAdaptationController {
   get currentQuality(): number { return Math.round(this.quality); }
   get fecGroupSize(): number { return this._fecGroupSize; }
   get frameSkipActive(): boolean { return this.skipActive; }
-  get downscaleActive(): boolean { return this.downscale; }
+  get downscaleStage(): number { return this.rung; }
+  get downscaleActive(): boolean { return this.rung > 0; }
   get rttEmaMs(): number { return this.rttEma; }
 
   // Frame-skip knob while the playout buffer drains: skip every other frame.
@@ -155,24 +166,31 @@ export class QovAdaptationController {
 
     // Bandwidth mapping: deficit -> q - 10 (floor 20); sustained surplus
     // (3 s = 3 consecutive clean reports) -> q + 10 (ceiling = start).
-    // Ladder order: quality -> downscale (quality at floor + deficit
-    // persists) -> reference drop -> frame skip. Recovery reverses:
-    // downscale lifts before quality climbs.
+    // Ladder order: quality -> downscale rungs (quality at floor + deficit
+    // persists: 256x192 first, 160x120 two deficit reports later) ->
+    // reference drop -> frame skip. Recovery reverses: rungs lift before
+    // quality climbs, bottom rung first.
     if (deliveredRatio < 0.9) {
       this.surplusStreak = 0;
       this.deficitStreak++;
       this.changeQuality(-10);
-      if (this.currentQuality <= 20 && this.deficitStreak >= 2 && !this.downscale) {
-        this.downscale = true;
-        this.onDownscaleChanged(true);
+      if (this.currentQuality <= 20 && this.deficitStreak >= 2) {
+        if (this.rung === 0) {
+          this.rung = 1;
+          this.rungAt = this.deficitStreak;
+          this.onDownscaleStageChanged(1);
+        } else if (this.rung === 1 && this.deficitStreak >= this.rungAt + 2) {
+          this.rung = 2;
+          this.onDownscaleStageChanged(2);
+        }
       }
     } else if (lossPercent < 0.5 && deliveredRatio > 0.98) {
       this.deficitStreak = 0;
       if (++this.surplusStreak >= 3) {
         this.surplusStreak = 0;
-        if (this.downscale) {
-          this.downscale = false;
-          this.onDownscaleChanged(false);
+        if (this.rung > 0) {
+          this.rung--;
+          this.onDownscaleStageChanged(this.rung);
         } else {
           this.changeQuality(+10);
         }

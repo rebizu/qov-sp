@@ -164,21 +164,33 @@ public class QovAdaptationControllerTests
     public void FloorDeficit_EngagesDownscale_RecoveryLiftsItBeforeQualityClimbs()
     {
         var c = new QovAdaptationController(60, qualityChangeCooldownMs: 0);
-        var events = new List<bool>();
-        c.DownscaleChanged += on => events.Add(on);
+        var events = new List<int>();
+        c.DownscaleStageChanged += stage => events.Add(stage);
 
-        // sustained deficit walks quality 60 -> 20, then the rung engages
+        // sustained deficit walks quality 60 -> 20, then the 256x192 rung engages
         for (int i = 0; i < 4; i++)
             c.OnReport(10, 20, 200, 33, 0.8);
         Assert.True(c.DownscaleActive);
-        Assert.Equal(new[] { true }, events);
+        Assert.Equal(1, c.DownscaleStage);
+        Assert.Equal(new[] { 1 }, events);
         Assert.Equal(20, c.CurrentQuality);
 
-        // recovery: downscale lifts on the third clean report, quality stays
+        // deficit persisting at the floor engages the 160x120 bottom rung
+        for (int i = 0; i < 2; i++)
+            c.OnReport(10, 20, 200, 33, 0.8);
+        Assert.Equal(2, c.DownscaleStage);
+        Assert.Equal(new[] { 1, 2 }, events);
+
+        // recovery: rungs lift bottom-first on clean reports, quality stays
         c.OnReport(0, 20, 200, 33, 0.99);
         c.OnReport(0, 20, 200, 33, 0.99);
-        Assert.True(c.DownscaleActive);
+        Assert.Equal(2, c.DownscaleStage);
         c.OnReport(0, 20, 200, 33, 0.99);
+        Assert.Equal(1, c.DownscaleStage);
+        Assert.Equal(20, c.CurrentQuality);
+
+        for (int i = 0; i < 3; i++)
+            c.OnReport(0, 20, 200, 33, 0.99);
         Assert.False(c.DownscaleActive);
         Assert.Equal(20, c.CurrentQuality);
 

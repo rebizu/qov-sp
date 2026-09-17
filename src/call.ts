@@ -9,7 +9,7 @@ import { QovEncoder } from './qov-encoder';
 import { QoaDecoder } from './qoa';
 import { QOV_AUDIO_RATE_SPEECH, QOV_CHUNK_AUDIO_FLAG_OPUS } from './qov-types';
 import { QovStreamSender, QovStreamReceiver } from './qov-streaming';
-import { QovPlaybackGate, QovAdaptationController, PlaybackDecision, inspectChunk } from './qov-adaptation';
+import { QovPlaybackGate, QovAdaptationController, PlaybackDecision, inspectChunk, QOV_DOWNSCALE_STAGES } from './qov-adaptation';
 import { QovStreamingDecoder, StreamDataSource } from './qov-streaming-decoder';
 
 const WIDTH = 320, HEIGHT = 240;
@@ -247,10 +247,11 @@ class Host {
       this.dropRefCount++;
       log(this.logEl, 'knob: dropReference() — next P-frame re-keys');
     };
-    this.controller.onDownscaleChanged = (on) => {
-      this.downscaleCount += on ? 1 : 0;
-      log(this.logEl, on
-        ? 'knob: downscale ON — camera letterboxed to 256x192, borders are pure skips'
+    this.controller.onDownscaleStageChanged = (stage) => {
+      if (stage > 0) this.downscaleCount++;
+      const s = QOV_DOWNSCALE_STAGES[stage - 1];
+      log(this.logEl, stage > 0
+        ? `knob: downscale stage ${stage} ON — camera letterboxed to ${s.w}x${s.h}, borders are pure skips`
         : 'knob: downscale OFF — full 320x240 restored');
     };
 
@@ -462,13 +463,17 @@ class Host {
   // capture canvas, honouring the downscale rung
   private drawCaptureFrame(): void {
     const t = performance.now() / 1000;
+    const rung = this.controller.downscaleStage > 0
+      ? QOV_DOWNSCALE_STAGES[this.controller.downscaleStage - 1]
+      : null;
     if (this.synthetic) {
-      if (this.controller.downscaleActive) {
+      if (rung) {
         // same rung for the synthetic pattern: draw scaled into the
-        // centered 256x192 region over black
+        // centered rung region over black
         this.captureCtx.fillStyle = '#000';
         this.captureCtx.fillRect(0, 0, WIDTH, HEIGHT);
-        this.captureCtx.setTransform(0.8, 0, 0, 0.8, 32, 24);
+        const k = rung.w / WIDTH;
+        this.captureCtx.setTransform(k, 0, 0, k, (WIDTH - rung.w) / 2, (HEIGHT - rung.h) / 2);
       }
       const g = this.captureCtx.createLinearGradient(0, 0, WIDTH, HEIGHT);
       g.addColorStop(0, `hsl(${(t * 40) % 360}, 70%, 55%)`);
@@ -478,17 +483,17 @@ class Host {
       this.captureCtx.fillStyle = '#fff';
       this.captureCtx.font = 'bold 28px system-ui';
       this.captureCtx.fillText(`QOV-S ${Math.floor(t)}`, 40 + 20 * Math.sin(t * 2), HEIGHT / 2 + 60 * Math.sin(t));
-      if (this.controller.downscaleActive) this.captureCtx.setTransform(1, 0, 0, 1, 0, 0);
+      if (rung) this.captureCtx.setTransform(1, 0, 0, 1, 0, 0);
     } else if (this.video.readyState < 2) {
       // camera not producing frames yet (PLAY raced openCamera): hold black
       this.captureCtx.fillStyle = '#000';
       this.captureCtx.fillRect(0, 0, WIDTH, HEIGHT);
-    } else if (this.controller.downscaleActive) {
+    } else if (rung) {
       // ladder rung: shrink the picture, letterbox the border — border
       // blocks are pure skips, content codes at unchanged quality
       this.captureCtx.fillStyle = '#000';
       this.captureCtx.fillRect(0, 0, WIDTH, HEIGHT);
-      this.captureCtx.drawImage(this.video, 32, 24, 256, 192);
+      this.captureCtx.drawImage(this.video, (WIDTH - rung.w) / 2, (HEIGHT - rung.h) / 2, rung.w, rung.h);
     } else {
       this.captureCtx.drawImage(this.video, 0, 0, WIDTH, HEIGHT);
     }

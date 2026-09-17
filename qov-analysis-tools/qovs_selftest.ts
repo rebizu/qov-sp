@@ -192,22 +192,30 @@ async function main(): Promise<number> {
     c2.onReport(10, 20, 200, 33, 0.8);
     check(drops === 1, 'ladder: sustained loss > 8% drops the reference once');
 
-    // downscale rung: quality floor + sustained deficit -> letterbox on;
-    // sustained clean surplus lifts it before quality climbs
+    // downscale rungs: quality floor + sustained deficit -> 256x192
+    // letterbox (stage 1), then the 160x120 bottom rung (stage 2) after two
+    // more deficit reports; sustained clean surplus lifts them bottom-first
+    // before quality climbs
     const c3 = new QovAdaptationController(60, 0);
-    const dsEvents: boolean[] = [];
-    c3.onDownscaleChanged = (on) => dsEvents.push(on);
+    const dsEvents: number[] = [];
+    c3.onDownscaleStageChanged = (stage) => dsEvents.push(stage);
     for (let i = 0; i < 4; i++) c3.onReport(10, 20, 200, 33, 0.8);
-    check(c3.downscaleActive && dsEvents[0] === true && c3.currentQuality === 20,
-      'ladder: quality at floor + sustained deficit -> downscale on');
+    check(c3.downscaleStage === 1 && c3.downscaleActive && dsEvents[0] === 1 && c3.currentQuality === 20,
+      'ladder: quality at floor + sustained deficit -> 256x192 rung on');
+    for (let i = 0; i < 2; i++) c3.onReport(10, 20, 200, 33, 0.8);
+    check(c3.downscaleStage === 2 && dsEvents[1] === 2,
+      'ladder: deficit persists at the floor -> 160x120 bottom rung');
     c3.onReport(0, 20, 200, 33, 0.99);
     c3.onReport(0, 20, 200, 33, 0.99);
-    check(c3.downscaleActive, 'downscale stays on during recovery buildup');
+    check(c3.downscaleStage === 2, 'rungs stay on during recovery buildup');
     c3.onReport(0, 20, 200, 33, 0.99);
-    check(!c3.downscaleActive && c3.currentQuality === 20,
-      'ladder: clean surplus -> downscale lifts before quality climbs');
+    check(c3.downscaleStage === 1 && c3.currentQuality === 20,
+      'ladder: clean surplus lifts the bottom rung first');
     for (let i = 0; i < 3; i++) c3.onReport(0, 20, 200, 33, 0.99);
-    check(c3.currentQuality === 30, 'ladder: quality climbs again after downscale lifted');
+    check(!c3.downscaleActive && c3.currentQuality === 20,
+      'ladder: next surplus lifts 256x192 before quality climbs');
+    for (let i = 0; i < 3; i++) c3.onReport(0, 20, 200, 33, 0.99);
+    check(c3.currentQuality === 30, 'ladder: quality climbs again after rungs lifted');
   }
 
   // 6. Audio batching (v2.1): chunks share packets, order is preserved.
