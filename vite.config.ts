@@ -2,17 +2,25 @@ import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import { copyFileSync } from 'fs';
 
+// Documentation the spec viewer (spec.html?doc=...) fetches at runtime —
+// every file here must ship in dist/ for a static deploy to work.
+const DOCS = [
+  'qov-specification.md',
+  'qov-streaming-spec.md',
+  'BENCHMARKS.md',
+  'CONFERENCE-ROADMAP.md',
+  'PFRAME-EXPLORATION.md',
+  'README.md',
+];
 
 export default defineConfig({
   plugins: [
     {
-      name: 'copy-spec-md',
+      name: 'copy-docs',
       closeBundle() {
-        // Copy the markdown file to dist folder
-        copyFileSync(
-          resolve(__dirname, 'qov-specification.md'),
-          resolve(__dirname, 'dist/qov-specification.md')
-        );
+        for (const doc of DOCS) {
+          copyFileSync(resolve(__dirname, doc), resolve(__dirname, 'dist', doc));
+        }
       },
     },
   ],
