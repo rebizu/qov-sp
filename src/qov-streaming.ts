@@ -311,6 +311,26 @@ export class QovStreamReceiver {
     if (this.controlTimer) { clearInterval(this.controlTimer); this.controlTimer = null; }
   }
 
+  // Discard all transport state (reassembly, watermarks, seq tracking) while
+  // keeping the timers and the cumulative stat counters. Call when the peer
+  // restarts its session: frame_id/seq spaces start over, so the old
+  // watermarks would reject every new packet as late. Decoded-picture state
+  // lives elsewhere (the streaming decoder) and survives this.
+  reset(): void {
+    this.pending.clear();
+    this.completedMedia.clear();
+    this.receivedSeq.clear();
+    this.seqOrder.length = 0;
+    this.nackPending.clear();
+    this.nextMediaFrameId = 0;
+    this.mediaInit = false;
+    this.resolvedUpTo = 0;
+    this.highestSeq = 0;
+    this.contiguous = 0;
+    this.contiguousMark = 0;
+    this.seqInit = false;
+  }
+
   deadline(): number { return Math.min(this.frameIntervalMs, this.deadlineCapMs); }
 
   handlePacket(bytes: Uint8Array): void {

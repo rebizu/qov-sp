@@ -74,6 +74,10 @@ export interface StreamDataSource {
   isAvailable(offset: number, length: number): boolean;
   // Get amount of data loaded so far
   getLoadedSize(): number;
+  // True when no more data will ever arrive (download finished). Sources
+  // that omit this are treated as live: buildIndex(wait=true) waits
+  // indefinitely for the tail instead of stopping at EOF.
+  isComplete?(): boolean;
 }
 
 // File-based data source (entire file in memory)
@@ -94,6 +98,10 @@ export class FileDataSource implements StreamDataSource {
 
   isAvailable(offset: number, length: number): boolean {
     return offset + length <= this.data.length;
+  }
+
+  isComplete(): boolean {
+    return true;
   }
 
   getLoadedSize(): number {
@@ -212,6 +220,12 @@ export class UrlDataSource implements StreamDataSource {
 
   isAvailable(offset: number, length: number): boolean {
     return this.loadedSize >= offset + length;
+  }
+
+  // No more bytes will arrive once the download has finished (or failed);
+  // lets buildIndex stop at EOF even when the total size is unknown
+  isComplete(): boolean {
+    return this.loadPromise !== null && !this.loading;
   }
 
   getLoadedSize(): number {
@@ -420,7 +434,8 @@ export class QovStreamingDecoder {
       // Wait for chunk header to be available
       const headerSize = this.use32BitChunkSize ? 10 : 8;
       if (!this.source.isAvailable(offset, headerSize)) {
-        if (!wait) { this.indexBuilt = true; return; } // live: stop at the tail
+        // live: stop at the tail; a finished finite source means EOF, not lag
+        if (!wait || this.source.isComplete?.() === true) { this.indexBuilt = true; return; }
         // Wait for more data
         await new Promise(resolve => setTimeout(resolve, 100));
         continue;
@@ -443,7 +458,7 @@ export class QovStreamingDecoder {
       // The whole chunk must be available before indexing it; an open-ended
       // (live) source stops at the trailing partial chunk.
       if (!this.source.isAvailable(offset, headerSize + chunkSize)) {
-        if (!wait) { this.indexBuilt = true; return; }
+        if (!wait || this.source.isComplete?.() === true) { this.indexBuilt = true; return; }
         await new Promise(resolve => setTimeout(resolve, 100));
         continue;
       }

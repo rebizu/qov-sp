@@ -646,9 +646,12 @@ class Guest {
   }
 
   // Spec section 2.1 step 2: CONFIG is followed by the QOV file header.
-  // A relay restart (partner rejoin) re-sends it; keep the live decoder.
+  // A relay restart (partner rejoin) re-sends it; keep the decoder (the
+  // peer's encode state is continuous), but reset the receiver: a peer
+  // whose page reloaded starts frame/seq ids over, and the old watermarks
+  // would reject every new packet as late.
   private acceptHeader(header: Uint8Array): void {
-    if (this.decoder) { this.relay.sendText('PLAY'); return; }
+    if (this.decoder) { this.receiver.reset(); this.relay.sendText('PLAY'); return; }
 
     this.ensureCapacity(header.length);
     this.buffer.set(header, 0);
