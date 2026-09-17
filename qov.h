@@ -3017,9 +3017,9 @@ static void qov__enc_dct_emit(qov_encoder *e, const float *res, const int *quant
     for (int k = 1; k < 64; k++) {
         int zz = qov_zigzag[k];
         double prod = (double)coeffs[zz] * scale / quant[zz];
-        /* AC dead-zone (spec 3.4.2): suppress |level| < 0.75 to kill
+        /* AC dead-zone (spec 3.4.2): suppress |level| < 1.0 to kill
            noise dithering between 0 and +/-1 */
-        qv[k] = (prod > -0.75 && prod < 0.75) ? 0 : qov_round(prod);
+        qv[k] = (prod > -1.0 && prod < 1.0) ? 0 : qov_round(prod);
     }
     if (e->p.exp_golomb) {
         /* Exp-Golomb coefficient section (spec 3.4.5): se(DC), then
@@ -3107,7 +3107,7 @@ static void qov__enc_plane_dct(qov_encoder *e, const uint8_t *curr, const uint8_
                         res[yy * 8 + xx] = (float)rr;
                         diff += (rr < 0 ? -rr : rr);
                     }
-                if (diff < 32 + e->dct_qp * 8) {
+                if (diff < 32 + e->dct_qp * 16) {
                     for (int yy = 0; yy < 8; yy++)
                         for (int xx = 0; xx < 8; xx++) {
                             int pxx = x0 + xx, pyy = y0 + yy;
@@ -3141,7 +3141,7 @@ static void qov__enc_plane_dct(qov_encoder *e, const uint8_t *curr, const uint8_
                     res[yy * 8 + xx] = (float)rr;
                     diff += (rr < 0 ? -rr : rr);
                 }
-            if (diff < 32 + e->dct_qp * 8) {
+            if (diff < 32 + e->dct_qp * 16) {
                 for (int yy = 0; yy < 8; yy++)
                     for (int xx = 0; xx < 8; xx++) {
                         int pxx = x0 + xx, pyy = y0 + yy;
@@ -3192,7 +3192,7 @@ static void qov__enc_plane_intra_dct(qov_encoder *e, uint8_t *plane, int w, int 
                     res[yy * 8 + xx] = (float)rr;
                     diff += (rr < 0 ? -rr : rr);
                 }
-            if (diff < 32 + e->dct_qp * 8) {
+            if (diff < 32 + e->dct_qp * 16) {
                 for (int yy = 0; yy < 8; yy++)
                     for (int xx = 0; xx < 8; xx++) {
                         int pxx = x0 + xx, pyy = y0 + yy;

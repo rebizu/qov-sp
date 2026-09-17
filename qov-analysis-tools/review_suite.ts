@@ -287,7 +287,9 @@ async function testDropReference(): Promise<void> {
   const okCount = full.length === 6 && stream.length === 6;
   const okEqual = okCount && stream.every((p, i) => p.every((v, k) => v === full[i][k]));
   const p = psnr(frames[5], full[5]);
-  check(okCount && okEqual && p > 20, 'dropReference re-keys and stays decodable', `count=${full.length} equal=${okEqual} psnr=${p.toFixed(1)}`);
+  // psnr floor tuned to the v3.11 encoder constants (spec 3.4.2 retune:
+  // dead-zone 1.0 + skip slope 16); structural breakage craters far below
+  check(okCount && okEqual && p > 18, 'dropReference re-keys and stays decodable', `count=${full.length} equal=${okEqual} psnr=${p.toFixed(1)}`);
 }
 
 // ------------------------------------------------ D. legacy v1 files

@@ -831,7 +831,7 @@ export class QovEncoder {
       qv[0] = Math.round(coeffs[0] * scale / quant[0]);
       for (let k = 1; k < 64; k++) {
         const prod = coeffs[ZIGZAG[k]] * scale / quant[ZIGZAG[k]];
-        qv[k] = prod > -0.75 && prod < 0.75 ? 0 : Math.round(prod);
+        qv[k] = prod > -1.0 && prod < 1.0 ? 0 : Math.round(prod);
       }
       const w = new BitWriter();
       w.se(qv[0]);
@@ -861,9 +861,9 @@ export class QovEncoder {
     for (let k = 1; k < 64; k++) {
       const zigzagIdx = ZIGZAG[k];
       const prod = coeffs[zigzagIdx] * scale / quant[zigzagIdx];
-      // Dead-zone (spec §3.4.2): suppress |level| < 0.75 to kill noise
+      // Dead-zone (spec §3.4.2): suppress |level| < 1.0 to kill noise
       // dithering between 0 and ±1
-      const qVal = prod > -0.75 && prod < 0.75 ? 0 : Math.round(prod);
+      const qVal = prod > -1.0 && prod < 1.0 ? 0 : Math.round(prod);
 
       if (qVal === 0) {
         zeroRun++;
@@ -893,7 +893,7 @@ export class QovEncoder {
     for (let k = 1; k < 64; k++) {
       const z = ZIGZAG[k];
       const prod = coeffs[z] * scale / quant[z];
-      const qVal = prod > -0.75 && prod < 0.75 ? 0 : Math.round(prod);
+      const qVal = prod > -1.0 && prod < 1.0 ? 0 : Math.round(prod);
       recCoeffs[z] = qVal * quant[z] / scale;
     }
     const rec = this.dctOut;
@@ -927,7 +927,7 @@ export class QovEncoder {
           }
         }
 
-        if (diffSum < 32 + qpBase * 8) {
+        if (diffSum < 32 + qpBase * 16) {
           // prediction-only block: store pred as the reconstruction
           for (let y = 0; y < 8; y++) {
             if (y0 + y >= h) break;
@@ -1022,7 +1022,7 @@ export class QovEncoder {
             }
           }
 
-          if (diffSum < 32 + qpBase * 8) {
+          if (diffSum < 32 + qpBase * 16) {
             // prediction-only block inside the band
             for (let y = 0; y < 8; y++) {
               const py = y0 + y;
@@ -1076,7 +1076,7 @@ export class QovEncoder {
 
         // 2. Threshold check (simulated 'Zero' block if residuals are small);
         // scales with QP so low-quality streams skip more aggressively
-        if (diffSum < 32 + qpBase * 8) {
+        if (diffSum < 32 + qpBase * 16) {
           hasContent = false;
         } else {
           hasContent = true;

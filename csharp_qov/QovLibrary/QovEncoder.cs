@@ -1118,7 +1118,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
             for (int k = 1; k < 64; k++)
             {
                 double prod = coeffs[Dct.ZigZag[k]] * scale / quant[Dct.ZigZag[k]];
-                qv[k] = (prod > -0.75 && prod < 0.75) ? 0 : ColorConversion.JsRound(prod);
+                qv[k] = (prod > -1.0 && prod < 1.0) ? 0 : ColorConversion.JsRound(prod);
             }
             var w = new EgBitWriter();
             w.Se(qv[0]);
@@ -1151,10 +1151,10 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
         {
             int zigzagIdx = Dct.ZigZag[k];
             double coeff = coeffs[zigzagIdx];
-            // Dead-zone (spec 3.4.2): suppress |level| < 0.75 to kill
+            // Dead-zone (spec 3.4.2): suppress |level| < 1.0 to kill
             // noise dithering between 0 and +/-1
             double prod = coeff * scale / quant[zigzagIdx];
-            int qVal = (prod > -0.75 && prod < 0.75) ? 0 : ColorConversion.JsRound(prod);
+            int qVal = (prod > -1.0 && prod < 1.0) ? 0 : ColorConversion.JsRound(prod);
 
             if (qVal == 0)
             {
@@ -1188,7 +1188,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
         {
             int z = Dct.ZigZag[k];
             double prod = coeffs[z] * scale / quant[z];
-            int qVal = (prod > -0.75 && prod < 0.75) ? 0 : ColorConversion.JsRound(prod);
+            int qVal = (prod > -1.0 && prod < 1.0) ? 0 : ColorConversion.JsRound(prod);
             recCoeffs[z] = (float)(qVal * quant[z] / scale);
         }
         Dct.InverseDctRaw(recCoeffs, blockBuf);
@@ -1226,7 +1226,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                     }
                 }
 
-                if (diffSum < 32 + _lossyParams.DctQp * 8)
+                if (diffSum < 32 + _lossyParams.DctQp * 16)
                 {
                     for (int y = 0; y < 8; y++)
                     {
@@ -1347,18 +1347,20 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                     for (int y = 0; y < 8; y++)
                     {
                         int py = y0 + y;
-                        if (py >= height) continue;
                         for (int x = 0; x < 8; x++)
                         {
                             int px = x0 + x;
-                            if (px >= width) continue;
+                            // padding must be zeroed: blockBuf is shared across
+                            // blocks, and stale residuals would leak into
+                            // partial blocks' coefficients
+                            if (px >= width || py >= height) { blockBuf[y * 8 + x] = 0; continue; }
                             int res = curr[py * width + px] - pred;
                             blockBuf[y * 8 + x] = res;
                             bandDiff += Math.Abs(res);
                         }
                     }
 
-                    if (bandDiff < 32 + _lossyParams.DctQp * 8)
+                    if (bandDiff < 32 + _lossyParams.DctQp * 16)
                     {
                         // prediction-only block inside the band
                         for (int y = 0; y < 8; y++)
@@ -1402,12 +1404,14 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
                 for (int y = 0; y < 8; y++)
                 {
                     int py = by * 8 + y;
-                    if (py >= height) continue;
                     for (int x = 0; x < 8; x++)
                     {
                         int px = bx * 8 + x;
-                        if (px >= width) continue;
-                        
+                        // zero padding like the band path: shared blockBuf
+                        // must not leak stale residuals into partial blocks'
+                        // coefficients
+                        if (px >= width || py >= height) { blockBuf[y * 8 + x] = 0; continue; }
+
                         int idx = py * width + px;
                         float res = curr[idx] - prev[idx];
                         blockBuf[y * 8 + x] = res;
@@ -1417,7 +1421,7 @@ private void EncodeRgbPixel(in QovPixel current, BinaryWriter writer)
 
                 // 2. Threshold check (scales with QP so low-quality streams
                 // skip more aggressively)
-                if (diffSum < 32 + _lossyParams.DctQp * 8) hasContent = false;
+                if (diffSum < 32 + _lossyParams.DctQp * 16) hasContent = false;
                 else hasContent = true;
 
                 if (!hasContent)

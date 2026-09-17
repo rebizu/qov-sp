@@ -1,6 +1,6 @@
 # QOV (Quite OK Video) Format Specification
 
-**Version:** 3.10
+**Version:** 3.11
 **Date:** September 2026
 **Based on:** QOI (Quite OK Image) and QOA (Quite OK Audio)
 
@@ -379,10 +379,10 @@ section MUST reject KEYFRAME chunks carrying `DCT_BLOCKS`.
   multi-encoder parity the conformance suite enforces; decoders are
   unaffected by both):
   - *Block skip:* an 8x8 block whose sum of absolute residuals against
-    the reference is `< 32 + 8 * qp_base` is coded as `QOV_OP_DCT_SKIP`
+    the reference is `< 32 + 16 * qp_base` is coded as `QOV_OP_DCT_SKIP`
     (the reference is copied unchanged).
   - *AC dead-zone:* with `prod = coeff * scale / quant[c]`, an AC
-    coefficient whose `prod` satisfies `-0.75 < prod < 0.75` is coded
+    coefficient whose `prod` satisfies `-1.0 < prod < 1.0` is coded
     as level 0; otherwise `level = round(prod)` (the DC coefficient is
     never dead-zoned). The encoder's local reconstruction MUST apply
     the same rule so its reference frame matches the decoder's.
@@ -766,6 +766,21 @@ This specification is placed in the public domain.
 ---
 
 ## Changelog
+
+### 3.11 (September 2026)
+- §3.4.2: encoder-side constants retuned from the bandwidth exploration
+  (BENCHMARKS.md §1d). The AC dead-zone widens from `-0.75 < prod < 0.75`
+  to `-1.0 < prod < 1.0`, and the QP-scaled block-skip threshold from
+  `32 + 8 * qp_base` to `32 + 16 * qp_base`. Decoded pixels change
+  (fewer small AC coefficients survive; more blocks code as prediction-
+  only skips); the decoder rules are unchanged and old files keep
+  decoding. Measured on 30 s of real webcam footage at call settings
+  (yuv420 q60, motion + intra-DCT keyframes + refresh bands, range
+  coder, structured P-frames): video bytes −23.9% (260.1 → 197.9 kbps)
+  at mean SSIM −0.0082, dominating the static quality curve; the same
+  constants stack on the resolution rungs. All three reference encoders
+  (C, TypeScript, C#) updated atomically; the corpus was regenerated as
+  the approval event.
 
 ### 3.10 (September 2026)
 - §1.2: single-version profile. Encoders emit only version 0x03 — strictly
