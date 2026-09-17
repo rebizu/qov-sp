@@ -14,7 +14,6 @@ import {
   QOV_FLAG_INTRA_DCT_KF,
   QOV_FLAG_INTRA_REFRESH,
   QOV_FLAG_EXP_GOLOB,
-  QOV_VERSION_EXTENDED,
   QOV_VERSION_LOSSY,
   QOV_CHUNK_SYNC,
   QOV_CHUNK_KEYFRAME,
@@ -244,7 +243,9 @@ export class QovEncoder {
 
     this.header = {
       magic: 'qovf',
-      version: this.lossyMode ? QOV_VERSION_LOSSY : QOV_VERSION_EXTENDED,
+      // v3.10: version 3 is the only produced version; lossless streams are v3
+      // files with quality 0 and LOSSY_MODE off (v1/v2 are deprecated)
+      version: QOV_VERSION_LOSSY,
       flags,
       width,
       height,

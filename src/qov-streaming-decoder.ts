@@ -246,7 +246,6 @@ export class QovStreamingDecoder {
   private chunks: ChunkMeta[] = [];
   private keyframeIndices: number[] = [];  // Frame indices that are keyframes
   private totalFrames = 0;
-  private use32BitChunkSize = false;
   private headerSize = 24;
   private headerParsed = false;
   private indexBuilt = false;
@@ -309,10 +308,14 @@ export class QovStreamingDecoder {
     }
 
     const version = headerData[4];
-    if (version !== 0x01 && version !== 0x02 && version !== 0x03) {
+    // v3.10: v1 (16-bit chunk sizes) is deprecated and rejected; v2 is
+    // deprecated but still read (24-byte header branch below)
+    if (version === 0x01) {
+      throw new Error('Unsupported QOV version: 0x01 (deprecated in v3.10; re-encode with a current encoder)');
+    }
+    if (version !== 0x02 && version !== 0x03) {
       throw new Error(`Unsupported QOV version: ${version}`);
     }
-    this.use32BitChunkSize = version >= 0x02;
     this.headerSize = version === QOV_VERSION_LOSSY ? 32 : 24;
 
     this.header = {
@@ -432,7 +435,7 @@ export class QovStreamingDecoder {
 
     while (fileSize === null || offset < fileSize) {
       // Wait for chunk header to be available
-      const headerSize = this.use32BitChunkSize ? 10 : 8;
+      const headerSize = 10;
       if (!this.source.isAvailable(offset, headerSize)) {
         // live: stop at the tail; a finished finite source means EOF, not lag
         if (!wait || this.source.isComplete?.() === true) { this.indexBuilt = true; return; }
@@ -447,13 +450,8 @@ export class QovStreamingDecoder {
       let chunkSize: number;
       let timestamp: number;
 
-      if (this.use32BitChunkSize) {
-        chunkSize = ((headerData[2] << 24) | (headerData[3] << 16) | (headerData[4] << 8) | headerData[5]) >>> 0;
-        timestamp = ((headerData[6] << 24) | (headerData[7] << 16) | (headerData[8] << 8) | headerData[9]) >>> 0;
-      } else {
-        chunkSize = (headerData[2] << 8) | headerData[3];
-        timestamp = ((headerData[4] << 24) | (headerData[5] << 16) | (headerData[6] << 8) | headerData[7]) >>> 0;
-      }
+      chunkSize = ((headerData[2] << 24) | (headerData[3] << 16) | (headerData[4] << 8) | headerData[5]) >>> 0;
+      timestamp = ((headerData[6] << 24) | (headerData[7] << 16) | (headerData[8] << 8) | headerData[9]) >>> 0;
 
       // The whole chunk must be available before indexing it; an open-ended
       // (live) source stops at the trailing partial chunk.
@@ -597,7 +595,7 @@ export class QovStreamingDecoder {
     // Decode all audio chunks
     for (const chunk of audioChunks) {
       // Read chunk data
-      const headerSize = this.use32BitChunkSize ? 10 : 8;
+      const headerSize = 10;
       const dataSize = chunk.size - headerSize;
 
       // We need to read the data. Since this might be scattered, it could be slow on HTTP.
@@ -640,7 +638,7 @@ export class QovStreamingDecoder {
     }
 
     // Read chunk data
-    const headerSize = this.use32BitChunkSize ? 10 : 8;
+    const headerSize = 10;
     const dataSize = chunk.size - headerSize;
     let chunkData = await this.source.read(chunk.offset + headerSize, dataSize);
 

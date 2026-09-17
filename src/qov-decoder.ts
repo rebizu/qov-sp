@@ -75,7 +75,6 @@ export class QovDecoder {
   private prevPixel: QovRGBA = { r: 0, g: 0, b: 0, a: 255 };
   private prevFrame: Uint8ClampedArray | null = null;
   private currFrame: Uint8ClampedArray | null = null;
-  private use32BitChunkSize = false; // true for version 0x02+
   private headerSize = 24; // 24 bytes for v1/v2, 32 bytes for v3 (lossy)
   private frameCount = 0; // For debug logging
 
@@ -153,13 +152,16 @@ export class QovDecoder {
     this.pos = 4;
 
     const version = this.readU8();
-    if (version !== 0x01 && version !== 0x02 && version !== 0x03) {
+    // v3.10: v1 (16-bit chunk sizes) is deprecated and rejected; v2 is
+    // deprecated but still read (24-byte header branch below)
+    if (version === 0x01) {
+      throw new Error('Unsupported QOV version: 0x01 (deprecated in v3.10; re-encode with a current encoder)');
+    }
+    if (version !== 0x02 && version !== 0x03) {
       throw new Error(`Unsupported QOV version: ${version}`);
     }
-    // Version 0x02+ uses 32-bit chunk sizes for large frames
-    this.use32BitChunkSize = version >= 0x02;
     const isLossyVersion = version === QOV_VERSION_LOSSY;
-    console.log(`[Decoder] Version 0x${version.toString(16)}, 32-bit chunks: ${this.use32BitChunkSize}, lossy capable: ${isLossyVersion}`);
+    console.log(`[Decoder] Version 0x${version.toString(16)}, lossy capable: ${isLossyVersion}`);
 
     const flags = this.readU8();
     const isLossyMode = (flags & QOV_FLAG_LOSSY_MODE) !== 0;
@@ -259,8 +261,8 @@ export class QovDecoder {
   private readChunkHeader(): QovChunkHeader {
     const chunkType = this.readU8();
     const chunkFlags = this.readU8();
-    // Version 0x02+ uses 32-bit chunk size, older versions use 16-bit
-    const chunkSize = this.use32BitChunkSize ? this.readU32() : this.readU16();
+    // 32-bit chunk size (v3.10: the 16-bit v1 layout is deprecated and rejected)
+    const chunkSize = this.readU32();
     const timestamp = this.readU32();
 
     // If compressed, read the uncompressed size (it's stored at start of chunk data)
@@ -1388,7 +1390,7 @@ export class QovDecoder {
 
     while (this.pos < this.data.length) {
       const offset = this.pos;
-      const headerSize = this.use32BitChunkSize ? 10 : 8;
+      const headerSize = 10;
 
       // Ensure enough bytes for chunk header
       if (this.pos + headerSize > this.data.length) {
