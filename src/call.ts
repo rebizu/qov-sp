@@ -197,8 +197,14 @@ class WebRtcCarrier implements Carrier {
     return encodeSignal(pc.localDescription!);
   }
 
-  sendText(line: string): void { this.ctrl?.send(line); }
-  sendBinary(bytes: Uint8Array<ArrayBuffer>): void { this.media?.send(bytes); }
+  // drops instead of throwing when the channel closed (the guest's control
+  // timer keeps ticking after a disconnect — that must stay harmless)
+  sendText(line: string): void {
+    try { if (this.ctrl?.readyState === 'open') this.ctrl.send(line); } catch { /* closed */ }
+  }
+  sendBinary(bytes: Uint8Array<ArrayBuffer>): void {
+    try { if (this.media?.readyState === 'open') this.media.send(bytes); } catch { /* closed */ }
+  }
 }
 
 // ------------------------------------------------------------------ host
