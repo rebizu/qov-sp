@@ -292,19 +292,25 @@ async function testDropReference(): Promise<void> {
 
 // ------------------------------------------------ D. legacy v1 files
 
-// Version 0x01 (16-bit chunk sizes) predates the encoder's v2/v3 output;
-// both TS decoders must still read it.
-function testV1Legacy(): void {
+// Legacy versions (spec v3.10): v1 (16-bit chunk sizes) is deprecated and
+// MUST be rejected; v2 (24-byte header, 32-bit chunk sizes) is deprecated
+// but must remain readable.
+function buildLegacyFile(version: number): Uint8Array {
   const W = 4, H = 4;
   const bytes: number[] = [];
   const u8 = (v: number): void => { bytes.push(v & 0xff); };
   const u16 = (v: number): void => { bytes.push((v >> 8) & 0xff, v & 0xff); };
   const u32 = (v: number): void => { bytes.push((v >>> 24) & 0xff, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff); };
+  const chunkHeader = (type: number, size: number, ts: number): void => {
+    u8(type); u8(0x00);
+    if (version >= 0x02) u32(size); else u16(size);
+    u32(ts);
+  };
   const marker = (): void => { for (let i = 0; i < 7; i++) u8(0); u8(1); };
 
-  // header (24 bytes, v1)
+  // header (24 bytes for v1/v2)
   for (const ch of 'qovf') u8(ch.charCodeAt(0));
-  u8(0x01);          // version: 16-bit chunk sizes
+  u8(version);       // 0x01: 16-bit chunk sizes, 0x02: 32-bit
   u8(0x00);          // flags
   u16(W); u16(H);
   u16(30); u16(1);
@@ -315,7 +321,7 @@ function testV1Legacy(): void {
   u8(0);             // quality
 
   // SYNC
-  u8(0x00); u8(0x00); u16(8); u32(0);
+  chunkHeader(0x00, 8, 0);
   for (const ch of 'QOVS') u8(ch.charCodeAt(0));
   u32(0);
 
@@ -327,33 +333,48 @@ function testV1Legacy(): void {
   }
   for (let i = 0; i < 7; i++) kfPush(0);
   kfPush(1);
-  u8(0x01); u8(0x00); u16(kfPayload.length); u32(33333);
+  chunkHeader(0x01, kfPayload.length, 33333);
   bytes.push(...kfPayload);
 
   // P-frame: all pixels unchanged (skip run), so frame 2 must equal frame 1
   const pPayload: number[] = [0xc0 | (W * H - 1)];
   for (let i = 0; i < 7; i++) pPayload.push(0);
   pPayload.push(1);
-  u8(0x02); u8(0x00); u16(pPayload.length); u32(66666);
+  chunkHeader(0x02, pPayload.length, 66666);
   bytes.push(...pPayload);
 
   // END + marker
-  u8(0xff); u8(0x00); u16(0); u32(0);
+  chunkHeader(0xff, 0, 0);
   marker();
+  return new Uint8Array(bytes);
+}
 
-  const data = new Uint8Array(bytes);
+function expectReject(data: Uint8Array, label: string): void {
+  let threw = '';
+  try {
+    new QovDecoder(data).decodeHeader();
+  } catch (e) { threw = (e as Error).message; }
+  check(threw.includes('Unsupported QOV version'), `${label} rejected by full decoder`, threw || 'no throw');
+}
+
+function expectDecode(data: Uint8Array, label: string): void {
   const full = decodeFull(data);
   const kfOk = full.length === 2
     && full[0][3] === 255
     && full[0][0] === 0 && full[0][1] === 5 && full[0][2] === 1   // px 0 literal
-    && full[0][(15 * 4)] === (15 * 17) & 0xff;                     // px 15 literal
+    && full[0][15 * 4] === ((15 * 17) & 0xff);                     // px 15 literal
   const skipOk = full.length === 2 && full[1].every((v, k) => v === full[0][k]);
-  check(kfOk, 'v1 keyframe decodes (16-bit chunk header)');
-  check(skipOk, 'v1 P-frame skip retains reference');
-
+  check(kfOk && skipOk, `${label} decodes (keyframe literals + skip)`);
   decodeStreaming(data, true).then(stream => {
-    check(stream.length === 2 && stream[1].every((v, k) => v === full[1][k]), 'v1 decodes identically via streaming decoder');
+    check(stream.length === 2 && stream[1].every((v, k) => v === full[1][k]),
+      `${label} decodes identically via streaming decoder`);
   });
+}
+
+function testLegacyVersions(): void {
+  expectReject(buildLegacyFile(0x01), 'v1 file');
+  expectReject(buildLegacyFile(0x04), 'unknown future version');
+  expectDecode(buildLegacyFile(0x02), 'deprecated v2 file');
 }
 
 // ------------------------------------------------ E. compression primitives
@@ -401,8 +422,8 @@ async function main(): Promise<void> {
   testReceiverReset();
   await testDropReference();
 
-  realLog('  legacy v1 files...');
-  testV1Legacy();
+  realLog('  legacy versions (v1 rejected, v2 readable)...');
+  testLegacyVersions();
   await new Promise(res => setTimeout(res, 50)); // let the streaming v1 check land
 
   realLog('  compression primitives...');
