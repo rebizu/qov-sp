@@ -895,6 +895,12 @@ function main(): void {
   ($('relayUrl') as HTMLInputElement).value =
     `ws://${location.hostname || 'localhost'}:8882`;
 
+  // visible build marker: makes a stale tab obvious
+  {
+    const bm = $('buildMarker') as HTMLElement;
+    bm.textContent = `\u00b7 demo build 2026-09-16.4 (auto invite: click Host, link appears here)`;
+  }
+
   // debugging handle for the demo page
   (window as unknown as { __qov: unknown }).__qov = {
     p2p, relay, host, guest, useCarrier,
