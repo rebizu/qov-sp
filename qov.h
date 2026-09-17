@@ -97,7 +97,7 @@ enum { QOV_F_HAS_ALPHA = 0x01, QOV_F_HAS_MOTION = 0x02, QOV_F_HAS_INDEX = 0x04,
 #define QOV_AUDIO_RATE_SPEECH 16000
 
 typedef struct {
-    uint8_t version;        /* 1, 2 or 3 */
+    uint8_t version;        /* 2 (deprecated, read-only) or 3 */
     uint8_t flags;
     uint8_t colorspace;
     uint8_t audio_channels;
@@ -2097,7 +2097,9 @@ qov_result qov_decode_header(const uint8_t *data, size_t size, qov_header *out)
     if (data[0] != 'q' || data[1] != 'o' || data[2] != 'v' || data[3] != 'f')
         return QOV_ERR_MAGIC;
     uint8_t version = data[4];
-    if (version != 1 && version != 2 && version != 3) return QOV_ERR_VERSION;
+    /* v3.10: v1 (16-bit chunk sizes) is deprecated and rejected; v2 is
+       deprecated but still read (24-byte header branch below) */
+    if (version != 2 && version != 3) return QOV_ERR_VERSION;
 
     memset(out, 0, sizeof(*out));
     out->version = version;
@@ -2451,13 +2453,13 @@ static qov_result qov__decode_impl(const uint8_t *data, size_t size,
 
     qov_image *frames = NULL;
     size_t count = 0, cap = 0;
-    size_t chunk_hdr = (hdr.version >= 2) ? 10 : 8;
+    size_t chunk_hdr = 10; /* 32-bit chunk sizes; the v1 8-byte header is deprecated */
 
     size_t pos = hdr.header_size;
     while (pos + chunk_hdr <= size && count < max_frames) {
         uint8_t ctype = data[pos], cflags = data[pos + 1];
-        uint32_t csize = (hdr.version >= 2) ? qov_be32(data + pos + 2) : (uint32_t)((data[pos + 2] << 8) | data[pos + 3]);
-        uint32_t ts = qov_be32(data + pos + ((hdr.version >= 2) ? 6 : 4));
+        uint32_t csize = qov_be32(data + pos + 2);
+        uint32_t ts = qov_be32(data + pos + 6);
 
         if (csize > size || pos + chunk_hdr + csize > size) { r = QOV_ERR_TRUNCATED; break; }
         const uint8_t *payload = data + pos + chunk_hdr;
@@ -2648,7 +2650,9 @@ qov_encoder *qov_encode_start(const qov_encode_params *params)
     }
 
     /* write the 24/32-byte header */
-    uint8_t version = e->lossy ? 3 : 2;
+    /* v3.10: version 3 is the only produced version; lossless streams are v3
+       files with quality 0 and no LOSSY flag (v1/v2 are deprecated) */
+    uint8_t version = 3;
     uint8_t flags = (uint8_t)(QOV_F_HAS_INDEX | (e->p.has_alpha ? QOV_F_HAS_ALPHA : 0) |
                               (e->p.motion ? QOV_F_HAS_MOTION : 0) |
                               (e->p.intra_dct_keyframes ? QOV_F_INTRA_DCT_KF : 0) |
