@@ -798,7 +798,9 @@ function main(): void {
       relay.connect(($('relayUrl') as HTMLInputElement).value, actualRoom, $('relayState'));
     } else {
       $('relayUrl').style.display = 'none';
-      $('p2pPanel').style.display = '';
+      // the .p2p class defaults to display:none — an inline '' would not
+      // override it, so show means explicitly 'block'
+      $('p2pPanel').style.display = 'block';
       $('p2pHostSteps').style.display = role === 'host' ? '' : 'none';
       $('p2pGuestSteps').style.display = role === 'guest' ? '' : 'none';
     }
