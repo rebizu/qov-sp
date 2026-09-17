@@ -611,6 +611,12 @@ export class QovStreamingDecoder {
     return 0;
   }
 
+  // Capture timestamp (µs) of an indexed frame, for live display pacing;
+  // 0 when the index does not cover the frame (yet).
+  frameTimestamp(frameIndex: number): number {
+    return this.getFrameTimestamp(frameIndex);
+  }
+
   private async decodeNextFrame(frameIndex: number): Promise<void> {
     // Find chunk for this frame
     const chunk = this.chunks.find(c => c.frameIndex === frameIndex);

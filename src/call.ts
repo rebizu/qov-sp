@@ -508,6 +508,8 @@ class Host {
     }, 100);
   }
 
+  private nextCaptureAt = 0;
+
   private captureLoop = (): void => {
     if (!this.running) return;
     const outCtx = ($('hostCanvas') as HTMLCanvasElement).getContext('2d')!;
@@ -530,7 +532,12 @@ class Host {
         this.frameCount++;
         outCtx.drawImage(this.captureCanvas, 0, 0);
       }
-      setTimeout(this.captureLoop, Math.max(1, 1000 / this.fps));
+      // drift-free pacing: aim at the next grid point — "now + interval"
+      // would accumulate the capture/encode cost into every frame gap
+      const now = performance.now();
+      if (this.nextCaptureAt === 0 || this.nextCaptureAt < now - 250) this.nextCaptureAt = now;
+      this.nextCaptureAt += 1000 / this.fps;
+      setTimeout(this.captureLoop, Math.max(1, this.nextCaptureAt - now));
     };
     tick();
   };
@@ -575,6 +582,12 @@ class Guest {
   private decodeQueue: Uint8Array[] = [];
   private pumping = false;
   private nextFrame = 0;
+  // decoded-but-not-yet-shown frames; the display clock drains this at the
+  // stream's own pace so arrival bursts play smoothly (bounded for latency)
+  private pendingFrames: { index: number; pixels: Uint8ClampedArray; decision: PlaybackDecision }[] = [];
+  private nextDue = 0; // display clock anchor (ms, performance.now() scale)
+  private displayTimer: number | null = null;
+  private headerIntervalMs = 100; // corrected from the QOV header on CONFIG
   private framesShown = 0;
   private hasPicture = false;
   private healingCount = 0;
@@ -643,7 +656,10 @@ class Guest {
 
     const num = (header[10] << 8) | header[11];
     const den = (header[12] << 8) | header[13];
-    if (num > 0) this.receiver.setFrameIntervalMs((1000 * den) / num);
+    if (num > 0) {
+      this.headerIntervalMs = (1000 * den) / num;
+      this.receiver.setFrameIntervalMs((1000 * den) / num);
+    }
 
     const source: StreamDataSource = {
       read: async (offset, length) => this.buffer.subarray(offset, offset + length),
@@ -653,6 +669,7 @@ class Guest {
     };
     this.decoder = new QovStreamingDecoder(source);
     void this.decoder.parseHeader();
+    this.startDisplayLoop();
     log(this.logEl, `session: header accepted (${header.length} bytes, ${num}/${den} fps)`);
     this.relay.sendText('PLAY');
   }
@@ -726,31 +743,73 @@ class Guest {
         this.writePos += chunk.length;
 
         const info = inspectChunk(chunk);
+        // the gate decision belongs to the frame's ARRIVAL: keyframe /
+        // refresh-band transitions must register even if the display clock
+        // later skips the frame while catching up
         const decision = this.gate.onFrameArrived(info.isKeyframe, info.hasRefreshBand);
 
         await this.decoder.extendIndex();
         while (this.nextFrame < this.decoder.frameCount) {
-          const frame = await this.decoder.decodeFrame(this.nextFrame++);
+          const index = this.nextFrame++;
+          const frame = await this.decoder.decodeFrame(index);
           if (!frame) break;
-          if (decision === PlaybackDecision.Display) {
-            const img = this.ctx.createImageData(WIDTH, HEIGHT);
-            img.data.set(frame.pixels);
-            this.ctx.putImageData(img, 0, 0);
-            this.hasPicture = true;
-            this.framesShown++;
-            if (this.freezeStart > 0) {
-              this.totalFreezeMs += Date.now() - this.freezeStart;
-              this.freezeStart = 0;
-              log(this.logEl, 'playback resumed');
-            }
-          } else {
-            this.healingCount++; // decoded into scratch state, display frozen
-          }
+          // decode now, display on schedule — network jitter lands in the
+          // small buffer below instead of hitting the canvas 1:1 as stutter
+          this.pendingFrames.push({ index, pixels: frame.pixels, decision });
         }
       }
     } finally {
       this.pumping = false;
     }
+  }
+
+  private startDisplayLoop(): void {
+    if (this.displayTimer !== null) return;
+    this.displayTimer = window.setInterval(() => this.displayTick(), 10);
+  }
+
+  // Frames are captured on the host's clock and shown on this schedule
+  // (same pattern as the file player) instead of being drawn the instant a
+  // packet lands. Live latency stays bounded: a backlog deeper than 4
+  // frames means we fell behind, so jump to the newest picture.
+  private displayTick(): void {
+    if (this.pendingFrames.length === 0) return;
+    const now = performance.now();
+    if (this.nextDue === 0) this.nextDue = now; // first picture plays at once
+    if (now < this.nextDue) return;
+    if (this.pendingFrames.length > 4) {
+      const newest = this.pendingFrames[this.pendingFrames.length - 1];
+      this.pendingFrames.length = 0;
+      this.pendingFrames.push(newest);
+    }
+    const f = this.pendingFrames.shift()!;
+    if (f.decision === PlaybackDecision.Display) {
+      const img = this.ctx.createImageData(WIDTH, HEIGHT);
+      img.data.set(f.pixels);
+      this.ctx.putImageData(img, 0, 0);
+      this.hasPicture = true;
+      this.framesShown++;
+      if (this.freezeStart > 0) {
+        this.totalFreezeMs += Date.now() - this.freezeStart;
+        this.freezeStart = 0;
+        log(this.logEl, 'playback resumed');
+      }
+    } else {
+      this.healingCount++; // decoded, but the display stays frozen while healing
+    }
+    const interval = this.intervalAfter(f.index);
+    if (now - this.nextDue > 250) this.nextDue = now + interval; // far behind: resync
+    else this.nextDue = this.nextDue + interval;
+  }
+
+  // ms between frame i and i+1 from the capture timestamps (µs, host
+  // clock); the header interval is the fallback while the next frame is
+  // not indexed yet or the timestamps repeat (host skipped nothing)
+  private intervalAfter(i: number): number {
+    if (!this.decoder) return this.headerIntervalMs;
+    const deltaMs = (this.decoder.frameTimestamp(i + 1) - this.decoder.frameTimestamp(i)) / 1000;
+    if (!(deltaMs > 0.5) || deltaMs > 1000) return this.headerIntervalMs;
+    return deltaMs;
   }
 
   render(): void {
@@ -942,7 +1001,7 @@ function main(): void {
   // visible build marker: makes a stale tab obvious
   {
     const bm = $('buildMarker') as HTMLElement;
-    bm.textContent = `\u00b7 demo build 2026-09-17.1 (role-gated: guest no longer answers HELLO)`;
+    bm.textContent = `\u00b7 demo build 2026-09-17.2 (paced guest playback)`;
   }
 
   // debugging handle for the demo page
