@@ -1,6 +1,6 @@
 # QOV (Quite OK Video) Format Specification
 
-**Version:** 3.7 (Unified)
+**Version:** 3.10
 **Date:** September 2026
 **Based on:** QOI (Quite OK Image) and QOA (Quite OK Audio)
 
@@ -61,10 +61,25 @@ Offset  Size  Name            Description
 ```
 Value  Name            Description
 ────────────────────────────────────────────────────────────
-0x01   QOV_V1          16-bit chunk sizes, strictly lossless.
-0x02   QOV_V2          32-bit chunk sizes, strictly lossless.
-0x03   QOV_V3          32-bit chunk sizes, supports lossy features.
+0x01   QOV_V1          DEPRECATED (v3.10). 16-bit chunk sizes, strictly
+                       lossless. Encoders MUST NOT emit; decoders MUST
+                       reject.
+0x02   QOV_V2          DEPRECATED (v3.10). 32-bit chunk sizes, strictly
+                       lossless. Encoders MUST NOT emit; decoders SHOULD
+                       continue to accept (24-byte header).
+0x03   QOV_V3          Current. 32-bit chunk sizes; the only version
+                       encoders produce. Lossless streams are v3 files
+                       with quality 0 and LOSSY_MODE off.
 ```
+
+**Single-version profile (normative, v3.10):** encoders MUST emit version
+`0x03` — including for strictly lossless content, which is a v3 file with
+`LOSSY_MODE`/`DCT_ENABLED` unset and `quality` 0. v3 fully subsumes v2: the
+chunk streams are identical, only the 8-byte lossy header extension differs.
+Decoders MUST reject version `0x01` and MUST accept version `0x03`; the v2
+read path is retained for existing files but carries no guarantee of
+cross-implementation parity (the v1/v2 corpus predates the conformance
+suite).
 
 ### 1.3 Flags Byte (Bitfield)
 
@@ -751,6 +766,15 @@ This specification is placed in the public domain.
 ---
 
 ## Changelog
+
+### 3.10 (September 2026)
+- §1.2: single-version profile. Encoders emit only version 0x03 — strictly
+  lossless streams are v3 files with quality 0 and LOSSY_MODE off (v3
+  subsumes v2; the chunk streams are identical). Version 0x01 (16-bit
+  chunk sizes) is deprecated: encoders MUST NOT emit it, decoders MUST
+  reject it. Version 0x02 is deprecated but remains readable. All three
+  reference encoders (C, TypeScript, C#) flipped; the 16-bit parse paths
+  were removed from the C and TypeScript decoders.
 
 ### 3.9 (September 2026)
 - §3.4.6: structured P-frame grammar, selected per chunk by the
