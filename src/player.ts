@@ -76,7 +76,7 @@ let currentFrameIndex = 0;
 let isPlaying = false;
 let playbackSpeed = 1;
 let animationFrameId: number | null = null;
-let lastPlaybackTime = 0;
+let nextFrameDue = 0; // performance.now() deadline for the next frame
 let decodeStartTime = 0;
 let framesDecoded = 0;
 let totalFrames = 0;
@@ -633,25 +633,48 @@ async function loadFromSource(source: FileDataSource | UrlDataSource): Promise<v
   }
 }
 
-// Playback loop
+// Frame presentation timestamp in microseconds, when known
+function frameTimestamp(index: number): number | null {
+  const f = frameCache.get(index) ??
+    (decoderMode === 'regular' ? allFramesDecoded[index] : undefined);
+  return f ? f.timestamp : null;
+}
+
+// Playback loop — scheduled by frame timestamps (wall-clock microseconds
+// stamped at encode time) so files whose real capture cadence differed
+// from the header fps play at true speed. Falls back to the header frame
+// rate when timestamps are missing or non-monotonic.
 function playbackLoop(): void {
   if (!isPlaying || (!streamingDecoder && !regularDecoder) || totalFrames === 0) return;
 
   const now = performance.now();
-  const elapsed = now - lastPlaybackTime;
   const header = getHeader()!;
-  const frameInterval = (1000 / (header.frameRateNum / header.frameRateDen)) / playbackSpeed;
+  const headerInterval = 1000 / (header.frameRateNum / header.frameRateDen);
 
-  if (elapsed >= frameInterval) {
-    lastPlaybackTime = now;
-
-    if (currentFrameIndex < totalFrames - 1) {
-      displayFrame(currentFrameIndex + 1);
-    } else {
-      // End of video
-      stopPlayback();
-      return;
+  // Advance at most 2 frames per tick: catches up after short decode
+  // stalls without burst-playing through long ones.
+  for (let advanced = 0; advanced < 2; advanced++) {
+    if (currentFrameIndex >= totalFrames - 1) {
+      if (now >= nextFrameDue) {
+        stopPlayback();
+        return;
+      }
+      break;
     }
+    if (now < nextFrameDue) break;
+
+    const fromTs = frameTimestamp(currentFrameIndex);
+    void displayFrame(currentFrameIndex + 1);
+    const toTs = frameTimestamp(currentFrameIndex);
+
+    let interval = headerInterval / playbackSpeed;
+    if (fromTs !== null && toTs !== null && toTs > fromTs) {
+      const tsInterval = (toTs - fromTs) / 1000 / playbackSpeed;
+      if (tsInterval >= 1 && tsInterval <= 1000) interval = tsInterval;
+    }
+    nextFrameDue += interval;
+    // After a long stall, resume from now instead of burst-catching-up.
+    if (now - nextFrameDue > 250) nextFrameDue = now;
   }
 
   animationFrameId = requestAnimationFrame(playbackLoop);
@@ -663,7 +686,7 @@ function startPlayback(): void {
 
   isPlaying = true;
   playBtn.innerHTML = '&#10074;&#10074; Pause';
-  lastPlaybackTime = performance.now();
+  nextFrameDue = performance.now();
 
   // Start audio if available
   if (audioBuffer && audioContext) {
