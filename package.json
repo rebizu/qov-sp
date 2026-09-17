@@ -9,6 +9,7 @@
     "preview": "npx vite preview",
     "corpus": "python3 qov-analysis-tools/gen_corpus.py || python qov-analysis-tools/gen_corpus.py",
     "conformance": "python3 qov-analysis-tools/conformance.py || python qov-analysis-tools/conformance.py",
+    "review": "esbuild qov-analysis-tools/review_suite.ts --bundle --platform=node --format=cjs --outfile=qov-analysis-tools/review_suite.cjs --log-level=warning && node qov-analysis-tools/review_suite.cjs",
     "selftest": "esbuild qov-analysis-tools/qovs_selftest.ts --bundle --platform=node --format=cjs --outfile=qov-analysis-tools/qovs_selftest.cjs --log-level=warning && node qov-analysis-tools/qovs_selftest.cjs",
     "relay": "node tools/qovs-relay.mjs"
   },

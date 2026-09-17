@@ -600,3 +600,5 @@ qov-analysis-tools/corpus-real/
 qov-analysis-tools/scoreboard-work/
 qov-analysis-tools/smoke_src.mp4
 c/bench.exe
+# review suite bundle is a build artifact
+qov-analysis-tools/review_suite.cjs

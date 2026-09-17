@@ -28,6 +28,21 @@ The runner executes eight steps per corpus case:
 Exit code is non-zero on any failure **not** listed in `expected_failures.json`.
 Verdicts: `ok` / `near` / `xfail` (documented) / `FAIL` / `n/a` / `skip`.
 
+## Review suite
+
+```bash
+npm run review
+```
+
+Randomized differential fuzz plus regression repros for bugs the frozen corpus
+did not cover, with a deterministic seed so failures reproduce. Covers: 160
+codec configurations over odd dimensions (partial DCT blocks, chroma edges,
+partial motion grid) with full-vs-streaming decoder equality, uncompressed
+motion/refresh chunk framing, range-coded `getFileStats`/`inspectChunk`,
+`buildIndex` EOF on unknown-size sources, receiver reset across a restarted
+frame-id space, `dropReference` re-keying, hand-built v1 (16-bit chunk size)
+files, and LZ4 / range-coder roundtrips. Exits non-zero on failure.
+
 ## The golden corpus (`corpus/`)
 
 `cases.json` declares ~20 small cases (≤128×96, ≤6 frames) covering: RGB/sRGBA/linear
@@ -42,7 +57,8 @@ diff like any other test-approval. `gen_corpus.py` encodes every case twice and
 refuses output that isn't deterministic.
 
 Known documented gap: **v1 files (16-bit chunk sizes) are not in the corpus** —
-neither existing encoder can emit them.
+neither existing encoder can emit them. The review suite covers v1 decoding
+with hand-built files instead.
 
 ## Patterns and the shared LCG
 
