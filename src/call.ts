@@ -797,11 +797,28 @@ function main(): void {
       $('p2pGuestSteps').style.display = role === 'guest' ? '' : 'none';
     }
   };
-  const start = () => {
-    if (current === 'host') {
-      const withMic = ($('micCheck') as HTMLInputElement).checked;
-      host.start(withMic).catch((e) => log($('hostLog'), `start error: ${e.message}`));
-    }
+  const start = (opts?: { autoInvite?: boolean }) => {
+    if (current !== 'host') return;
+    const withMic = ($('micCheck') as HTMLInputElement).checked;
+    host.start(withMic).catch((e) => log($('hostLog'), `start error: ${e.message}`));
+    // P2P hosts get their invite link immediately — no second click
+    if (opts?.autoInvite !== false &&
+        ($('carrierSelect') as HTMLSelectElement).value === 'p2p') createInvite();
+  };
+
+  const createInvite = () => {
+    useCarrier('p2p');
+    p2p.createInvite($('relayState'))
+      .then((code) => {
+        const link = shareLink('invite', code);
+        const out = $('p2pInviteOut') as HTMLTextAreaElement;
+        out.value = link;
+        copyBtn('p2pInviteCopy', link);
+        out.focus();
+        out.select();
+        log($('hostLog'), 'p2p: invite link ready — send it to your guest');
+      })
+      .catch((e) => log($('hostLog'), `p2p invite error: ${e.message}`));
   };
   $('btnHost').onclick = () => { join('host'); start(); };
   $('btnGuest').onclick = () => join('guest');
@@ -812,30 +829,20 @@ function main(): void {
   };
 
   // --- P2P signaling (share links, spec v2.2 section 7) ---
-  const copyBtn = (id: string, text: string) => {
+  function copyBtn(id: string, text: string) {
     const b = $(id) as HTMLButtonElement;
     b.style.display = '';
     b.onclick = () => {
       navigator.clipboard.writeText(text).then(() => { b.textContent = 'Copied!'; setTimeout(() => (b.textContent = 'Copy link'), 1500); });
     };
-  };
+  }
   const connectAnswer = (input: string) => {
     const { code } = parseSignalInput(input);
     p2p.acceptAnswer(code)
       .then(() => log($('hostLog'), 'p2p: answer applied — connecting'))
       .catch((e) => log($('hostLog'), `p2p answer error: ${e.message}`));
   };
-  $('p2pHostCreate').onclick = () => {
-    useCarrier('p2p');
-    start();
-    p2p.createInvite($('relayState'))
-      .then((code) => {
-        const link = shareLink('invite', code);
-        ($('p2pInviteOut') as HTMLTextAreaElement).value = link;
-        copyBtn('p2pInviteCopy', link);
-      })
-      .catch((e) => log($('hostLog'), `p2p invite error: ${e.message}`));
-  };
+  $('p2pHostCreate').onclick = () => createInvite();
   $('p2pAcceptAnswer').onclick = () => {
     connectAnswer(($('p2pAnswerIn') as HTMLTextAreaElement).value);
   };
@@ -874,7 +881,7 @@ function main(): void {
       history.replaceState(null, '', location.pathname + location.search);
       join('host');
       useCarrier('p2p');
-      start();
+      start({ autoInvite: false }); // the answer belongs to an earlier offer
       connectAnswer(fromUrlSafe(ma[1]));
     }
   };
