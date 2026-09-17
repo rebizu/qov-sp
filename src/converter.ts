@@ -250,6 +250,21 @@ async function convertToQov(): Promise<void> {
 
   isConverting = true;
 
+  // Anything thrown mid-conversion (encoder error, seek timeout, decode
+  // failure) must release the UI, not leave it stuck in "converting"
+  try {
+    await runConversion();
+  } catch (err) {
+    log(`Conversion failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    progressFill.style.width = '0%';
+    progressText.textContent = 'Conversion failed';
+  } finally {
+    isConverting = false;
+    convertBtn.disabled = false;
+  }
+}
+
+async function runConversion(): Promise<void> {
   // Get all settings
   const keyframeInterval = parseInt(keyframeIntervalSelect.value);
   const targetFpsValue = parseInt(targetFpsSelect.value);
@@ -340,12 +355,19 @@ async function convertToQov(): Promise<void> {
     // Seek to time
     video.currentTime = time;
 
-    // Wait for seek to complete
+    // Wait for seek to complete (bounded: a video that never fires
+    // 'seeked' must not hang the conversion)
     await new Promise<void>((resolve) => {
-      const onSeeked = () => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         video.removeEventListener('seeked', onSeeked);
         resolve();
       };
+      const timer = setTimeout(finish, 10000);
+      const onSeeked = () => finish();
       video.addEventListener('seeked', onSeeked);
     });
 
@@ -394,8 +416,6 @@ async function convertToQov(): Promise<void> {
   log(`Final resolution: ${outputWidth}x${outputHeight}`);
 
   downloadBtn.disabled = false;
-  convertBtn.disabled = false;
-  isConverting = false;
 }
 
 // Download QOV file
