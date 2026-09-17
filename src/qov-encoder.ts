@@ -1010,10 +1010,11 @@ export class QovEncoder {
           let diffSum = 0;
           for (let y = 0; y < 8; y++) {
             const py = y0 + y;
-            if (py >= h) continue;
             for (let x = 0; x < 8; x++) {
               const px = x0 + x;
-              if (px >= w) continue;
+              // padding must be zeroed: blockBuf is shared across blocks, and
+              // stale residuals would leak into partial blocks' coefficients
+              if (px >= w || py >= h) { blockBuf[y * 8 + x] = 0; continue; }
               const res = curr[py * w + px] - pred;
               blockBuf[y * 8 + x] = res;
               diffSum += Math.abs(res);
@@ -1059,10 +1060,11 @@ export class QovEncoder {
 
         for (let y = 0; y < 8; y++) {
           const py = y0 + y;
-          if (py >= h) continue;
           for (let x = 0; x < 8; x++) {
             const px = x0 + x;
-            if (px >= w) continue;
+            // zero padding like the band path: shared blockBuf must not leak
+            // stale residuals into partial blocks' coefficients
+            if (px >= w || py >= h) { blockBuf[y * 8 + x] = 0; continue; }
 
             const idx = py * w + px;
             const res = curr[idx] - prev[idx];
