@@ -3792,6 +3792,162 @@
      "note": "uncompressed DCT P-frames with motion + refresh band: band byte and MV must count into chunkSize"
     }
    }
+  },
+  "odd_dims_yuv420_lossless": {
+   "file_sha256": "5eacf3ce2a1fdd7c86be1aa4260cc10a7fc84f1780c9be84f287fa7bf8e4fb7f",
+   "file_size": 9997,
+   "header": {
+    "version": 2,
+    "colorspace": 16,
+    "flags": 4,
+    "width": 65,
+    "height": 47,
+    "totalFrames": 5,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 10,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 2,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 5,
+    "keyframes": 3,
+    "pframes": 2,
+    "motion_chunks": 0,
+    "dct_chunks": 0,
+    "compressed_chunks": 5,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 5,
+    "frame_sha256": [
+     "cf36aa3c71065e0d990171d12481ef61ff9aaf272acec3909143598507a0a795",
+     "b84a32f9a22104e512e16e08e76ea144df9d7ab6386a0d4f2290f2764fddd0d1",
+     "dd96f1df4dfdd9ad086bdaa2465806e4e709e5a93960caf4e02db5c009a8e4cf",
+     "ca8e32ecd31885c9920b6129550ad5dc851e733e85df99d0803eac46a4ba1aa8",
+     "d21197bd531245e29b4c115a43faafa7aa8c996836c4b28ce00a088d8792031b"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 5,
+    "frame_sha256": [
+     "cf36aa3c71065e0d990171d12481ef61ff9aaf272acec3909143598507a0a795",
+     "b84a32f9a22104e512e16e08e76ea144df9d7ab6386a0d4f2290f2764fddd0d1",
+     "dd96f1df4dfdd9ad086bdaa2465806e4e709e5a93960caf4e02db5c009a8e4cf",
+     "ca8e32ecd31885c9920b6129550ad5dc851e733e85df99d0803eac46a4ba1aa8",
+     "d21197bd531245e29b4c115a43faafa7aa8c996836c4b28ce00a088d8792031b"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "odd_dims_yuv420_lossless",
+     "width": 65,
+     "height": 47,
+     "frames": 5,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "index"
+     ],
+     "pattern": "gradient",
+     "note": "odd dimensions: partial 8x8 DCT/keyframe blocks and ceil() chroma edges"
+    }
+   }
+  },
+  "odd_dims_yuv420_lossy_dct": {
+   "file_sha256": "299787904734b79d7489acab27e712a9ad53d7cc0dc2d39cd97c2366c08fa52b",
+   "file_size": 2812,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 246,
+    "width": 65,
+    "height": 47,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 3,
+    "dct_chunks": 6,
+    "compressed_chunks": 6,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "9efc768dd942c98e79b562aa23f238e7fab12afc7605a4552dfc8b9ad2048527",
+     "d88d44cf958c12ae0d71fa0cbdff3a1ab5ab0d6cccf6ad24b4e590c4a73960bb",
+     "c0eaa59e9a86c5dfec4393831fc9ccf65491f40e042072364b54de15da81a3de",
+     "4bb89f97612545f6f8e5960e201498de56dd1cffb7ddc02d3b25f78f383db71c",
+     "da2fbad59782edd63096b47cbc0283409bac9fdf76ee11f087ca4abd57b1dd3f",
+     "91da491a604bb590f2dc61632c1046bb9a0c6531f739b19f3811088575f00936"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "9efc768dd942c98e79b562aa23f238e7fab12afc7605a4552dfc8b9ad2048527",
+     "d88d44cf958c12ae0d71fa0cbdff3a1ab5ab0d6cccf6ad24b4e590c4a73960bb",
+     "c0eaa59e9a86c5dfec4393831fc9ccf65491f40e042072364b54de15da81a3de",
+     "4bb89f97612545f6f8e5960e201498de56dd1cffb7ddc02d3b25f78f383db71c",
+     "da2fbad59782edd63096b47cbc0283409bac9fdf76ee11f087ca4abd57b1dd3f",
+     "91da491a604bb590f2dc61632c1046bb9a0c6531f739b19f3811088575f00936"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "odd_dims_yuv420_lossy_dct",
+     "width": 65,
+     "height": 47,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "index",
+      "motion",
+      "ikf",
+      "refresh"
+     ],
+     "quality": 50,
+     "pattern": "scroll16",
+     "note": "odd dimensions under lossy DCT: partial blocks, partial motion grid rows, refresh band spanning edge rows"
+    }
+   }
   }
  }
 }

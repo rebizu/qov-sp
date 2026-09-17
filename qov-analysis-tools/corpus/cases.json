@@ -714,6 +714,36 @@
    "compression": false,
    "pattern": "scroll16",
    "note": "uncompressed DCT P-frames with motion + refresh band: band byte and MV must count into chunkSize"
+  },
+  {
+   "id": "odd_dims_yuv420_lossless",
+   "width": 65,
+   "height": 47,
+   "frames": 5,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index"
+   ],
+   "pattern": "gradient",
+   "note": "odd dimensions: partial 8x8 DCT/keyframe blocks and ceil() chroma edges"
+  },
+  {
+   "id": "odd_dims_yuv420_lossy_dct",
+   "width": 65,
+   "height": 47,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index",
+    "motion",
+    "ikf",
+    "refresh"
+   ],
+   "quality": 50,
+   "pattern": "scroll16",
+   "note": "odd dimensions under lossy DCT: partial blocks, partial motion grid rows, refresh band spanning edge rows"
   }
  ]
 }
