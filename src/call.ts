@@ -813,7 +813,7 @@ function main(): void {
         const link = shareLink('invite', code);
         const out = $('p2pInviteOut') as HTMLTextAreaElement;
         out.value = link;
-        out.style.borderColor = '#2f6feb';
+        out.style.borderColor = '#ef4444'; out.style.borderWidth = '2px';
         copyBtn('p2pInviteCopy', link);
         badge($('relayState'), 'waiting', 'p2p: invite ready — copy the link below');
         out.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -855,7 +855,9 @@ function main(): void {
     p2p.acceptInvite(code, $('relayState'))
       .then((answer) => {
         const link = shareLink('answer', answer);
-        ($('p2pAnswerOut') as HTMLTextAreaElement).value = link;
+        const aout = $('p2pAnswerOut') as HTMLTextAreaElement;
+        aout.value = link;
+        aout.style.borderColor = '#ef4444'; aout.style.borderWidth = '2px';
         copyBtn('p2pAnswerCopy', link);
         log($('guestLog'), 'p2p: send the answer link back to the host');
       })
@@ -875,7 +877,9 @@ function main(): void {
       p2p.acceptInvite(fromUrlSafe(mi[1]), $('relayState'))
         .then((answer) => {
           const link = shareLink('answer', answer);
-          ($('p2pAnswerOut') as HTMLTextAreaElement).value = link;
+          const aout = $('p2pAnswerOut') as HTMLTextAreaElement;
+          aout.value = link;
+          aout.style.borderColor = '#ef4444'; aout.style.borderWidth = '2px';
           copyBtn('p2pAnswerCopy', link);
           log($('guestLog'), 'p2p: invite applied — send the answer link back to the host');
         })
