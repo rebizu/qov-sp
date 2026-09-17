@@ -3551,6 +3551,247 @@
      "note": "v3.9 structured grammar: 1024-block all-skip planes exercise the 255-continue chain"
     }
    }
+  },
+  "motion_yuv420_lossless_nolz4": {
+   "file_sha256": "94b8b94448e875b4242b2916071417daa3908df47883cbfa83846acbd56d93b5",
+   "file_size": 60600,
+   "header": {
+    "version": 2,
+    "colorspace": 16,
+    "flags": 6,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 3,
+    "dct_chunks": 0,
+    "compressed_chunks": 0,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "38e6ae17131cb1db3b0d6ec1938c8aaf92a8074232c7ab929fc2f620abbf96b8",
+     "de6b12be2b1eaeaa2e47d5470d31d182653d1a81add5652df75627af197ab725",
+     "7655936666fc8878cc5410dc6b61af43337e273e69d392e8679a735613b912f6",
+     "571f50943f794fb571d7eac55baeeda0fedfc4a359f311205d00bdb3cab88f77",
+     "443ebeaa8f18215fa89b765ad9e8193c41e9efd19b4afcb572cc52ecaa91a256",
+     "e97fc8e141667c29b08bd60d3b5bd5dc7b5ebf38bc1471b7a7845bfc3367153d"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "38e6ae17131cb1db3b0d6ec1938c8aaf92a8074232c7ab929fc2f620abbf96b8",
+     "de6b12be2b1eaeaa2e47d5470d31d182653d1a81add5652df75627af197ab725",
+     "7655936666fc8878cc5410dc6b61af43337e273e69d392e8679a735613b912f6",
+     "571f50943f794fb571d7eac55baeeda0fedfc4a359f311205d00bdb3cab88f77",
+     "443ebeaa8f18215fa89b765ad9e8193c41e9efd19b4afcb572cc52ecaa91a256",
+     "e97fc8e141667c29b08bd60d3b5bd5dc7b5ebf38bc1471b7a7845bfc3367153d"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "motion_yuv420_lossless_nolz4",
+     "width": 128,
+     "height": 96,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "index",
+      "motion"
+     ],
+     "compression": false,
+     "pattern": "scroll16",
+     "note": "uncompressed DPCM P-frames with motion vectors: MV block must count into chunkSize"
+    }
+   }
+  },
+  "motion_yuv420_lossy_dct_nolz4": {
+   "file_sha256": "7ccd514fd201ed1ccc4dbe91f7d586edae17122905a6583fd80684bb0b7b3e42",
+   "file_size": 16941,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 230,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 3,
+    "dct_chunks": 6,
+    "compressed_chunks": 0,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
+     "9ac5d88399fd0af017f1f4a93d295650c8311177c229ec114a53b5399344f106",
+     "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
+     "bbe1ffe0f2b0a1edc52880dabd5dbc7faa605352ef1676c6d8114955866bb987",
+     "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
+     "7cbbc531e3f198d8d7da9dc90474cfa188ba9897087450c807d07902ace9f718"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "5405cabfc0089dac3122ec64fed6a9de65cd2ec389c678d64325ec10e2f3a2d3",
+     "9ac5d88399fd0af017f1f4a93d295650c8311177c229ec114a53b5399344f106",
+     "8aa8253036c963fa8207a212b4d82dd7c8680cef4c612343aafaa0c61ac5b781",
+     "bbe1ffe0f2b0a1edc52880dabd5dbc7faa605352ef1676c6d8114955866bb987",
+     "54dc951cdd4dda5e15dc71de0d2a41504b760f786805549157f59b3f0c056e7e",
+     "7cbbc531e3f198d8d7da9dc90474cfa188ba9897087450c807d07902ace9f718"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "motion_yuv420_lossy_dct_nolz4",
+     "width": 128,
+     "height": 96,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "index",
+      "motion",
+      "ikf"
+     ],
+     "quality": 50,
+     "compression": false,
+     "pattern": "scroll16",
+     "note": "uncompressed DCT P-frames with motion vectors: MV block must count into chunkSize"
+    }
+   }
+  },
+  "refresh_motion_yuv420_lossy_nolz4": {
+   "file_sha256": "ac0e5fa7cb5b0b2adcbdd3044bd4cffef48ee763a8388ccfeaedccaba2da59a4",
+   "file_size": 49228,
+   "header": {
+    "version": 3,
+    "colorspace": 16,
+    "flags": 118,
+    "width": 128,
+    "height": 96,
+    "totalFrames": 6,
+    "audioChannels": 0
+   },
+   "structure": {
+    "chunk_count": 11,
+    "type_counts": {
+     "SYNC": 3,
+     "KEYFRAME": 3,
+     "PFRAME": 3,
+     "INDEX": 1,
+     "END": 1
+    },
+    "frames": 6,
+    "keyframes": 3,
+    "pframes": 3,
+    "motion_chunks": 3,
+    "dct_chunks": 3,
+    "compressed_chunks": 0,
+    "audio_chunks": 0,
+    "has_end": true,
+    "timestamp_regressions": 0,
+    "valid": true
+   },
+   "structure_issues": [],
+   "decode_full": {
+    "frames": 6,
+    "frame_sha256": [
+     "f7d0f52d8a4b2468249f80c5525bbd84846a03aac2ae3bfcc2a7cb225353de38",
+     "ab0e2f04d57a26f1330f85eda28eb24dcc85999e2d1028e2900f60b901813c86",
+     "9e212cd6675f50ef73591930ad56ec3165c85c8c84659f63afebf5a9f2ab1b80",
+     "06c68a141177f8decaa07540a482aebd613a9a6d7331d0ea9944131f40bd1ea0",
+     "1d1b871d74c9577dd2b6b11f1d35148fa6ba8a1a4d2fc19801c3bbe862b9af58",
+     "0002d5a0bd8bf9670c541f7095ac0cea907d6e8ba17f899d31fb7ef98d0ba8ab"
+    ],
+    "audio_frames": 0,
+    "audio_pcm_sha256": null,
+    "audio_samples": 0
+   },
+   "decode_streaming": {
+    "supported": true,
+    "frames": 6,
+    "frame_sha256": [
+     "f7d0f52d8a4b2468249f80c5525bbd84846a03aac2ae3bfcc2a7cb225353de38",
+     "ab0e2f04d57a26f1330f85eda28eb24dcc85999e2d1028e2900f60b901813c86",
+     "9e212cd6675f50ef73591930ad56ec3165c85c8c84659f63afebf5a9f2ab1b80",
+     "06c68a141177f8decaa07540a482aebd613a9a6d7331d0ea9944131f40bd1ea0",
+     "1d1b871d74c9577dd2b6b11f1d35148fa6ba8a1a4d2fc19801c3bbe862b9af58",
+     "0002d5a0bd8bf9670c541f7095ac0cea907d6e8ba17f899d31fb7ef98d0ba8ab"
+    ]
+   },
+   "expect": {},
+   "generator": {
+    "implementation": "ts",
+    "case": {
+     "id": "refresh_motion_yuv420_lossy_nolz4",
+     "width": 128,
+     "height": 96,
+     "frames": 6,
+     "fps": 30,
+     "colorspace": "yuv420",
+     "flags": [
+      "index",
+      "motion",
+      "refresh"
+     ],
+     "quality": 50,
+     "compression": false,
+     "pattern": "scroll16",
+     "note": "uncompressed DCT P-frames with motion + refresh band: band byte and MV must count into chunkSize"
+    }
+   }
   }
  }
 }

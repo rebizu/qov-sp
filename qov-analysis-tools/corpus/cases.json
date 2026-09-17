@@ -665,6 +665,55 @@
    "pattern": "gradient",
    "structured": true,
    "note": "v3.9 structured grammar: 1024-block all-skip planes exercise the 255-continue chain"
+  },
+  {
+   "id": "motion_yuv420_lossless_nolz4",
+   "width": 128,
+   "height": 96,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index",
+    "motion"
+   ],
+   "compression": false,
+   "pattern": "scroll16",
+   "note": "uncompressed DPCM P-frames with motion vectors: MV block must count into chunkSize"
+  },
+  {
+   "id": "motion_yuv420_lossy_dct_nolz4",
+   "width": 128,
+   "height": 96,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index",
+    "motion",
+    "ikf"
+   ],
+   "quality": 50,
+   "compression": false,
+   "pattern": "scroll16",
+   "note": "uncompressed DCT P-frames with motion vectors: MV block must count into chunkSize"
+  },
+  {
+   "id": "refresh_motion_yuv420_lossy_nolz4",
+   "width": 128,
+   "height": 96,
+   "frames": 6,
+   "fps": 30,
+   "colorspace": "yuv420",
+   "flags": [
+    "index",
+    "motion",
+    "refresh"
+   ],
+   "quality": 50,
+   "compression": false,
+   "pattern": "scroll16",
+   "note": "uncompressed DCT P-frames with motion + refresh band: band byte and MV must count into chunkSize"
   }
  ]
 }

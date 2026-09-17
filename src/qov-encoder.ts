@@ -1205,9 +1205,12 @@ export class QovEncoder {
         this.writeU8(QOV_CHUNK_FLAG_YUV | QOV_CHUNK_FLAG_DCT_BLOCKS | motionFlag | refreshFlag | (this.expGolomb ? QOV_CHUNK_FLAG_EXP_GOLOB : 0) | (this.structuredPFrames ? QOV_CHUNK_FLAG_STRUCTURED : 0));
         this.writeU32(0);   // size placeholder
         this.writeU32(timestamp);
+
+        // band + MV count toward chunkSize (decoders walk the payload by
+        // chunkSize, and the compressed path embeds them in the payload too)
+        chunkDataStart = this.buffer.getSize();
         if (refresh) this.writeU8(band);
         if (mv) writeMvBlock(mv, (v) => this.writeU8(v), (v) => this.writeU16(v));
-        chunkDataStart = this.buffer.getSize();
       }
 
       // DCT Encoding
@@ -1281,9 +1284,10 @@ export class QovEncoder {
       this.writeU8(QOV_CHUNK_FLAG_YUV | motionFlag);
       this.writeU32(0);   // size placeholder
       this.writeU32(timestamp);
-      if (mv) writeMvBlock(mv, (v) => this.writeU8(v), (v) => this.writeU16(v));
 
+      // the MV block counts toward chunkSize (see the DCT path above)
       const dataStart = this.buffer.getSize();
+      if (mv) writeMvBlock(mv, (v) => this.writeU8(v), (v) => this.writeU16(v));
       this.encodeYuvPlanePFrame(planes.yPlane, refY, temporalThresh);
       this.encodeYuvPlanePFrame(planes.uPlane, refU, temporalThresh);
       this.encodeYuvPlanePFrame(planes.vPlane, refV, temporalThresh);
