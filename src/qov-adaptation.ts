@@ -3,7 +3,7 @@
 // sender-side adaptation ladder binding receiver reports to setQuality /
 // dropReference (spec v3.6 section 4.1). TypeScript mirror of
 // csharp_qov/QovLibrary/QovAdaptation.cs.
-import { QOV_CHUNK_FLAG_COMPRESSED, QOV_CHUNK_FLAG_REFRESH_BAND, QOV_CHUNK_KEYFRAME } from './qov-types';
+import { QOV_CHUNK_FLAG_REFRESH_BAND, QOV_CHUNK_KEYFRAME, chunkHasSizePrefix } from './qov-types';
 
 // QOV_INTRA_REFRESH_BANDS (spec v3.6 section 3.4.4): the rolling band
 // repaints the whole frame every 12 P-frames.
@@ -16,8 +16,7 @@ export function inspectChunk(chunk: Uint8Array, use32BitChunkSize = true): {
   const type = chunk[0];
   const flags = chunk[1];
   const headerSize = use32BitChunkSize ? 10 : 8;
-  const compressed = (flags & QOV_CHUNK_FLAG_COMPRESSED) !== 0;
-  const bandOffset = headerSize + (compressed ? 4 : 0);
+  const bandOffset = headerSize + (chunkHasSizePrefix(flags) ? 4 : 0);
   const hasBand = (flags & QOV_CHUNK_FLAG_REFRESH_BAND) !== 0 && chunk.length > bandOffset;
   return {
     isKeyframe: type === QOV_CHUNK_KEYFRAME,

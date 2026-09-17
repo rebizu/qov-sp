@@ -70,6 +70,12 @@ export const QOV_CHUNK_FLAG_EXP_GOLOB = 0x40;   // bit 6: Exp-Golomb coefficient
 export const QOV_CHUNK_FLAG_REFRESH_BAND = 0x80; // bit 7: P-frame payload starts with a refresh band byte
 export const QOV_CHUNK_FLAG_RANGE = 0x08;        // v3.8: DCT payload is range-coder compressed (replaces 0x10)
 
+// LZ4 and range-coded chunks both carry a 4-byte uncompressed-size prefix
+// between the chunk header and the payload.
+export function chunkHasSizePrefix(flags: number): boolean {
+  return (flags & (QOV_CHUNK_FLAG_COMPRESSED | QOV_CHUNK_FLAG_RANGE)) !== 0;
+}
+
 // AUDIO chunk flags (spec §5.3): flags != 0 selects an alternate codec;
 // decoders skip chunks whose codec they do not implement.
 export const QOV_CHUNK_AUDIO_FLAG_OPUS = 0x01;  // payload is one Opus packet (48 kHz)

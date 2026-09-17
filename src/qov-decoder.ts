@@ -35,6 +35,7 @@ import {
   QOV_INTRA_REFRESH_BANDS,
   QOV_MAX_DIMENSION,
   QOV_MAX_PIXELS,
+  chunkHasSizePrefix,
   getChunkTypeName,
   chromaPlaneDims,
 } from './qov-types';
@@ -264,7 +265,7 @@ export class QovDecoder {
 
     // If compressed, read the uncompressed size (it's stored at start of chunk data)
     let uncompressedSize: number | undefined;
-    if (chunkFlags & (QOV_CHUNK_FLAG_COMPRESSED | QOV_CHUNK_FLAG_RANGE)) {
+    if (chunkHasSizePrefix(chunkFlags)) {
       uncompressedSize = this.readU32();
     }
 
@@ -1404,6 +1405,7 @@ export class QovDecoder {
       }
 
       const isCompressed = (chunkHeader.chunkFlags & QOV_CHUNK_FLAG_COMPRESSED) !== 0;
+      const hasSizePrefix = chunkHasSizePrefix(chunkHeader.chunkFlags);
       const chunkInfo: QovChunkInfo = {
         type: chunkHeader.chunkType,
         typeName: getChunkTypeName(chunkHeader.chunkType),
@@ -1412,7 +1414,7 @@ export class QovDecoder {
         timestamp: chunkHeader.timestamp,
         isKeyframe: chunkHeader.chunkType === QOV_CHUNK_KEYFRAME,
         isCompressed,
-        uncompressedSize: isCompressed ? chunkHeader.uncompressedSize : undefined,
+        uncompressedSize: hasSizePrefix ? chunkHeader.uncompressedSize : undefined,
       };
       chunks.push(chunkInfo);
 
@@ -1445,10 +1447,11 @@ export class QovDecoder {
       } else if (chunkHeader.chunkType === QOV_CHUNK_END) {
         break;
       } else {
-        // For compressed chunks the 4-byte uncompressedSize field was already
-        // consumed by readChunkHeader and counts inside chunkSize, so skipping
-        // chunkSize alone would overshoot the stream
-        this.pos += isCompressed ? chunkHeader.chunkSize - 4 : chunkHeader.chunkSize;
+        // For size-prefixed chunks (LZ4 or range-coded) the 4-byte
+        // uncompressedSize field was already consumed by readChunkHeader and
+        // counts inside chunkSize, so skipping chunkSize alone would
+        // overshoot the stream
+        this.pos += hasSizePrefix ? chunkHeader.chunkSize - 4 : chunkHeader.chunkSize;
       }
     }
 
