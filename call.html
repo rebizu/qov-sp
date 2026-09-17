@@ -113,24 +113,26 @@
       <div id="p2pHostSteps" style="display:none">
         <h2>Peer-to-peer — Host side</h2>
         <div class="step">
-          <button id="p2pHostCreate">1. Create invite</button>
-          <span class="hint">Send the code below to your partner (chat, e-mail, …).</span>
-          <textarea id="p2pInviteOut" readonly placeholder="your invite code appears here"></textarea>
+          <button id="p2pHostCreate">1. Create invite link</button>
+          <span class="hint">Send this link to your guest (chat, e-mail, …) — opening it is all they need to do.</span>
+          <textarea id="p2pInviteOut" readonly placeholder="your invite link appears here"></textarea>
+          <button id="p2pInviteCopy" style="display:none">Copy link</button>
         </div>
         <div class="step">
-          <span class="hint">2. Paste the answer code they send back:</span>
-          <textarea id="p2pAnswerIn" placeholder="paste answer code"></textarea>
+          <span class="hint">2. Paste the answer link (or code) they send back — or just click such a link:</span>
+          <textarea id="p2pAnswerIn" placeholder="paste the guest's answer link"></textarea>
           <button id="p2pAcceptAnswer">3. Connect</button>
         </div>
       </div>
       <div id="p2pGuestSteps" style="display:none">
         <h2>Peer-to-peer — Guest side</h2>
         <div class="step">
-          <span class="hint">1. Paste the invite code from the host:</span>
-          <textarea id="p2pInviteIn" placeholder="paste invite code"></textarea>
-          <button id="p2pGuestCreate">2. Create answer</button>
-          <span class="hint">Send the code below back to the host.</span>
-          <textarea id="p2pAnswerOut" readonly placeholder="your answer code appears here"></textarea>
+          <span class="hint">Paste the host's invite link (or code) — then create the answer:</span>
+          <textarea id="p2pInviteIn" placeholder="paste the host's invite link"></textarea>
+          <button id="p2pGuestCreate">2. Create answer link</button>
+          <span class="hint">Send this link back to the host.</span>
+          <textarea id="p2pAnswerOut" readonly placeholder="your answer link appears here"></textarea>
+          <button id="p2pAnswerCopy" style="display:none">Copy link</button>
         </div>
       </div>
     </div>

@@ -88,9 +88,32 @@ function encodeSignal(d: RTCSessionDescription): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(json)));
 }
 
+// to-base64 with URL-safe alphabet so codes survive inside links
+function toUrlSafe(b64: string): string {
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function fromUrlSafe(s: string): string {
+  const b = s.replace(/-/g, '+').replace(/_/g, '/');
+  return b + '='.repeat((4 - (b.length % 4)) % 4);
+}
+
+function shareLink(kind: 'invite' | 'answer', code: string): string {
+  return `${location.origin}${location.pathname}#${kind}=${toUrlSafe(code)}`;
+}
+
+// accepts a raw code or a full share link, in either field
+function parseSignalInput(value: string): { kind: 'invite' | 'answer' | null; code: string } {
+  const m = /#(?:invite|answer)=([A-Za-z0-9_-]+)/.exec(value.trim());
+  if (m) {
+    const isAnswer = value.includes('#answer=');
+    return { kind: isAnswer ? 'answer' : 'invite', code: fromUrlSafe(m[1]) };
+  }
+  return { kind: null, code: value.trim() };
+}
+
 function decodeSignal(code: string): RTCSessionDescriptionInit {
   const json = new TextDecoder().decode(
-    Uint8Array.from(atob(code.trim()), (c) => c.charCodeAt(0)));
+    Uint8Array.from(atob(code), (c) => c.charCodeAt(0)));
   const j = JSON.parse(json) as { t: RTCSdpType; s: string };
   return { type: j.t, sdp: j.s };
 }
@@ -788,25 +811,75 @@ function main(): void {
     start();
   };
 
-  // --- P2P signaling (copy-paste, spec v2.2 section 7) ---
+  // --- P2P signaling (share links, spec v2.2 section 7) ---
+  const copyBtn = (id: string, text: string) => {
+    const b = $(id) as HTMLButtonElement;
+    b.style.display = '';
+    b.onclick = () => {
+      navigator.clipboard.writeText(text).then(() => { b.textContent = 'Copied!'; setTimeout(() => (b.textContent = 'Copy link'), 1500); });
+    };
+  };
+  const connectAnswer = (input: string) => {
+    const { code } = parseSignalInput(input);
+    p2p.acceptAnswer(code)
+      .then(() => log($('hostLog'), 'p2p: answer applied — connecting'))
+      .catch((e) => log($('hostLog'), `p2p answer error: ${e.message}`));
+  };
   $('p2pHostCreate').onclick = () => {
     useCarrier('p2p');
     start();
     p2p.createInvite($('relayState'))
-      .then((code) => { ($('p2pInviteOut') as HTMLTextAreaElement).value = code; })
+      .then((code) => {
+        const link = shareLink('invite', code);
+        ($('p2pInviteOut') as HTMLTextAreaElement).value = link;
+        copyBtn('p2pInviteCopy', link);
+      })
       .catch((e) => log($('hostLog'), `p2p invite error: ${e.message}`));
   };
   $('p2pAcceptAnswer').onclick = () => {
-    const code = ($('p2pAnswerIn') as HTMLTextAreaElement).value;
-    p2p.acceptAnswer(code).catch((e) => log($('hostLog'), `p2p answer error: ${e.message}`));
+    connectAnswer(($('p2pAnswerIn') as HTMLTextAreaElement).value);
   };
   $('p2pGuestCreate').onclick = () => {
     useCarrier('p2p');
-    const code = ($('p2pInviteIn') as HTMLTextAreaElement).value;
+    const { code } = parseSignalInput(($('p2pInviteIn') as HTMLTextAreaElement).value);
     p2p.acceptInvite(code, $('relayState'))
-      .then((answer) => { ($('p2pAnswerOut') as HTMLTextAreaElement).value = answer; })
+      .then((answer) => {
+        const link = shareLink('answer', answer);
+        ($('p2pAnswerOut') as HTMLTextAreaElement).value = link;
+        copyBtn('p2pAnswerCopy', link);
+        log($('guestLog'), 'p2p: send the answer link back to the host');
+      })
       .catch((e) => log($('guestLog'), `p2p answer error: ${e.message}`));
   };
+
+  // Opening an invite link auto-joins as guest and answers it; an answer
+  // link opened by the host itself auto-connects (same-tab only).
+  const applyHash = () => {
+    const h = location.hash;
+    const mi = /#invite=([A-Za-z0-9_-]+)/.exec(h);
+    const ma = /#answer=([A-Za-z0-9_-]+)/.exec(h);
+    if (mi) {
+      history.replaceState(null, '', location.pathname + location.search);
+      join('guest');
+      useCarrier('p2p');
+      p2p.acceptInvite(fromUrlSafe(mi[1]), $('relayState'))
+        .then((answer) => {
+          const link = shareLink('answer', answer);
+          ($('p2pAnswerOut') as HTMLTextAreaElement).value = link;
+          copyBtn('p2pAnswerCopy', link);
+          log($('guestLog'), 'p2p: invite applied — send the answer link back to the host');
+        })
+        .catch((e) => log($('guestLog'), `p2p answer error: ${e.message}`));
+    } else if (ma) {
+      history.replaceState(null, '', location.pathname + location.search);
+      join('host');
+      useCarrier('p2p');
+      start();
+      connectAnswer(fromUrlSafe(ma[1]));
+    }
+  };
+  if (location.hash.includes('invite=') || location.hash.includes('answer=')) applyHash();
+  window.addEventListener('hashchange', applyHash);
 
   // ?carrier=relay preselects the local relay carrier (p2p is the default)
   if (new URLSearchParams(location.search).get('carrier') === 'relay') {
