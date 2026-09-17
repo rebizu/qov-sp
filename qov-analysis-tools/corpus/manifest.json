@@ -2,10 +2,10 @@
  "comment": "Frozen golden corpus. Regenerate with gen_corpus.py --force (approval test).",
  "cases": {
   "rgb_lossless_lz4": {
-   "file_sha256": "0e415d833f9ca5d7e1de46d6319eb802da75e6559eaed329744bfa54b9822658",
-   "file_size": 947,
+   "file_sha256": "999b0a5cbb250228d3d51cd07e5f59a6330d962a3050a0b937b1825637f7f081",
+   "file_size": 955,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 0,
     "flags": 4,
     "width": 128,
@@ -73,10 +73,10 @@
    }
   },
   "rgb_lossless_nolz4": {
-   "file_sha256": "8d7a28af8450ac5135d6a85782473f100c31cf332c3594b2deee626145f17a11",
-   "file_size": 103232,
+   "file_sha256": "db4a0c2a5ff3dd1c8c297e48fbcd81f3db2f574ab4aa743e24f24d917cc98df4",
+   "file_size": 103240,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 0,
     "flags": 4,
     "width": 128,
@@ -145,10 +145,10 @@
    }
   },
   "srgba_lossless": {
-   "file_sha256": "81a67cd5838e3919e342444d2d30f27fa977c6e6a6e00d3859d77e9f53a2a063",
-   "file_size": 307444,
+   "file_sha256": "fe3e3bc4abe99dd0021e60473d9f4da4a5b45ba77719d5bb9e920f0ef23c4b33",
+   "file_size": 307452,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 1,
     "flags": 5,
     "width": 128,
@@ -220,10 +220,10 @@
    }
   },
   "linear_lossless": {
-   "file_sha256": "ba60f9113f52e9c38d8af0860979c34c6220c919679e045996df5ea285422a35",
-   "file_size": 2248,
+   "file_sha256": "9a150fb92626f224378dc0f28a03759d85811a47ed9e4e5846ab21f823910f7e",
+   "file_size": 2256,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 2,
     "flags": 4,
     "width": 128,
@@ -291,10 +291,10 @@
    }
   },
   "yuv420_lossless": {
-   "file_sha256": "19a4e83595486396a3bf862093bd312e625a9a920c358864b97c0536410790a5",
-   "file_size": 25604,
+   "file_sha256": "144638d485ea24cfa7eb817f7d3d7fd455213280051662645a9c486e507c9963",
+   "file_size": 25612,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 16,
     "flags": 4,
     "width": 128,
@@ -362,10 +362,10 @@
    }
   },
   "yuv422_lossless": {
-   "file_sha256": "a8b1da9e97f1be05b9cce08c69affdadc6cc5f27e5b8505026227315cf62621a",
-   "file_size": 32054,
+   "file_sha256": "3eb9d5b477b48ce245dd8f9b829baee57b24e156264bda5cd582d5ddd2984f00",
+   "file_size": 32062,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 17,
     "flags": 4,
     "width": 128,
@@ -433,10 +433,10 @@
    }
   },
   "yuv444_lossless": {
-   "file_sha256": "2f7217bfad0460400427f2cb3351b51bfc8c0e8ba01f703a08fa3a2ec3de096d",
-   "file_size": 33863,
+   "file_sha256": "071c23725412a0ec2e5406cd4c6b2a82190773a124f1691c5fbf6949ea8d84b2",
+   "file_size": 33871,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 18,
     "flags": 4,
     "width": 128,
@@ -504,10 +504,10 @@
    }
   },
   "yuva420_lossless": {
-   "file_sha256": "1cc2a12ab02edd6828554a0654d84c42a572e9d9f361b9ac2e90950c2492a2d8",
-   "file_size": 25897,
+   "file_sha256": "d779b4c2b5a0ef925b4171d584729b370a208a3594512056e1543e4facdfc1a6",
+   "file_size": 25905,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 19,
     "flags": 5,
     "width": 128,
@@ -1093,10 +1093,10 @@
    }
   },
   "motion_yuv420_lossless": {
-   "file_sha256": "3d30965f53494c1615a647d7364aeda6419bcf6886c94275df0e5ffc62e8c043",
-   "file_size": 59133,
+   "file_sha256": "b31f6e29ecd71e015ca8963c15ae01ee1b4627c2d479fce946d9c3ad354e6f60",
+   "file_size": 59141,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 16,
     "flags": 6,
     "width": 128,
@@ -1170,10 +1170,10 @@
    }
   },
   "motion_rgb_lossless": {
-   "file_sha256": "1791ace9fa7796be0a0e4f8b1933b7ea45fd79c786c65ef7eb1dd113fc61e3f3",
-   "file_size": 143771,
+   "file_sha256": "4b7d04a7aba318f739b8609a2a2633d4bc2f9a2802e9b1db8ff53e5550a279ac",
+   "file_size": 143779,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 0,
     "flags": 6,
     "width": 128,
@@ -1406,10 +1406,10 @@
    }
   },
   "motion_static_420": {
-   "file_sha256": "e38f30530f206d6cd999ac342921e8b9619f3cc622cec6ec2f58dec53ec1eb36",
-   "file_size": 18725,
+   "file_sha256": "8cfb55c79ab93e506f1fa7a487d083b1439e9078097b1a4be33e5eac696b2661",
+   "file_size": 18733,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 16,
     "flags": 6,
     "width": 128,
@@ -1484,10 +1484,10 @@
    }
   },
   "index_reuse_yuv420_lossless": {
-   "file_sha256": "8b4f827b407f0772043ff86b84664cdd252b022941fa375758b78ebdc2444efe",
-   "file_size": 31211,
+   "file_sha256": "3a4ad87980dce4218a373f0b988234003b2be00cf973cb6dc5355c2a5367b5c9",
+   "file_size": 31219,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 16,
     "flags": 4,
     "width": 64,
@@ -1558,10 +1558,10 @@
    }
   },
   "index_reuse_rgb_lossless": {
-   "file_sha256": "ba2382b4cf7bce7e14ec54390ee2f4e98aca991ba077bbf59bbafb5e3cf6d47e",
-   "file_size": 61724,
+   "file_sha256": "2b90164651635bc20d0542ef19994fde2fa7e3e1186e1059193a028decca0fd5",
+   "file_size": 61732,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 0,
     "flags": 4,
     "width": 64,
@@ -1632,10 +1632,10 @@
    }
   },
   "audio_srgb_lossless": {
-   "file_sha256": "49c291052af3513e5ac36339012cf3803b3c15540d7643ea014f6168d7bfa050",
-   "file_size": 1385,
+   "file_sha256": "80d3adde21a86ab147c336175c1f5743c80af409f75f9661dcdd51fb17b931b2",
+   "file_size": 1393,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 0,
     "flags": 4,
     "width": 128,
@@ -3553,10 +3553,10 @@
    }
   },
   "motion_yuv420_lossless_nolz4": {
-   "file_sha256": "94b8b94448e875b4242b2916071417daa3908df47883cbfa83846acbd56d93b5",
-   "file_size": 60600,
+   "file_sha256": "bf7e3e154fd9538de79ed7a7295ad43adf9915642ff63bf6e7258c167fd53bcf",
+   "file_size": 60608,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 16,
     "flags": 6,
     "width": 128,
@@ -3794,10 +3794,10 @@
    }
   },
   "odd_dims_yuv420_lossless": {
-   "file_sha256": "5eacf3ce2a1fdd7c86be1aa4260cc10a7fc84f1780c9be84f287fa7bf8e4fb7f",
-   "file_size": 9997,
+   "file_sha256": "262d1c504972a3eb748318ac7a9cd5ddcfa4f877a685d84fae810de4e549d67f",
+   "file_size": 10005,
    "header": {
-    "version": 2,
+    "version": 3,
     "colorspace": 16,
     "flags": 4,
     "width": 65,

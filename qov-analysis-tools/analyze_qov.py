@@ -113,8 +113,8 @@ def parse_header(data: bytes) -> tuple:
             "dct_qp_base": data[28],
             "lossy_flag_set": lossy,
         }
-        if not lossy:
-            issues.append("v3 header without LOSSY_MODE flag")
+        # v3.10: a v3 header without LOSSY_MODE is the canonical lossless
+        # profile (quality 0), not an issue.
         if any(data[29:33]):
             issues.append("v3 reserved bytes 29-32 are not zero")
     return h, issues
