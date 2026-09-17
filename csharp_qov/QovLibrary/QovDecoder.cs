@@ -62,10 +62,14 @@ public class QovDecoder
             throw new QovException($"Invalid QOV magic: {magicStr}");
 
         byte version = ReadByte();
-        if (version != QovTypes.Version1 && version != QovTypes.Version2 && version != QovTypes.Version3)
+        // v3.10: v1 (16-bit chunk sizes) is deprecated and rejected; v2 is
+        // deprecated but still read (24-byte header branch below)
+        if (version == QovTypes.Version1)
+            throw new QovException("Unsupported QOV version: 0x01 (deprecated in v3.10; re-encode with a current encoder)");
+        if (version != QovTypes.Version2 && version != QovTypes.Version3)
             throw new QovException($"Unsupported QOV version: 0x{version:X2}");
 
-        _use32BitChunkSize = version >= QovTypes.Version2;
+        _use32BitChunkSize = true;
 
         byte flags = ReadByte();
         ushort width = ReadBigEndianU16();

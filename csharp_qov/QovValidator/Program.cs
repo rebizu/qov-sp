@@ -263,13 +263,10 @@ class QovFileValidator
             _warnings.Add($"Quality byte is non-zero in a lossless file: 0x{qualityByte:X2}");
         }
 
-        // v3 extended header
+        // v3 extended header. v3.10: a v3 header without LossyMode is the
+        // canonical lossless profile (quality 0), not an error.
         if (_version == 0x03 && extHeader != null)
         {
-            if ((flags & 0x20) == 0)
-            {
-                _errors.Add("v3 header without LOSSY_MODE flag");
-            }
             Console.WriteLine($"  Lossy: yQuant={extHeader[1]} uvQuant={extHeader[2]} temporal={extHeader[3]} dctQp={extHeader[4]}");
             if (extHeader[5] != 0 || extHeader[6] != 0 || extHeader[7] != 0)
             {

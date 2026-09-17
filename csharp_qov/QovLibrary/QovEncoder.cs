@@ -57,7 +57,9 @@ public class QovEncoder
         }
         
 
-        byte version = (flags & QovTypes.FlagLossyMode) != 0 ? QovTypes.Version3 : QovTypes.Version2;
+        // v3.10: version 3 is the only produced version; lossless streams are
+        // v3 files with quality 0 and no LossyMode flag (v1/v2 are deprecated)
+        byte version = QovTypes.Version3;
         LossyParams lp = LossyParams.Derive(quality);
         _lossyMode = quality > 0 && quality < 100;
         _intraDctKeyframes = (flags & QovTypes.FlagIntraDctKf) != 0;
