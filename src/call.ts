@@ -349,6 +349,7 @@ class Host {
   }
 
   private synthetic = false;
+  private previewTimer: number | null = null;
 
   async start(withMic: boolean): Promise<void> {
     if (this.started) return; // carrier switches re-enter start(); camera opens once
@@ -366,11 +367,13 @@ class Host {
       this.video.srcObject = this.stream;
       await this.video.play();
       log(this.logEl, 'camera opened');
+      this.startPreview();
     } catch (e) {
       // No camera (denied or headless): encode a moving test pattern so the
       // feedback->knob loop is still fully demonstrable.
       this.synthetic = true;
       log(this.logEl, `no camera (${(e as Error).message}) — using synthetic pattern`);
+      this.startPreview();
     }
   }
 
@@ -409,6 +412,52 @@ class Host {
     }
   }
 
+  // draws the current source (camera or synthetic pattern) into the
+  // capture canvas, honouring the downscale rung
+  private drawCaptureFrame(): void {
+    const t = performance.now() / 1000;
+    if (this.synthetic) {
+      if (this.controller.downscaleActive) {
+        // same rung for the synthetic pattern: draw scaled into the
+        // centered 256x192 region over black
+        this.captureCtx.fillStyle = '#000';
+        this.captureCtx.fillRect(0, 0, WIDTH, HEIGHT);
+        this.captureCtx.setTransform(0.8, 0, 0, 0.8, 32, 24);
+      }
+      const g = this.captureCtx.createLinearGradient(0, 0, WIDTH, HEIGHT);
+      g.addColorStop(0, `hsl(${(t * 40) % 360}, 70%, 55%)`);
+      g.addColorStop(1, `hsl(${(t * 40 + 120) % 360}, 70%, 35%)`);
+      this.captureCtx.fillStyle = g;
+      this.captureCtx.fillRect(0, 0, WIDTH, HEIGHT);
+      this.captureCtx.fillStyle = '#fff';
+      this.captureCtx.font = 'bold 28px system-ui';
+      this.captureCtx.fillText(`QOV-S ${Math.floor(t)}`, 40 + 20 * Math.sin(t * 2), HEIGHT / 2 + 60 * Math.sin(t));
+      if (this.controller.downscaleActive) this.captureCtx.setTransform(1, 0, 0, 1, 0, 0);
+    } else if (this.controller.downscaleActive) {
+      // ladder rung: shrink the picture, letterbox the border — border
+      // blocks are pure skips, content codes at unchanged quality
+      this.captureCtx.fillStyle = '#000';
+      this.captureCtx.fillRect(0, 0, WIDTH, HEIGHT);
+      this.captureCtx.drawImage(this.video, 32, 24, 256, 192);
+    } else {
+      this.captureCtx.drawImage(this.video, 0, 0, WIDTH, HEIGHT);
+    }
+  }
+
+  // live local preview before a guest connects (PLAY starts the real loop)
+  private startPreview(): void {
+    if (this.previewTimer !== null) return;
+    this.previewTimer = window.setInterval(() => {
+      if (this.running) {
+        clearInterval(this.previewTimer!);
+        this.previewTimer = null;
+        return;
+      }
+      this.drawCaptureFrame();
+      ($('hostCanvas') as HTMLCanvasElement).getContext('2d')!.drawImage(this.captureCanvas, 0, 0);
+    }, 100);
+  }
+
   private captureLoop = (): void => {
     if (!this.running) return;
     const outCtx = ($('hostCanvas') as HTMLCanvasElement).getContext('2d')!;
@@ -417,33 +466,7 @@ class Host {
       if (this.controller.shouldSkipFrame()) {
         this.skipCount++; // ladder knob: frame skip (spec section 6)
       } else {
-        if (this.synthetic) {
-          const t = performance.now() / 1000;
-          if (this.controller.downscaleActive) {
-            // same rung for the synthetic pattern: draw scaled into the
-            // centered 256x192 region over black
-            this.captureCtx.fillStyle = '#000';
-            this.captureCtx.fillRect(0, 0, WIDTH, HEIGHT);
-            this.captureCtx.setTransform(0.8, 0, 0, 0.8, 32, 24);
-          }
-          const g = this.captureCtx.createLinearGradient(0, 0, WIDTH, HEIGHT);
-          g.addColorStop(0, `hsl(${(t * 40) % 360}, 70%, 55%)`);
-          g.addColorStop(1, `hsl(${(t * 40 + 120) % 360}, 70%, 35%)`);
-          this.captureCtx.fillStyle = g;
-          this.captureCtx.fillRect(0, 0, WIDTH, HEIGHT);
-          this.captureCtx.fillStyle = '#fff';
-          this.captureCtx.font = 'bold 28px system-ui';
-          this.captureCtx.fillText(`QOV-S ${Math.floor(t)}`, 40 + 20 * Math.sin(t * 2), HEIGHT / 2 + 60 * Math.sin(t));
-          if (this.controller.downscaleActive) this.captureCtx.setTransform(1, 0, 0, 1, 0, 0);
-        } else if (this.controller.downscaleActive) {
-          // ladder rung: shrink the picture, letterbox the border — border
-          // blocks are pure skips, content codes at unchanged quality
-          this.captureCtx.fillStyle = '#000';
-          this.captureCtx.fillRect(0, 0, WIDTH, HEIGHT);
-          this.captureCtx.drawImage(this.video, 32, 24, 256, 192);
-        } else {
-          this.captureCtx.drawImage(this.video, 0, 0, WIDTH, HEIGHT);
-        }
+        this.drawCaptureFrame();
         const pixels = this.captureCtx.getImageData(0, 0, WIDTH, HEIGHT).data;
         const ts = Math.round(performance.now() * 1000);
         if (this.forceKeyframe || this.framesSinceKf >= 120) {
