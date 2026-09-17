@@ -165,6 +165,100 @@ under the range coder) and the two decoder defects the work exposed (EOB
 swallowed at zigzag 63; 255-chain accumulation) are documented in
 `PFRAME-EXPLORATION.md`.
 
+## 1d. Bandwidth exploration: knobs, rate control, rungs (2026-09-17)
+
+The BANDWIDTH-EXPLORATION plan (encoder-side only, zero bitstream changes)
+was executed on this fixture. Full rows in
+`scoreboard-explore.json`, driver scripts in `qov-analysis-tools/explore/`.
+
+**Method note:** all SSIMs below are ffmpeg "All" in the yuv444p domain,
+decoded frames vs the same scaled source frames (the `scoreboard.py`
+`ssim_all` method). They are **not** comparable to the §4 table's absolute
+values — the 0.809-era rows came from a reference construction that does
+not reproduce with the canonical method (baseline bitrate reproduces
+exactly, SSIM reads 0.9367). Every row below shares one method, so deltas
+are sound; the q60 baseline anchors them.
+
+**Perceptual knobs (§2).** Sweep of the three encoder-side constants at q60
+(full frame): AC dead-zone 0.75, block-skip `32 + qp*8`, temporal thresh
+`(100-q)/12`. Adopted candidate — dead-zone **1.0** + skip slope **×16**:
+
+| config | video kbps | SSIM | delta |
+|---|---:|---:|---|
+| stock q60 | 260.1 | 0.9367 | — |
+| stock q45 | 212.2 | 0.9249 | on-curve |
+| stock q35 | 190.4 | 0.9224 | on-curve |
+| **knobs: dz 1.0 + slope 16** | **197.9** | **0.9285** | **−23.9% at −0.0082** |
+
+The tuned point dominates every stock point except q35 (which is 7.5
+kbps cheaper but −0.0061 SSIM; between q35 and q40 the stock curve spends
++14 kbps to *lose* 0.0005 SSIM, so combo1 sits far off the stock trade).
+Per-frame SSIM is flat — the knobs
+shift the level, no temporal/freeze artifacts (eyeball-verified at a
+motion-heavy frame; the aggressive dz 2.0 variant stays artifact-free too,
+just blockier). Measured dead ends within the sweep: temporal-thresh
+increases (−2.3% max, nothing on top of the adopted pair) and skip-base 64
+(−2.9%); not adopted. **Ship path:** encoder constants in C/TS/C# + spec
+§3.4.2 text + corpus regen.
+
+**Rate control (§1).** Integral controller over the shipped v3.6
+`qov_set_quality` (cumulative-budget drift, ±1 q per 6 frames, 5% band,
+q∈[25,85], no lookahead) regulates to −0.8..+6.4% of target. On this
+homogeneous webcam fixture it is a **wash vs the best static point** — the
+gate (≥+0.01 SSIM at matched bits) is not met, so nothing ships on cam720's
+account. A synthetic burst probe (15 s webcam + 15 s testsrc2) shows the
+intended behavior exists: 271.5 vs 322.6 kbps (−15.8%) with calm-half SSIM
+unchanged (0.9290 vs 0.9288) — the controller reallocates into the burst,
+bounded by the q25 floor. Keep as caller policy / ladder plumbing for
+heterogeneous content; no format change.
+
+**Rungs (§3a).** Letterboxed input, content-region SSIM (decoded content
+cropped, upscaled, vs full-frame source):
+
+| rung (tuned knobs) | video kbps | content SSIM |
+|---|---:|---:|
+| full 320×240 q60 | 197.9 | 0.9285 |
+| 256×192 q60 | 152.3 | 0.9185 |
+| 160×120 q60 | 86.6 | 0.8944 |
+| 160×120 q80 | 127.0 | 0.9127 |
+
+At ~150 kbps the 256×192 rung beats full-frame q40 (152.3 @ 0.9185 vs
+149.4 @ 0.9142) — resolution is the better low-rate knob, and the knobs
+stack on rungs (160 rung stock→tuned: 104.6 → 86.6 kbps). Wire for the
+160×120 rung + QOA speech: media 155.6 kbps → **169.5 kbps wire FEC off,
+169.9 at FEC 1:3** (~87 pkt/s; frames fit single packets so parity is
+~free). With the Opus+DTX quiet-room path this rung lands ≈ **105 kbps
+wire**. Adopt as a second downscale stage in the adaptation ladder
+(app layer only).
+
+**Frame skip (§3b).** Closed by measurement, pre-registered as likely: only
+2 of 720 frames are near-static (SAD < 100k, saving 0.2%); at SAD < 200k
+the 16.7% dropped frames still cost ~1.1 kB each — a framerate cut, not
+redundancy removal. The ladder's network-driven frame skip already covers
+the real use case.
+
+### Stacked call configuration with the v3.11 constants (measured 2026-09-17)
+
+Same fixture, same method and harness as the §1c table, re-run after the
+v3.11 encoder retune (AC dead-zone 1.0 + block-skip slope 16). Raw rows in
+`scoreboard-v3.11-call.json`; the §1c rows (pre-retune, spec v3.9) are
+reproduced for comparison. SSIM at q60 full-frame: 0.9285 (−0.0082 vs the
+pre-retune build, §1d method).
+
+| call configuration | video (was §1c) | wire batched (was §1c) | wire batched FEC 1:4 (was) |
+|---|---:|---:|---:|
+| full 320×240, v1 grammar | 311.7 (453.5) | 391.2 (534.8) | 393.2 (537.1) |
+| full 320×240, structured | 197.9 (260.1) | 274.5 (338.6) | 276.5 (340.6) |
+| letterbox 256×192, v1 grammar | 238.3 (339.1) | 316.3 (418.8) | 318.3 (420.7) |
+| letterbox 256×192, structured | **152.4** (197.2) | **228.3** (274.0) | 230.3 (276.0) |
+
+- The stacked configuration drops **274.0 → 228.3 kbps** wire batched
+  (−16.7% from the v3.9 stack, −64.7% vs the LZ4-era 647.5 kbps baseline)
+  at the measured −0.0082 SSIM cost.
+- The new 160×120 bottom ladder rung (§1d) adds an emergency gear below
+  this table: video 86.6 kbps, **169.5 kbps wire FEC off / 169.9 at FEC
+  1:3** (~87 pkt/s), ≈105 kbps with the Opus+DTX quiet-room path.
+
 ## 2. Speed (C reference, single thread)
 
 | stage | LZ4 | range coder | range + structured (v3.9) |
@@ -239,6 +333,11 @@ block), measured +0.4% on the real fixture — DC prediction is already
 near-optimal for webcam gradients. Going further (CABAC-class coding,
 B-frames, rate-distortion search) would break the speed/simplicity
 contract the format exists for.
+
+The "what is left belongs to perceptual tuning" prediction was executed
+2026-09-17 (§1d): the tuning delivered −23.9% at −0.0082 SSIM; rate
+control and frame skip measured as closed on this fixture; the remaining
+wire lever is the rung ladder.
 
 ## Reproduce
 

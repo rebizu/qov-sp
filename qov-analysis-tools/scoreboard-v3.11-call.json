@@ -1,0 +1,67 @@
+{
+ "comment": "v3.11 stacked-call benchmark (v3.11 encoder constants: AC dead-zone 1.0 + block-skip slope 16; spec 3.11/BENCHMARKS 1d): v1 vs structured grammar (chunk flag 0x04) at call settings (320x240@24 q60 yuv420 motion+ikf+refresh, range coder, keyframe every 120, mono 16 kHz speech), full frame and letterbox 256x192 step-down rung input. Wire math per bench_bandwidth.py; batched audio groups QOA chunks into type-0x03 datagrams of <=1180 B payload (8 chunks each for speech cadence), no FEC on audio. Reproduce with bench_stream.c (argv[11]) + bench_structured_stack.py.",
+ "settings": {
+  "fps": 24.0,
+  "seconds": 30.0,
+  "audio_rate": 16000,
+  "audio_ch": 1
+ },
+ "rows": {
+  "full 320x240 v1": {
+   "video kbps": 311.7,
+   "media kbps": 380.7,
+   "wire plain FEC off kbps": 398.3,
+   "wire batched FEC off kbps": 391.2,
+   "wire batched FEC 1:4 kbps": 393.2,
+   "packets per second plain": 110.1,
+   "packets per second batched": 55.4,
+   "audio chunks": 1875,
+   "decode": {
+    "frames": 720,
+    "audio_chunks": 1875
+   }
+  },
+  "full 320x240 structured": {
+   "video kbps": 197.9,
+   "media kbps": 266.9,
+   "wire plain FEC off kbps": 281.6,
+   "wire batched FEC off kbps": 274.5,
+   "wire batched FEC 1:4 kbps": 276.5,
+   "packets per second plain": 92.2,
+   "packets per second batched": 37.5,
+   "audio chunks": 1875,
+   "decode": {
+    "frames": 720,
+    "audio_chunks": 1875
+   }
+  },
+  "letterbox 256x192 v1": {
+   "video kbps": 238.3,
+   "media kbps": 307.3,
+   "wire plain FEC off kbps": 323.4,
+   "wire batched FEC off kbps": 316.3,
+   "wire batched FEC 1:4 kbps": 318.3,
+   "packets per second plain": 100.9,
+   "packets per second batched": 46.2,
+   "audio chunks": 1875,
+   "decode": {
+    "frames": 720,
+    "audio_chunks": 1875
+   }
+  },
+  "letterbox 256x192 structured": {
+   "video kbps": 152.4,
+   "media kbps": 221.4,
+   "wire plain FEC off kbps": 235.5,
+   "wire batched FEC off kbps": 228.3,
+   "wire batched FEC 1:4 kbps": 230.3,
+   "packets per second plain": 88.1,
+   "packets per second batched": 33.4,
+   "audio chunks": 1875,
+   "decode": {
+    "frames": 720,
+    "audio_chunks": 1875
+   }
+  }
+ }
+}

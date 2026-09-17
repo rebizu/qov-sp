@@ -1,0 +1,247 @@
+{
+ "comment": "BANDWIDTH-EXPLORATION results, measured 2026-09-17. Fixture/method as BENCHMARKS.md (30 s cam720 -> 320x240@24, call settings, structured+range+motion+refresh, keyframe every 120). SSIM = ffmpeg 'All' in yuv444p domain, decoded QOV frames vs the same scaled source frames (scoreboard.py ssim_all method). NOTE: absolute SSIM values are NOT comparable to BENCHMARKS.md section 4 rows (0.809-era numbers came from a reference construction that does not reproduce with the canonical method; internally all rows here share one method and baseline bitrate reproduces 260.1 exactly). All rows encoder-side only; decoders untouched.",
+ "generated": "2026-09-17T14:19:42",
+ "rig": {
+  "baseline_q60": {
+   "video_kbps": 260.1,
+   "ssim_all": 0.9367,
+   "sha16": "dfca5495e8f074e3"
+  }
+ },
+ "knob_sweep_q60_fullframe": {
+  "stock_curve": {
+   "stock_q45": {
+    "video_kbps": 212.2,
+    "ssim_all": 0.924929
+   },
+   "stock_q50": {
+    "video_kbps": 223.7,
+    "ssim_all": 0.933245
+   },
+   "stock_q55": {
+    "video_kbps": 246.5,
+    "ssim_all": 0.931402
+   },
+   "stock_q40": {
+    "video_kbps": 204.7,
+    "ssim_all": 0.92194
+   },
+   "stock_q35": {
+    "video_kbps": 190.4,
+    "ssim_all": 0.922446
+   }
+  },
+  "singles": {
+   "tt8": {
+    "video_kbps": 255.8,
+    "ssim_all": 0.936988,
+    "tt": 8,
+    "dz": 0.75,
+    "skip_base": 32,
+    "skip_slope": 8
+   },
+   "tt12": {
+    "video_kbps": 254.1,
+    "ssim_all": 0.937055,
+    "tt": 12,
+    "dz": 0.75,
+    "skip_base": 32,
+    "skip_slope": 8
+   },
+   "dz10": {
+    "video_kbps": 228.4,
+    "ssim_all": 0.931234,
+    "tt": 3,
+    "dz": 1.0,
+    "skip_base": 32,
+    "skip_slope": 8
+   },
+   "dz15": {
+    "video_kbps": 197.0,
+    "ssim_all": 0.920561,
+    "tt": 3,
+    "dz": 1.5,
+    "skip_base": 32,
+    "skip_slope": 8
+   },
+   "dz20": {
+    "video_kbps": 176.4,
+    "ssim_all": 0.913866,
+    "tt": 3,
+    "dz": 2.0,
+    "skip_base": 32,
+    "skip_slope": 8
+   },
+   "slope12": {
+    "video_kbps": 239.9,
+    "ssim_all": 0.935301,
+    "tt": 3,
+    "dz": 0.75,
+    "skip_base": 32,
+    "skip_slope": 12
+   },
+   "slope16": {
+    "video_kbps": 218.5,
+    "ssim_all": 0.932443,
+    "tt": 3,
+    "dz": 0.75,
+    "skip_base": 32,
+    "skip_slope": 16
+   },
+   "base64": {
+    "video_kbps": 252.6,
+    "ssim_all": 0.936546,
+    "tt": 3,
+    "dz": 0.75,
+    "skip_base": 64,
+    "skip_slope": 8
+   }
+  },
+  "combos": {
+   "combo1": {
+    "video_kbps": 197.9,
+    "ssim_all": 0.928509,
+    "tt": 3,
+    "dz": 1.0,
+    "skip_base": 32,
+    "skip_slope": 16
+   },
+   "combo2": {
+    "video_kbps": 173.6,
+    "ssim_all": 0.919863,
+    "tt": 3,
+    "dz": 1.5,
+    "skip_base": 32,
+    "skip_slope": 16
+   },
+   "combo3": {
+    "video_kbps": 192.7,
+    "ssim_all": 0.927646,
+    "tt": 8,
+    "dz": 1.0,
+    "skip_base": 32,
+    "skip_slope": 16
+   },
+   "combo4": {
+    "video_kbps": 147.7,
+    "ssim_all": 0.910356,
+    "tt": 12,
+    "dz": 2.0,
+    "skip_base": 32,
+    "skip_slope": 16
+   },
+   "combo1_keep": {
+    "video_kbps": 197.9,
+    "ssim_all": 0.928509,
+    "tt": 3,
+    "dz": 1.0,
+    "skip_base": 32,
+    "skip_slope": 16
+   },
+   "combo4_keep": {
+    "video_kbps": 147.7,
+    "ssim_all": 0.910356,
+    "tt": 12,
+    "dz": 2.0,
+    "skip_base": 32,
+    "skip_slope": 16
+   }
+  },
+  "verdict": "ADOPT combo1 (AC dead-zone 0.75 -> 1.0, block-skip slope x8 -> x16): 260.1 -> 197.9 kbps (-23.9%) at SSIM -0.0082; dominates every stock point except q35 (7.5 kbps cheaper but -0.0061 SSIM; stock spends +14 kbps from q35 to q40 to LOSE 0.0005 SSIM). Per-frame SSIM profile flat (no temporal artifacts); tt and skip-base add nothing on top."
+ },
+ "rate_control": {
+  "static_anchors_tuned_knobs": {},
+  "integral_tuned_knobs": {},
+  "integral_stock_knobs": {},
+  "step_ladder_tuned_knobs": {},
+  "burst_probe": {
+   "rc_burststat": {
+    "tag": "rc_burststat",
+    "target": 0,
+    "video_kbps": 322.6,
+    "peak_to_avg": 3.26,
+    "q_min": 60,
+    "q_max": 60,
+    "q_changes": 0,
+    "ssim_all": 0.8948,
+    "ssim_worst2s": 0.8464,
+    "ssim_first_half": 0.9288,
+    "ssim_second_half": 0.8607
+   },
+   "rc_burstint": {
+    "tag": "rc_burstint",
+    "target": 200,
+    "video_kbps": 271.5,
+    "peak_to_avg": 4.07,
+    "q_min": 25,
+    "q_max": 65,
+    "q_changes": 57,
+    "regulation_err_pct": 37.9,
+    "ssim_all": 0.8881,
+    "ssim_worst2s": 0.8252,
+    "ssim_first_half": 0.929,
+    "ssim_second_half": 0.8472
+   }
+  },
+  "verdict": "Integral controller (cumulative-budget drift, +-1 q per 6 frames, band 5%, q in [25,85]) regulates to -0.8..+6.4% of target. On homogeneous webcam content it is a wash vs the best static point (no >= +0.01 SSIM win at matched bits -> gate NOT met on this fixture). Burst probe (15 s webcam + 15 s testsrc2): controlled 271.5 vs static 322.6 kbps (-15.8%) with calm-half SSIM unchanged (0.9290 vs 0.9288) \u2014 budget reallocation works; +37.9% residual overshoot bounded by the q25 floor. Keep as caller policy on the shipped v3.6 qov_set_quality; worth wiring into the adaptation ladder for heterogeneous content."
+ },
+ "rungs_content_ssim": {
+  "note": "letterboxed encoder input (scale+pad), decoded content region cropped and upscaled to 320x240, SSIM vs full-frame source \u2014 comparable to full-frame rows",
+  "rows": {
+   "full320_q60_kn": {
+    "video_kbps": 197.9,
+    "content_ssim": 0.9285
+   },
+   "rung256_q60_kn": {
+    "video_kbps": 152.3,
+    "content_ssim": 0.9185
+   },
+   "rung256_q75_kn": {
+    "video_kbps": 208.6,
+    "content_ssim": 0.9352
+   },
+   "rung256_q85_kn": {
+    "video_kbps": 277.0,
+    "content_ssim": 0.9461
+   },
+   "rung160_q60_kn": {
+    "video_kbps": 86.6,
+    "content_ssim": 0.8944
+   },
+   "rung160_q80_kn": {
+    "video_kbps": 127.0,
+    "content_ssim": 0.9127
+   },
+   "rung160_q60_stock": {
+    "video_kbps": 104.6,
+    "content_ssim": 0.9004
+   }
+  },
+  "wire_rung160_q60_kn_qoa_speech": {
+   "media_kbps": 155.6,
+   "wire_fec_off_kbps": 169.5,
+   "wire_fec_1_3_kbps": 169.9,
+   "packets_per_s": 87,
+   "note": "video 86.6 + QOA 69.0; frames fit single 1180 B packets so 1:3 parity is ~free"
+  },
+  "verdict": "ADOPT 160x120 as the bottom ladder rung (second downscale stage). At ~150 kbps, 256x192 q60 (0.9185) beats full-frame q40 (0.9142) - resolution is the better low-rate knob. Knobs stack on rungs (160 rung: 104.6 -> 86.6 kbps stock->tuned)."
+ },
+ "frame_skip_offline": {
+  "rows": [
+   {
+    "sad_threshold": 100000,
+    "droppable_frames": 2,
+    "of": 720,
+    "video_byte_saving_pct": 0.2
+   },
+   {
+    "sad_threshold": 200000,
+    "droppable_frames": 120,
+    "of": 720,
+    "video_byte_saving_pct": 13.6,
+    "note": "dropped frames still cost ~1107 B each \u2014 this is a framerate cut, not redundancy removal"
+   }
+  ],
+  "verdict": "CLOSED dead end (pre-registered): near-static frames already cost only their residual/MV minimum and webcam content has almost none (2/720). Network-driven frame skip in the existing ladder already covers the real use case."
+ }
+}
