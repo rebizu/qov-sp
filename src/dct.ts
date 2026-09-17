@@ -107,21 +107,3 @@ export function inverseDCTRaw(coeffs: Float32Array | Int16Array, out: Int16Array
         }
     }
 }
-
-// Helper to copy simple block to/from image buffer
-export function getBlock8x8(pixels: Uint8Array | Uint8ClampedArray, width: number, bx: number, by: number, out: Float32Array): void {
-    for (let y = 0; y < 8; y++) {
-        for (let x = 0; x < 8; x++) {
-            // Level shift -128 for DCT
-            out[y * 8 + x] = pixels[(by + y) * width + (bx + x)] - 128;
-        }
-    }
-}
-
-export function putBlock8x8(pixels: Uint8Array | Uint8ClampedArray, width: number, bx: number, by: number, block: Uint8Array): void {
-    for (let y = 0; y < 8; y++) {
-        for (let x = 0; x < 8; x++) {
-            pixels[(by + y) * width + (bx + x)] = block[y * 8 + x];
-        }
-    }
-}

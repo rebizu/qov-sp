@@ -365,10 +365,3 @@ export function yuv444PlanesToRgba(
 
   return pixels;
 }
-
-/**
- * YUV color hash for index cache (similar to RGB but for YUV)
- */
-export function yuvHash(y: number, u: number, v: number): number {
-  return (y * 3 + u * 5 + v * 7) % 64;
-}
