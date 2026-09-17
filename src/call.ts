@@ -30,7 +30,19 @@ function fmtStats(pairs: [string, string | number][]): string {
 
 // ------------------------------------------------------------- transport
 
-class Relay {
+// QOV-S section 1.1 defines the session against two abstract channels
+// (reliable control, datagram media); a carrier maps them onto a concrete
+// transport. The demo ships two: the WebSocket relay and WebRTC
+// DataChannels (works from any static site).
+interface Carrier {
+  onText: (line: string) => void;
+  onBinary: (bytes: Uint8Array) => void;
+  onOpen: () => void;
+  sendText(line: string): void;
+  sendBinary(bytes: Uint8Array): void;
+}
+
+class Relay implements Carrier {
   ws: WebSocket | null = null;
   onText: (line: string) => void = () => {};
   onBinary: (bytes: Uint8Array) => void = () => {};
@@ -63,10 +75,116 @@ class Relay {
   sendBinary(bytes: Uint8Array): void { this.ws?.send(bytes); }
 }
 
+// --- WebRTC DataChannel carrier (spec v2.2 section 7) ----------------------
+//
+// Control lines ride a reliable ordered DataChannel; QOV-S datagrams ride an
+// unordered lossy one (maxRetransmits: 0), mirroring the classic TCP+UDP
+// split. Signaling is out-of-band by design: the host and guest exchange
+// copy-paste invite/answer codes through any channel they trust, so the call
+// works from a fully static site with no server component.
+
+function encodeSignal(d: RTCSessionDescription): string {
+  const json = JSON.stringify({ t: d.type, s: d.sdp });
+  return btoa(String.fromCharCode(...new TextEncoder().encode(json)));
+}
+
+function decodeSignal(code: string): RTCSessionDescriptionInit {
+  const json = new TextDecoder().decode(
+    Uint8Array.from(atob(code.trim()), (c) => c.charCodeAt(0)));
+  const j = JSON.parse(json) as { t: RTCSdpType; s: string };
+  return { type: j.t, sdp: j.s };
+}
+
+class WebRtcCarrier implements Carrier {
+  onText: (line: string) => void = () => {};
+  onBinary: (bytes: Uint8Array) => void = () => {};
+  onOpen: () => void = () => {};
+  private pc: RTCPeerConnection | null = null;
+  private ctrl: RTCDataChannel | null = null;
+  private media: RTCDataChannel | null = null;
+  private opened = false;
+  private stateEl: HTMLElement | null = null;
+
+  private wireDc(dc: RTCDataChannel): void {
+    dc.binaryType = 'arraybuffer';
+    dc.onmessage = (ev) => {
+      if (typeof ev.data === 'string') this.onText(ev.data);
+      else this.onBinary(new Uint8Array(ev.data));
+    };
+    dc.onopen = () => {
+      if (this.ctrl?.readyState === 'open' && this.media?.readyState === 'open' && !this.opened) {
+        this.opened = true;
+        badge(this.stateEl!, 'live', 'p2p: connected');
+        this.onOpen();
+      }
+    };
+    dc.onclose = () => badge(this.stateEl!, 'off', 'p2p: disconnected');
+  }
+
+  private makePc(stateEl: HTMLElement): RTCPeerConnection {
+    this.stateEl = stateEl;
+    badge(stateEl, 'waiting', 'p2p: gathering…');
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    this.pc = pc;
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed') badge(stateEl, 'off', 'p2p: connection failed (NAT? try the relay)');
+    };
+    return pc;
+  }
+
+  private async gathered(pc: RTCPeerConnection): Promise<void> {
+    if (pc.iceGatheringState === 'complete') return;
+    await new Promise<void>((resolve) => {
+      const done = () => resolve();
+      pc.addEventListener('icegatheringstatechange', () => {
+        if (pc.iceGatheringState === 'complete') done();
+      });
+      setTimeout(done, 3000); // fall back to whatever candidates we have
+    });
+  }
+
+  // Host: create the offer (invite code)
+  async createInvite(stateEl: HTMLElement): Promise<string> {
+    const pc = this.makePc(stateEl);
+    this.ctrl = pc.createDataChannel('qovs-ctrl', { ordered: true });
+    this.wireDc(this.ctrl);
+    this.media = pc.createDataChannel('qovs-media', { ordered: false, maxRetransmits: 0 });
+    this.wireDc(this.media);
+    await pc.setLocalDescription(await pc.createOffer());
+    await this.gathered(pc);
+    return encodeSignal(pc.localDescription!);
+  }
+
+  // Host: apply the guest's answer code
+  async acceptAnswer(code: string): Promise<void> {
+    if (!this.pc) throw new Error('create the invite first');
+    await this.pc.setRemoteDescription(decodeSignal(code));
+  }
+
+  // Guest: apply the host's invite code, produce the answer code
+  async acceptInvite(code: string, stateEl: HTMLElement): Promise<string> {
+    const pc = this.makePc(stateEl);
+    pc.ondatachannel = (ev) => {
+      if (ev.channel.label === 'qovs-ctrl') { this.ctrl = ev.channel; this.wireDc(this.ctrl); }
+      else if (ev.channel.label === 'qovs-media') { this.media = ev.channel; this.wireDc(this.media); }
+    };
+    await pc.setRemoteDescription(decodeSignal(code));
+    await pc.setLocalDescription(await pc.createAnswer());
+    await this.gathered(pc);
+    return encodeSignal(pc.localDescription!);
+  }
+
+  sendText(line: string): void { this.ctrl?.send(line); }
+  sendBinary(bytes: Uint8Array<ArrayBuffer>): void { this.media?.send(bytes); }
+}
+
 // ------------------------------------------------------------------ host
 
 class Host {
-  private relay: Relay;
+  private relay: Carrier;
+  private started = false;
+  // transports are hot-swappable (relay <-> peer-to-peer)
+  rebind(carrier: Carrier): void { this.relay = carrier; }
   private enc!: QovEncoder; // created synchronously in start() before any network event
   private sender: QovStreamSender;
   private controller = new QovAdaptationController(60);
@@ -85,7 +203,7 @@ class Host {
   private dropRefCount = 0;
   private downscaleCount = 0;
 
-  constructor(relay: Relay, private logEl: HTMLElement) {
+  constructor(relay: Carrier, private logEl: HTMLElement) {
     this.relay = relay;
     this.sender = new QovStreamSender((packet) => this.relay.sendBinary(packet));
     this.controller.onQualityChanged = (q) => {
@@ -233,6 +351,8 @@ class Host {
   private synthetic = false;
 
   async start(withMic: boolean): Promise<void> {
+    if (this.started) return; // carrier switches re-enter start(); camera opens once
+    this.started = true;
     this.initEncoder(withMic);
     if (withMic) await this.startMic().catch((e) => log(this.logEl, `mic error: ${(e as Error).message}`));
     await this.openCamera();
@@ -367,7 +487,9 @@ class Host {
 // ----------------------------------------------------------------- guest
 
 class Guest {
-  private relay: Relay;
+  private relay: Carrier;
+  // transports are hot-swappable (relay <-> peer-to-peer)
+  rebind(carrier: Carrier): void { this.relay = carrier; }
   private receiver: QovStreamReceiver;
   private gate = new QovPlaybackGate();
   private readonly qoa = new QoaDecoder();
@@ -387,7 +509,7 @@ class Guest {
   private totalFreezeMs = 0;
   private ctx: CanvasRenderingContext2D;
 
-  constructor(relay: Relay, private logEl: HTMLElement, private badgeEl: HTMLElement) {
+  constructor(relay: Carrier, private logEl: HTMLElement, private badgeEl: HTMLElement) {
     this.relay = relay;
     const canvas = $('guestCanvas') as HTMLCanvasElement;
     canvas.width = WIDTH;
@@ -580,39 +702,101 @@ class Guest {
 // ------------------------------------------------------------------ init
 
 function main(): void {
-  ($('relayUrl') as HTMLInputElement).value =
-    `ws://${location.hostname || 'localhost'}:8882`;
+  const p2p = new WebRtcCarrier();
   const relay = new Relay();
+  let carrier: Carrier = p2p;
 
-  const host = new Host(relay, $('hostLog'));
-  const guest = new Guest(relay, $('guestLog'), $('guestBadge'));
+  const host = new Host(carrier, $('hostLog'));
+  const guest = new Guest(carrier, $('guestLog'), $('guestBadge'));
   setInterval(() => { host.render(); guest.render(); }, 500);
 
-  let joined = false;
+  // The protocol handlers live on the ACTIVE carrier; switching transports
+  // moves them (no forwarder chains — those self-loop when the active
+  // carrier is also the one being reassigned).
+  const wireActive = (c: Carrier) => {
+    c.onOpen = () => guest.hello();
+    c.onText = (line) => {
+      // Both roles see every control line; each side consumes what it owns.
+      host.handleGuestText(line);
+      guest.handleHostText(line);
+    };
+    c.onBinary = (bytes) => guest.handleBinary(bytes);
+  };
+  wireActive(carrier);
+  const useCarrier = (kind: 'p2p' | 'relay') => {
+    carrier = kind === 'relay' ? relay : p2p;
+    wireActive(carrier);
+    host.rebind(carrier);
+    guest.rebind(carrier);
+  };
+
+  let current: 'host' | 'guest' | null = null;
   const join = (role: 'host' | 'guest') => {
-    if (joined) return;
-    joined = true;
+    if (current === role) return;
+    current = role;
     $('btnHost').classList.toggle('active', role === 'host');
     $('btnGuest').classList.toggle('active', role === 'guest');
     $('hostPanel').style.display = role === 'host' ? '' : 'none';
     $('guestPanel').style.display = role === 'guest' ? '' : 'none';
-    const actualRoom = new URLSearchParams(location.search).get('room') ?? 'qovs-call-default';
-    relay.connect(($('relayUrl') as HTMLInputElement).value, actualRoom, $('relayState'));
+    const kind = ($('carrierSelect') as HTMLSelectElement).value as 'p2p' | 'relay';
+    if (kind === 'relay') {
+      $('relayUrl').style.display = '';
+      $('p2pPanel').style.display = 'none';
+      const actualRoom = new URLSearchParams(location.search).get('room') ?? 'qovs-call-default';
+      relay.connect(($('relayUrl') as HTMLInputElement).value, actualRoom, $('relayState'));
+    } else {
+      $('relayUrl').style.display = 'none';
+      $('p2pPanel').style.display = '';
+      $('p2pHostSteps').style.display = role === 'host' ? '' : 'none';
+      $('p2pGuestSteps').style.display = role === 'guest' ? '' : 'none';
+    }
   };
-  $('btnHost').onclick = () => {
-    join('host');
-    const withMic = ($('micCheck') as HTMLInputElement).checked;
-    host.start(withMic).catch((e) => log($('hostLog'), `start error: ${e.message}`));
+  const start = () => {
+    if (current === 'host') {
+      const withMic = ($('micCheck') as HTMLInputElement).checked;
+      host.start(withMic).catch((e) => log($('hostLog'), `start error: ${e.message}`));
+    }
   };
+  $('btnHost').onclick = () => { join('host'); start(); };
   $('btnGuest').onclick = () => join('guest');
-
-  relay.onOpen = () => guest.hello();
-  relay.onText = (line) => {
-    // Both roles see every control line; each side consumes what it owns.
-    host.handleGuestText(line);
-    guest.handleHostText(line);
+  $('carrierSelect').onchange = () => {
+    useCarrier(($('carrierSelect') as HTMLSelectElement).value as 'p2p' | 'relay');
+    join(current ?? 'host');
+    start();
   };
-  relay.onBinary = (bytes) => guest.handleBinary(bytes);
+
+  // --- P2P signaling (copy-paste, spec v2.2 section 7) ---
+  $('p2pHostCreate').onclick = () => {
+    useCarrier('p2p');
+    start();
+    p2p.createInvite($('relayState'))
+      .then((code) => { ($('p2pInviteOut') as HTMLTextAreaElement).value = code; })
+      .catch((e) => log($('hostLog'), `p2p invite error: ${e.message}`));
+  };
+  $('p2pAcceptAnswer').onclick = () => {
+    const code = ($('p2pAnswerIn') as HTMLTextAreaElement).value;
+    p2p.acceptAnswer(code).catch((e) => log($('hostLog'), `p2p answer error: ${e.message}`));
+  };
+  $('p2pGuestCreate').onclick = () => {
+    useCarrier('p2p');
+    const code = ($('p2pInviteIn') as HTMLTextAreaElement).value;
+    p2p.acceptInvite(code, $('relayState'))
+      .then((answer) => { ($('p2pAnswerOut') as HTMLTextAreaElement).value = answer; })
+      .catch((e) => log($('guestLog'), `p2p answer error: ${e.message}`));
+  };
+
+  // ?carrier=relay preselects the local relay carrier (p2p is the default)
+  if (new URLSearchParams(location.search).get('carrier') === 'relay') {
+    ($('carrierSelect') as HTMLSelectElement).value = 'relay';
+  }
+  ($('relayUrl') as HTMLInputElement).value =
+    `ws://${location.hostname || 'localhost'}:8882`;
+
+  // debugging handle for the demo page
+  (window as unknown as { __qov: unknown }).__qov = {
+    p2p, relay, host, guest, useCarrier,
+    get carrier() { return carrier; },
+  };
 }
 
 main();

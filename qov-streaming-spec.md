@@ -1,6 +1,6 @@
 # QOV-S (Quite OK Video Streaming) Protocol Specification
 
-**Version:** 2.0
+**Version:** 2.2
 **Date:** September 2026
 **Model:** carrier-agnostic — QOV-S is defined against two abstract channels
 (a reliable control stream and a media path), so it runs over any protocol
@@ -221,10 +221,22 @@ address-bound (datagram mode), and how `HELLO` authenticates.
   the carrier.
 * **WebTransport:** `https://…/qovs`; media on QUIC datagrams, control on a
   bidirectional stream. TLS 1.3 required by the carrier.
+* **WebRTC DataChannel (v2.2, static hosting):** media datagrams on an
+  unordered lossy DataChannel (`ordered: false, maxRetransmits: 0`);
+  control on a reliable ordered DataChannel. SDP offers/answers are
+  exchanged out-of-band — copy-paste codes, QR, or any channel the peers
+  trust — so the call works from a fully static site with no server
+  component. STUN is allowed; TURN is not required by the binding.
+  `HELLO` authenticates as in every other binding.
 * Servers MUST rate-limit `KEYFRAME` (≤ 1/s) and drop clients exceeding it.
 
 ## 8. Changes from v1.0
 
+* **v2.2 — WebRTC DataChannel carrier (§7)**: control on a reliable ordered
+  DataChannel, media on an unordered lossy one; out-of-band copy-paste
+  signaling makes the call demo deployable on any static site. Reference
+  implementation: the call demo's peer-to-peer carrier. Reference
+  implementations of earlier bindings are unchanged.
 * **v2.1 — audio batching (§3.1)**: new `packet_type` 0x03 carries
   multiple complete AUDIO chunks per datagram (`[u16 len][chunk]`
   entries, one `seq`/`frame_id` per batch). Cuts a speech call from ~62
