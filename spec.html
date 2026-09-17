@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QOV Specification</title>
+  <title>QOV Documentation</title>
   <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
   <style>
     * {
@@ -162,25 +162,78 @@
     .markdown strong {
       color: #fff;
     }
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      max-width: 900px;
+      margin: 1.5rem auto 0;
+      padding: 0 2rem;
+    }
+    .tabs a {
+      font-size: 0.85rem;
+      padding: 0.45rem 0.9rem;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.04);
+      color: #cbd5e1;
+      text-decoration: none;
+    }
+    .tabs a:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .tabs a.active {
+      background: #2f6feb;
+      border-color: #2f6feb;
+      color: #fff;
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <a href="index.html">&larr; Back</a>
-    <h1>QOV Specification</h1>
-    <a href="qov-specification.md" class="raw-link" target="_blank">View Raw</a>
+    <h1 id="doc-title">QOV Documentation</h1>
+    <a id="raw-link" href="qov-specification.md" class="raw-link" target="_blank">View Raw</a>
   </div>
 
+  <div class="tabs" id="tabs"></div>
+
   <div class="content">
-    <div id="markdown-content" class="loading">Loading specification...</div>
+    <div id="markdown-content" class="loading">Loading documentation...</div>
   </div>
 
   <script>
+    const DOCS = [
+      { id: 'format',      file: 'qov-specification.md',    title: 'QOV Format Specification v3.9',      tab: 'Format spec v3.9' },
+      { id: 'streaming',   file: 'qov-streaming-spec.md',   title: 'QOV-S Streaming Specification v2.1', tab: 'QOV-S streaming spec v2.1' },
+      { id: 'benchmarks',  file: 'BENCHMARKS.md',           title: 'QOV Benchmarks',                     tab: 'Benchmarks' },
+      { id: 'roadmap',     file: 'CONFERENCE-ROADMAP.md',   title: 'Conference Roadmap',                 tab: 'Roadmap' },
+      { id: 'exploration', file: 'PFRAME-EXPLORATION.md',   title: 'P-frame Format Exploration',         tab: 'P-frame exploration' },
+      { id: 'readme',      file: 'README.md',               title: 'About QOV',                          tab: 'About' },
+    ];
+
+    function currentDoc() {
+      const id = new URLSearchParams(location.search).get('doc') || 'format';
+      return DOCS.find(d => d.id === id) || DOCS[0];
+    }
+
+    function renderTabs() {
+      const active = currentDoc().id;
+      document.getElementById('tabs').innerHTML = DOCS
+        .map(d => `<a href="?doc=${d.id}" class="${d.id === active ? 'active' : ''}">${d.tab}</a>`)
+        .join('');
+    }
+
     async function loadSpec() {
       const container = document.getElementById('markdown-content');
+      const doc = currentDoc();
+
+      document.getElementById('doc-title').textContent = doc.title;
+      document.getElementById('raw-link').href = doc.file;
+      renderTabs();
 
       try {
-        const response = await fetch('qov-specification.md');
+        const response = await fetch(doc.file);
         if (!response.ok) {
           throw new Error(`Failed to load: ${response.status}`);
         }
@@ -188,9 +241,10 @@
         const markdown = await response.text();
         container.className = 'markdown';
         container.innerHTML = marked.parse(markdown);
+        window.scrollTo(0, 0);
       } catch (err) {
         container.className = 'error';
-        container.innerHTML = `Failed to load specification: ${err.message}`;
+        container.innerHTML = `Failed to load ${doc.file}: ${err.message}`;
       }
     }
 
