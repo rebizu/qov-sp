@@ -19,7 +19,7 @@ public class EncoderTests
         Assert.Equal(0x6F, data[1]);
         Assert.Equal(0x76, data[2]);
         Assert.Equal(0x66, data[3]);
-        Assert.Equal(QovTypes.Version2, data[4]);
+        Assert.Equal(QovTypes.Version3, data[4]);
     }
 
     [Fact]
