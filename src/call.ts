@@ -813,7 +813,10 @@ function main(): void {
         const link = shareLink('invite', code);
         const out = $('p2pInviteOut') as HTMLTextAreaElement;
         out.value = link;
+        out.style.borderColor = '#2f6feb';
         copyBtn('p2pInviteCopy', link);
+        badge($('relayState'), 'waiting', 'p2p: invite ready — copy the link below');
+        out.scrollIntoView({ behavior: 'smooth', block: 'center' });
         out.focus();
         out.select();
         log($('hostLog'), 'p2p: invite link ready — send it to your guest');
