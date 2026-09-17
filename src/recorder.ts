@@ -300,7 +300,6 @@ async function startRecording(): Promise<void> {
       dctQp: parseInt(customDctQpSlider.value),
     };
     log(`Starting recording: ${width}x${height} @ ${frameRate}fps, colorspace: 0x${colorspace.toString(16)}, mode: custom lossy (yQ=${customParams.yQuant}, uvQ=${customParams.uvQuant}, tThresh=${customParams.temporalThresh}, dctQp=${customParams.dctQp})`);
-    log(`Starting recording: ${width}x${height} @ ${frameRate}fps, colorspace: 0x${colorspace.toString(16)}, mode: lossless`);
   }
 
   // Set up audio
